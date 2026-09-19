@@ -1,5 +1,6 @@
 // Real API client (§10.5). Same names and signatures as the mock facade in
 // api.ts — flipping USE_MOCKS must change zero call sites.
+import { planFromThread as aiPlanFromThread, polishLetter, type FamilyPlan } from './ai';
 import { API_BASE } from './config';
 import type {
   Alert, BaselineFeature, ChatMessage, Contact, DaySummary, KEvent,
@@ -95,5 +96,19 @@ export const httpApi = {
   },
   registerPushToken: async (expoPushToken: string) => {
     await post('/devices/push-token', { expo_push_token: expoPushToken, platform: 'ios' });
+  },
+  // ponytail: connection layer has no backend endpoints yet — live path is a
+  // Muse Spark call over GET /residents/{id}/events (Meta challenge), and a
+  // /messages endpoint fed by the voice agent's leave_message tool.
+  talkAbout: async (): Promise<string[]> => [],
+  latestMessage: async (): Promise<{ text: string; at: string } | null> => null,
+  planFromThread: async (thread: string): Promise<FamilyPlan> =>
+    (await aiPlanFromThread(thread)) ?? {
+      headline: 'Couldn’t read the thread — try pasting it again.',
+      when: null, tasks: [], open_questions: [], reply_text: '',
+    },
+  sundayLetter: async (): Promise<string> => {
+    const events = await httpApi.getEvents('res_eleanor');
+    return (await polishLetter(events.map((e) => e.embedding_text).join('\n'))) ?? '';
   },
 };

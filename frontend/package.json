@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0",
     "@expo-google-fonts/fraunces": "^0.4.1",
     "@expo/ui": "~57.0.19",
     "@tanstack/react-query": "^5.103.1",
@@ -16,6 +17,7 @@
     "expo-image": "~57.0.5",
     "expo-linear-gradient": "~57.0.2",
     "expo-linking": "~57.0.10",
+    "expo-media-library": "~57.0.5",
     "expo-notifications": "^57.0.20",
     "expo-router": "~57.0.22",
     "expo-splash-screen": "~57.0.9",

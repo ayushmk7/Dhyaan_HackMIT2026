@@ -23,6 +23,7 @@ log = logging.getLogger("dhyaan.voice.fsm_stub")
 
 # Test-inspectable state. Reset with reset().
 TOOL_CALLS: list[dict] = []
+MESSAGES: list[dict] = []   # leave_message tool output — the connection layer
 EVENTS: list[dict] = []
 TRANSCRIPTS: dict[str, list[dict]] = {}
 CALL_BINDINGS: dict[str, dict] = {}
@@ -34,6 +35,7 @@ _idempotency_cache: dict[str, dict] = {}
 
 def reset() -> None:
     TOOL_CALLS.clear()
+    MESSAGES.clear()
     EVENTS.clear()
     TRANSCRIPTS.clear()
     CALL_BINDINGS.clear()
@@ -58,6 +60,9 @@ async def handle_voice_tool(alert_id: str, role: str, fn_name: str, args: dict) 
         ALERT_STATES[alert_id] = "escalating"
     elif fn_name == "request_callback":
         ALERT_STATES[alert_id] = "scheduled_callback"
+    elif fn_name == "leave_message":
+        # Connection layer: surfaces in the family app as "From her check-in call".
+        MESSAGES.append({"alert_id": alert_id, "message": args.get("message", "")})
     # end_call: no state change here — the bridge hangs up after AgentAudioDone.
 
     result = {"ok": True}

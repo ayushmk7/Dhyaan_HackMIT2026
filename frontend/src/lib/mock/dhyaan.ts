@@ -71,6 +71,8 @@ class MockDhyaan {
     a.resolution = 'ok';
     this.pushLadder(a, { step: 'acknowledged', at: iso(Date.now()), detail: `${by} is on it — ladder stopped` });
     this.setResidentState(a.resident_id, 'ok');
+    // She gets the last word — the scary call ends as a human moment.
+    this.message = { text: 'Tell Priya not to fuss — I’m alright, just clumsy.', at: iso(Date.now()) };
     this.emit({ t: 'alert.closed', alert_id: a.id, resolution: 'ok', acked_by: by });
   }
 
@@ -164,6 +166,54 @@ class MockDhyaan {
     const e = this.world.events.find((x) => x.type === 'meal_skipped');
     if (e) this.emit({ t: 'event.new', event: e });
   }
+
+  // ---- connection layer (Meta challenge): observations → things to talk about ---
+  // ponytail: live path swaps this for one Muse Spark call over the day's events;
+  // the shape (3 short strings) is the contract, the generator is disposable.
+  talkAbout(): string[] {
+    const evs = this.world.events;
+    const out: string[] = [];
+    if (evs.find((e) => e.type === 'walk_completed')) {
+      out.push('She was out for her morning walk today — ask where she went, not whether she went.');
+    }
+    if (evs.filter((e) => e.type === 'meal_skipped').length >= 2) {
+      out.push('Dinner hasn’t happened the last two evenings. Suggesting Sunday dinner together will land better than asking why.');
+    }
+    if (evs.find((e) => e.type === 'night_activity')) {
+      out.push('She was up once in the night this week — a gentle “sleeping okay?” goes further than a checklist.');
+    }
+    out.push('She spent most of this afternoon in the living room — a good time to just call and chat.');
+    return out.slice(0, 3);
+  }
+
+  // Canned plan for when no Claude key is configured — same shape as ai.planFromThread.
+  planFromThread(_thread: string) {
+    return {
+      headline: 'Mom’s birthday lunch — Sunday the 12th at her place.',
+      when: 'Sunday Oct 12, noon',
+      tasks: [
+        { who: 'Priya', what: 'Brings the cake and picks up flowers' },
+        { who: 'Dev', what: 'Drives Mom, handles groceries Saturday' },
+        { who: 'Nisha', what: 'Cooks the biryani, arrives at 10' },
+      ],
+      open_questions: [
+        'Nobody answered whether Uncle Raj is invited — someone text him?',
+        'Gluten-free or regular cake? Two people asked, no one decided.',
+      ],
+      reply_text:
+        'Locking it in: Sunday the 12th, noon, at Mom’s. Priya: cake + flowers. Dev: driving Mom + groceries. Nisha: biryani. Still open — is Raj coming, and GF or regular cake?',
+    };
+  }
+
+  sundayLetterDraft(): string {
+    return this.world.summaries.map((s) => `${s.date_local}: ${s.narrative}`).join('\n');
+  }
+
+  private message: { text: string; at: string } | null = {
+    text: 'Tell Priya I’m fine — and that I found her grandmother’s recipe box in the attic.',
+    at: iso(Date.now() - 3 * 3_600_000),
+  };
+  latestMessage() { return this.message; }
 
   // ---- chat: keyword retrieval over real mock events ---------------------------
   chat(question: string): ChatMessage {

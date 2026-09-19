@@ -349,7 +349,9 @@ async def test_settings_shape():
         "output": {"encoding": "mulaw", "sample_rate": 8000, "container": "none"},
     }
     fns = s["agent"]["think"]["functions"]
-    assert [f["name"] for f in fns] == ["mark_ok", "escalate", "request_callback", "end_call"]
+    assert [f["name"] for f in fns] == [
+        "mark_ok", "escalate", "request_callback", "leave_message", "end_call",
+    ]
     assert [f["name"] for f in fns if f.get("defer_until_eot")] == ["end_call"]
     contact = build_settings({"role": "contact_1"})
     assert "check on" in contact["agent"]["greeting"]

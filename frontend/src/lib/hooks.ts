@@ -30,6 +30,12 @@ export const useBaselines = (residentId: string) =>
 export const useContacts = () =>
   useQuery({ queryKey: ['contacts'], queryFn: api.getContacts });
 
+export const useTalkAbout = () =>
+  useQuery({ queryKey: ['talkAbout'], queryFn: api.talkAbout });
+
+export const useLatestMessage = () =>
+  useQuery({ queryKey: ['latestMessage'], queryFn: api.latestMessage, refetchInterval: 10_000 });
+
 export const useAlert = (id: string) =>
   useQuery({
     queryKey: ['alert', id],

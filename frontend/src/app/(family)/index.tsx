@@ -1,14 +1,15 @@
 // Home: one calm sentence about Eleanor, where she is, and how today is going.
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Linking, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { RoomTimeBar, Row, SectionTitle, StatusDot, Tile, Txt } from '@/components';
+import { Card, RoomTimeBar, Row, SectionTitle, StatusDot, Tile, Txt } from '@/components';
 import { Entrance } from '@/components/entrance';
 import { Icon } from '@/components/icon';
-import { useLocationHistory, useResident, useTimeline } from '@/lib/hooks';
+import { useLatestMessage, useLocationHistory, useResident, useTalkAbout, useTimeline } from '@/lib/hooks';
+import { detectLastVisit } from '@/lib/visits';
 import { ago, dayOf, eventTitle, mins, timeOf, zoneLabel } from '@/lib/format';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
@@ -35,6 +36,9 @@ export default function Home() {
   const { residentName } = useSession();
   const { data: resident } = useResident(RES);
   const { data: events } = useTimeline(RES);
+  const { data: prompts } = useTalkAbout();
+  const { data: herMessage } = useLatestMessage();
+  const { data: visit } = useQuery({ queryKey: ['lastVisit'], queryFn: detectLastVisit, staleTime: Infinity });
   const todayKey = localDayKey();
   const { data: segments } = useLocationHistory(RES, todayKey);
   const live = useLive();
@@ -102,6 +106,37 @@ export default function Home() {
           </Txt>
         </Entrance>
 
+        {herMessage && (
+          <Entrance index={2}>
+            <Card style={{ marginTop: sp(5) }}>
+              <Row gap={1.5}>
+                <Icon name="quote.opening" size={13} color={palette.inkMuted} />
+                <Txt kind="caption" tone="muted">
+                  From her last call with Dhyaan · {ago(herMessage.at)}
+                </Txt>
+              </Row>
+              <Txt kind="title" style={{ marginTop: sp(2) }}>
+                “{herMessage.text}”
+              </Txt>
+              <Row gap={2} style={{ marginTop: sp(3) }}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() =>
+                    Linking.openURL(
+                      `sms:+16175550100&body=${encodeURIComponent('Got your message! ')}`,
+                    )
+                  }
+                >
+                  <Txt kind="label" tone="slate">Reply by text</Txt>
+                </Pressable>
+                <Pressable accessibilityRole="button" onPress={() => Linking.openURL('tel:+16175550100')}>
+                  <Txt kind="label" tone="slate">Call her back</Txt>
+                </Pressable>
+              </Row>
+            </Card>
+          </Entrance>
+        )}
+
         <SectionTitle>Today so far</SectionTitle>
         <Row gap={2}>
           <Tile
@@ -128,8 +163,54 @@ export default function Home() {
           />
         </Row>
 
+        {!!prompts?.length && (
+          <>
+            <SectionTitle>Worth mentioning when you call</SectionTitle>
+            <View style={{ gap: sp(3) }}>
+              {prompts.map((p) => (
+                <Row key={p} gap={2.5} style={{ alignItems: 'flex-start' }}>
+                  <View style={{ marginTop: 9, width: 5, height: 5, borderRadius: 3, backgroundColor: palette.slate }} />
+                  <Txt kind="body" style={{ flex: 1 }}>{p}</Txt>
+                </Row>
+              ))}
+            </View>
+            <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
+              So the call can be about her day — Dhyaan already handled “is she okay”.
+            </Txt>
+          </>
+        )}
+
         <SectionTitle>Where her day went</SectionTitle>
         <RoomTimeBar segments={segments ?? []} />
+
+        {visit && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() =>
+              Linking.openURL(
+                `sms:+16175550142&body=${encodeURIComponent(
+                  'Been too long since we saw Mom — when are people free to visit?',
+                )}`,
+              )
+            }
+            style={({ pressed }) => [{
+              marginTop: sp(6), paddingVertical: sp(3),
+              borderTopWidth: 1, borderTopColor: palette.line,
+              opacity: pressed ? 0.6 : 1,
+            }]}
+          >
+            <Row style={{ justifyContent: 'space-between' }}>
+              <Txt kind="caption" tone="muted">
+                {visit.source === 'photos' ? 'From your photo library' : 'Since your last visit'}
+              </Txt>
+              <Icon name="chevron.right" size={12} color={palette.inkMuted} />
+            </Row>
+            <Txt kind="body" style={{ marginTop: 2 }}>
+              Your last visit was {Math.round(visit.daysAgo / 7)} weeks ago · {visit.photoCount} photos
+              from that day. Text the family about the next one?
+            </Txt>
+          </Pressable>
+        )}
 
         {events?.[0] && (
           <Pressable

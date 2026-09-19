@@ -1,12 +1,14 @@
 // Timeline: reverse-chron day sections — room-time bar, the day's story, then events.
 import { router } from 'expo-router';
-import React from 'react';
-import { View } from 'react-native';
-import { EventRow, Hairline, RoomTimeBar, Screen, SectionTitle, Txt } from '@/components';
+import React, { useState } from 'react';
+import { Pressable, Share, View } from 'react-native';
+import { EventRow, Hairline, RoomTimeBar, Row, Screen, SectionTitle, Txt } from '@/components';
+import { Icon } from '@/components/icon';
+import { api } from '@/lib/api';
 import { dayOf } from '@/lib/format';
+import { palette , sp } from '@/theme/tokens';
 import { useLocationHistory, useSummaries, useTimeline } from '@/lib/hooks';
 import type { DaySummary, KEvent } from '@/lib/types';
-import { sp } from '@/theme/tokens';
 
 const RES = 'res_eleanor';
 
@@ -59,9 +61,34 @@ export default function Timeline() {
   }
   const summaryByDate = new Map((summaries ?? []).map((s) => [s.date_local, s]));
 
+  const [sharing, setSharing] = useState(false);
+  const shareWeek = async () => {
+    setSharing(true);
+    const letter = await api.sundayLetter();
+    setSharing(false);
+    if (letter) Share.share({ message: letter });
+  };
+
   return (
     <Screen>
-      <Txt kind="display">Her week</Txt>
+      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <Txt kind="display">Her week</Txt>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Share her week with the family"
+          onPress={shareWeek}
+          disabled={sharing}
+          style={{ paddingVertical: sp(2), opacity: sharing ? 0.5 : 1 }}
+        >
+          <Row gap={1}>
+            <Icon name="square.and.arrow.up" size={16} color={palette.slate} />
+            <Txt kind="label" tone="slate">{sharing ? 'Writing…' : 'Share'}</Txt>
+          </Row>
+        </Pressable>
+      </Row>
+      <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>
+        Share sends the week as a short letter to your family thread.
+      </Txt>
       {sections.length === 0 && (
         <Txt kind="body" tone="muted" style={{ marginTop: sp(4) }}>
           Nothing observed yet — the timeline fills in as Dhyaan notices meals, walks and rooms.

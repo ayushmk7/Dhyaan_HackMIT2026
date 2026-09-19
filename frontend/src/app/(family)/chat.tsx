@@ -62,6 +62,10 @@ export default function Chat() {
             {SUGGESTIONS.map((s) => (
               <Chip key={s} label={s} onPress={() => send(s)} />
             ))}
+            <Chip
+              label="✦ Turn the family group chat into a plan"
+              onPress={() => router.push('/(family)/plan')}
+            />
           </View>
         )}
 

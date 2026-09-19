@@ -1,5 +1,6 @@
 // API facade (TODO D1.1): screens import ONLY this. USE_MOCKS picks the in-memory
 // backend or the real client (http.ts) — flipping it changes zero call sites.
+import { draftOpeners, planFromThread, polishLetter, type FamilyPlan } from './ai';
 import { USE_MOCKS } from './config';
 import { httpApi } from './http';
 import { dhyaan } from './mock/dhyaan';
@@ -30,6 +31,24 @@ const mockApi = {
     return dhyaan.feedback(eventId, verdict, reason);
   },
   async chat(question: string): Promise<ChatMessage> { await wait(1100); return dhyaan.chat(question); },
+  async talkAbout(): Promise<string[]> {
+    // Live Claude over today's real observations when a key exists; mock heuristics otherwise.
+    const live = await draftOpeners(dhyaan.getEvents('res_eleanor', 20).map((e) => e.embedding_text));
+    if (live) return live;
+    await wait(400);
+    return dhyaan.talkAbout();
+  },
+  async latestMessage(): Promise<{ text: string; at: string } | null> { await wait(); return dhyaan.latestMessage(); },
+  async planFromThread(thread: string): Promise<FamilyPlan> {
+    return (await planFromThread(thread)) ?? dhyaan.planFromThread(thread);
+  },
+  async sundayLetter(): Promise<string> {
+    const draft = dhyaan.sundayLetterDraft();
+    return (
+      (await polishLetter(draft)) ??
+      `Eleanor’s week, from Dhyaan:\n\n${dhyaan.getSummaries('res_eleanor').map((s) => s.narrative).join(' ')}\n\n— sent from the Dhyaan family app`
+    );
+  },
   async simulate(kind: 'fall' | 'bathroom' = 'fall', residentId?: string): Promise<Alert> {
     await wait(150);
     return dhyaan.simulate(kind, residentId);

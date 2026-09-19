@@ -31,6 +31,7 @@ export default function FamilyLayout() {
       <Tabs.Screen name="chat" options={{ title: 'Ask', tabBarIcon: glyph('bubble.left') }} />
       <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: glyph('gearshape') }} />
       <Tabs.Screen name="timeline/[eventId]" options={{ href: null }} />
+      <Tabs.Screen name="plan" options={{ href: null }} />
     </Tabs>
   );
 }

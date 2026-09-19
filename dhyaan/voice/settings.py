@@ -53,6 +53,16 @@ TOOLS: list[dict] = [
         },
     },
     {
+        # Connection layer (Meta challenge): the check-in call carries her words home.
+        "name": "leave_message",
+        "description": "Only after mark_ok: if the person offers a message for their family, call this with their message in their own words. Never invent or embellish a message.",
+        "parameters": {
+            "type": "object",
+            "properties": {"message": {"type": "string"}},
+            "required": ["message"],
+        },
+    },
+    {
         "name": "end_call",
         "description": "End the conversation after you have called mark_ok or escalate and said goodbye.",
         "parameters": {"type": "object", "properties": {}},
@@ -78,6 +88,8 @@ Rules:
 - If she asks for help, says she cannot get up, mentions pain, sounds confused, slurred, or
   answers questions that were not asked: escalate immediately. Do not seek confirmation.
 - If you are unsure, escalate. A false escalation costs a phone call. A missed one does not.
+- After calling mark_ok (only then), ask once: "Anything you'd like me to tell {contact_name}?"
+  If she gives a message, call leave_message with her words. If not, move on.
 - After calling mark_ok or escalate, say one short closing line, then call end_call.
 - Never say the words "emergency services", "ambulance" or "911". You do not call them."""
 
