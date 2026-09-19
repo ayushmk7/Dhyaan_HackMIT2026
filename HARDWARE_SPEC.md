@@ -1,5 +1,5 @@
-# HARDWARE SPEC — Elder-Care Fall Sensing, Behavior & Indoor Location
-**HackMIT 2026 · 24 h · team of 4 · rev B**
+# HARDWARE SPEC — Dhyaan
+**Elder-care fall sensing, behavior & indoor location.** **HackMIT 2026 · 24 h · team of 4 · rev B**
 
 Three sensing jobs, one band:
 
@@ -7,7 +7,7 @@ Three sensing jobs, one band:
 |---|---|---|
 | Device | 1 wearable band per user | N wearables + CCTV + BLE beacons |
 | Falls | IMU cascade on-band (§6) | same |
-| **Location** | **BLE beacon + Wi-Fi RSSI → room, all day (§5)** | same, per resident |
+| **Location** | **BLE beacon + Wi-Fi RSSI → room, all day (§3)** | same, per resident |
 | Behavior | — | local VLM on CCTV: ate? walked? inactive? |
 | Action | Deepgram voice agent calls grandparent → Twilio calls adult child | same + staff dashboard |
 | Compute | MacBook Pro M5 Pro / 48 GB unified — local inference box + hub | same box, more streams |
@@ -1308,3 +1308,346 @@ Log every run as a row: `case, peak_g, ff_min_g, ff_dur_ms, orient_deg, std_g, g
 | Wi-Fi drop | kill AP 60 s → fall events spool and drain, 0 lost; location posts may be dropped |
 | Battery | 4 h continuous, no reset, with BLE + Wi-Fi scanning running |
 | B2B VLM | webcam → "person ate" / "person walked" within 30 s of the action |
+
+---
+
+## 11. Build Plan — 24 Hours, Hour by Hour
+
+Team of 4: **A** = firmware (sketch) · **B** = band Linux, BLE scan + uplink · **C** = hub, Deepgram/Twilio/Claude · **D** = beacons, VLM/CCTV, demo/deck. A and B pair on the board until it enumerates; nobody else touches it.
+
+### H0–H1 · Unbox, power, and the radio check
+
+1. Unbox. Confirm the **4 GB** variant and a **5 A e-marked USB-C cable**. A 480 mA phone cable browns out the board and you will waste two hours blaming software.
+2. Power via USB-C. Watch for the boot animation. **Cold boot to Linux is ~20 s** — the QRB2210 drives its ready/wake line to the STM32 about 20 s after the rails come up. Do not conclude it is dead at 10 s.
+3. Install **Arduino App Lab** for macOS: https://www.arduino.cc/en/software/#app-lab-section (it also ships pre-installed for SBC mode via HDMI + keyboard).
+4. **⚠ Run the §8.2 radio check NOW, at hour 1, not hour 12.** `bluetoothctl --version` · `hciconfig -a` · `sudo btmgmt info` · `sudo btmgmt find -l` · `iw dev wlan0 scan | head`. This is the single highest-risk unknown in the build (§13 item 1) and you want 5 hours of slack on it, not zero.
+5. **In parallel:** C scaffolds the FastAPI hub. D starts flashing beacons (step 12) and sets up the webcam. Neither blocks on the UNO Q.
+
+### H1–H3 · Enumerate, network, first light
+
+6. Connect in App Lab over USB-C. Confirm the board appears.
+7. Join Wi-Fi — **use a phone hotspot, forced to 5 GHz** (§3.1, §10.4):
+   ```bash
+   sudo nmcli d wifi connect "<SSID>" password "<PASSWORD>"
+   nmcli device                  # confirm wlan0 connected
+   ip -4 addr show wlan0         # note the IP; the hub needs it
+   ```
+   **MIT / eduroam is WPA2-Enterprise** and `nmcli d wifi connect` will not work:
+   ```bash
+   nmcli con add type wifi connection.id Eduroam wifi.ssid eduroam \
+     wifi.mode infrastructure wifi-sec.key-mgmt wpa-eap \
+     802-1x.eap peap 802-1x.phase2-auth mschapv2 802-1x.identity "<kerb>@mit.edu"
+   nmcli --ask con up Eduroam
+   ```
+   **Strongly prefer the hotspot.** Campus networks isolate clients, which silently breaks band→Mac HTTP. Ten minutes of hotspot setup beats three hours of "why does `curl` time out".
+8. Enable Network Mode for tether-free development (mDNS, UDP 5353; fall back to USB if a firewall eats it).
+9. **Blink test.** New App in App Lab → paste Blink into `sketch/sketch.ino` → run. Red LED blinks ⇒ **MCU toolchain works.**
+
+> **🚦 HARD GATE — H3 · BOARD.** If the board will not enumerate, join Wi-Fi, or flash Blink: **stop, execute §12.1 now, do not spend hour 4 on it.** The other three workstreams are untouched by design. Post it in the team channel, box one more 20-minute attempt, then move on permanently. Teams lose hackathons to sunk-cost debugging, not to bad ideas.
+
+### H1–H3 · Beacons, in parallel (D)
+
+10. Check out **4 × ESP32-S3-DevKitC-1** from the HackMIT hardware lab (Espressif is a sponsor). If they're gone, take any ESP32 — iBeacon is iBeacon.
+11. Arduino IDE → Preferences → Additional Boards Manager URLs: `https://espressif.github.io/arduino-esp32/package_esp32_index.json` → install **esp32 by Espressif Systems** → Library Manager → **NimBLE-Arduino**.
+12. `uuidgen` once. Put that UUID in `SITE_UUID` (§3.4) and in `config.json`. Flash four boards with `ROOM_MINOR` = 1, 2, 3, 4. **Label each board with a marker before unplugging it** — four identical black PCBs in a bag is a 45-minute mistake.
+13. Verify from a Mac with `rssi_monitor.py` (§8.3) before you go anywhere near the UNO Q. All four minors visible ⇒ **beacons are done and de-risked by hour 3.**
+
+### H3–H5 · Sensor chain (A)
+
+14. Power down. Chain **UNO Q QWIIC → Movement J1**, **Movement J2 → Buttons J1**, **Buttons J2 → Buzzer J1**. Qwiic is keyed and cannot go in backwards. Power up.
+15. Libraries: add `Arduino_Modulino` through the App Lab UI (it rewrites `sketch.yaml` automatically), or:
+    ```bash
+    arduino-cli lib install "Arduino_Modulino"     # v0.9.1; pulls Arduino_LSM6DSOX etc.
+    ```
+16. **I²C scan first, always:**
+    ```cpp
+    #include <Wire.h>
+    void setup() {
+      Serial.begin(); Wire1.begin();          // Wire1 = Qwiic = I2C4 on UNO Q
+      for (uint8_t a = 1; a < 127; a++) {
+        Wire1.beginTransmission(a);
+        if (Wire1.endTransmission() == 0) { Serial.print("found 0x"); Serial.println(a, HEX); }
+      }
+    }
+    void loop() {}
+    ```
+    **Expect `0x6A` (Movement), `0x3E` (Buttons), `0x1E` (Buzzer)** — the scanner prints *bus* addresses, which are half the library addresses for the STM32-based nodes (§4.4). Do not "fix" a working chain because you expected 0x7C and 0x3C.
+    - Nothing found → you used `Wire` instead of `Wire1`. Most common UNO Q + Modulino mistake, by a mile.
+    - Some missing → reseat the Qwiic cables; they unlatch easily.
+17. **`Hello sensor`** — print x, y, z at 1 Hz with the stock library:
+    ```cpp
+    #include <Arduino_Modulino.h>
+    ModulinoMovement movement;
+    void setup() { Serial.begin(); Modulino.begin(); movement.begin(); }
+    void loop() {
+      if (movement.available()) {
+        movement.update();
+        Serial.print(movement.getX()); Serial.print(",");
+        Serial.print(movement.getY()); Serial.print(",");
+        Serial.println(movement.getZ());
+      }
+      delay(1000);
+    }
+    ```
+    Flat on a table: one axis ≈ **1.00 g**, the others ≈ 0. **If it reads ≈0.25 g you already hit the ±4 g scaling bug — go read §6.3.**
+18. Buzzer `buzzer.tone(2000, 200);` · Buttons `buttons.update(); buttons.isPressed('A'); buttons.setLeds(true,false,false);`
+
+> **🚦 HARD GATE — H5 · IMU.** Not printing sane g values? Swap the Qwiic cable, then the Modulino. Still dead → run the build on §12.1's iPhone feed and keep debugging in the background.
+
+### H5–H6 · BLE scanning on the band (B)
+
+19. `pip3 install bleak`, copy `rssi_monitor.py` to the board, run it. **All four beacons visible from the UNO Q ⇒ localization is unblocked.**
+20. Wrap it as a scan loop: 3 s `BleakScanner`, filter on `SITE_UUID`, median RSSI + `n` per minor, emit `fallband.rfscan.v1` (§5.6).
+
+> **🚦 HARD GATE — H6 · BLE.** If BLE scanning on the UNO Q is not working — no `hci0`, `btmgmt find` empty, or `bleak` throwing — **stop and pick a tier from §12.3 right now:**
+> - **Tier 2:** Wi-Fi-RSSI-only room classification. Works, but see §10.4 — it will be unstable in the venue, so say so honestly.
+> - **Tier 1b (better):** an **iPhone running a beacon-scanner app** (or the §12.1 web page extended with Web Bluetooth) posting **the same `fallband.rfscan.v1` schema to the same endpoint**. The hub, the localizer and the demo are untouched.
+> Either way: **decide at hour 6 and move on.** Do not let RF localization eat the fall detector's time — falls are the core product.
+
+### H6–H10 · Detector (A) — the core hours
+
+21. Reconfigure the IMU to **208 Hz / ±16 g** (§6.3). Verify: resting magnitude 1.00 g, and a hard table slap now reads **> 4 g** instead of pinning at 4.0.
+22. 512-sample ring buffer + fixed-period 208 Hz loop (`micros()` deadline, not `delay()`).
+23. `IDLE → FREEFALL → IMPACT`, just `Serial.println` the transitions. Drop the board onto a cushion **from 30 cm** and watch it fire.
+24. Add `POST_IMPACT_STILL` with orientation + σ.
+25. Add `CONFIRMED`, buzzer pattern, button cancel, `REARM`.
+26. Wire `Bridge.notify("fall_event", ...)`. Confirm Python receives it.
+
+### H6–H10 · Uplink and hub (B + C, parallel)
+
+27. `python/main.py`: `Bridge.provide()` handlers for `fall_event` / `impact_only` / `fall_cancelled`; JSON per §5.5 **with the latest room fix and its `age_ms` attached**; `requests.post` with 3-retry + spool; the 20 s BLE scan timer; the 60 s Wi-Fi scan; the 30 s telemetry timer.
+28. C builds the hub: FastAPI `:8000`, the five §5.4 endpoints, SQLite, the localizer (**`TECHNICAL_PRD.md §7`**), and the escalation FSM (30 s hold → Deepgram outbound **with room context in the prompt** → Claude classifies the transcript → Twilio if `not_okay` or `unclear`).
+29. **Integrate with `curl` before the band is ready** — this decouples C from A entirely:
+    ```bash
+    curl -X POST http://192.168.1.42:8000/v1/events    -H 'Content-Type: application/json' -d @fixtures/fall_event.json
+    curl -X POST http://192.168.1.42:8000/v1/location  -H 'Content-Type: application/json' -d @fixtures/rfscan.json
+    ```
+
+### H10–H13 · First real end-to-end (all)
+
+30. Band → hub → Deepgram → Twilio, with a real phone ringing **and the room named in the call**. **Get this working before you sleep.** Everything after is polish.
+31. Auto-start on boot so the band survives a battery swap:
+    ```bash
+    arduino-app-cli properties set default user:fallband
+    arduino-app-cli app list
+    arduino-app-cli app logs /home/arduino/ArduinoApps/fallband -f
+    ```
+
+### H13–H15 · Sleep in shifts
+
+32. Two down, two up. Zero sleep produces a broken demo and four people who cannot answer questions.
+
+### H15–H18 · Calibration (A + B)
+
+33. Run **§7.2** (IMU) in full. Log everything to CSV.
+34. Run **§8.4** (RF site survey) in full: measure `tx_power_1m` ×4, 30 s fingerprint walk per room, hallways labelled `transit`, verify walk-through.
+35. Run §10.2 (12 fall cases) and §10.3 (8 RF cases). **Fix by tuning `config.json` only — no sketch edits after hour 18 unless something is genuinely broken.**
+
+### H18–H21 · B2B side (D + C)
+
+36. Webcam → 0.2 Hz frame sampler → local VLM → `{ate, walked, inactive_minutes}` → `/v1/events` as `inactivity_alert`.
+37. Staff dashboard: bands, **room timeline per resident**, and the camera events on one page. The room timeline is the most visually convincing artifact you have — it is a whole day of a person's life in one strip.
+
+### H21–H23 · Harden and re-survey in the demo space
+
+38. **Re-run the §8.4 survey in the actual demo area** (§10.4 item 3). Tape out the floor plan, place the four beacons, 25 minutes. A survey from the practice corner will not transfer.
+39. Strap-down: mount board + power bank on the forearm, route the Qwiic chain so nothing snags. Tape everything. **Tape is a legitimate engineering material at hour 21.**
+40. Kill Wi-Fi mid-demo → confirm spool-and-drain. Unplug a beacon → confirm `beacon_offline` and **no room shift**. Reboot the band → confirm auto-start.
+41. Charge every battery, every phone, every beacon's wall wart plugged in and labelled.
+
+### H23–H24 · Rehearse and freeze
+
+42. Run the demo **three times end to end, on the real network and in the real space.**
+43. Prepare the honest slide: what's real (detector, room tracking, calls, VLM), what's staged (the fall is a cushion drop; the "home" is taped out), what's next (nRF52 band, coin-cell beacons).
+44. Freeze the code. Tag it. Stop.
+
+---
+
+## 12. Fallback Plan
+
+**The whole system is designed so every sensor is a replaceable event source.** The hub, escalation FSM, localizer, Deepgram, Claude, Twilio, VLM and dashboard consume `fallband.event.v1` and `fallband.rfscan.v1` over HTTP. Swap the producer, change nothing else.
+
+### 12.1 Fall fallback, Tier 1 — iPhone (best, ~25 min)
+
+The iPhone has a 3-axis accelerometer any browser can read over HTTPS, with no app and no Xcode. Serve this from the hub at `/fallback` and open it on the phone.
+
+```html
+<!DOCTYPE html><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fallband Fallback</title>
+<body style="font:16px system-ui;padding:2rem">
+<button id="go" style="font-size:1.5rem;padding:1rem 2rem">Enable motion</button>
+<pre id="log"></pre>
+<script>
+const HUB  = location.origin, RATE = 60;      // iOS Safari caps DeviceMotion near 60 Hz
+const RING = [];
+const CFG  = { ff_g:0.40, ff_min_ms:80, impact_soft_g:2.6,
+               orient_deg:45, still_std_g:0.12, still_ms:2000 };
+let state="IDLE", tFF=0, tImpact=0, tStill=0, peak=0, gpre=[0,0,-1], path="NONE";
+const log = m => document.getElementById('log').textContent =
+                 m + "\n" + document.getElementById('log').textContent.slice(0,800);
+
+document.getElementById('go').onclick = async () => {
+  // iOS 13+ REQUIRES this, and it MUST be inside a user gesture.
+  if (typeof DeviceMotionEvent.requestPermission === 'function') {
+    if (await DeviceMotionEvent.requestPermission() !== 'granted') { alert('denied'); return; }
+  }
+  window.addEventListener('devicemotion', onMotion);
+  log('armed @ ' + RATE + ' Hz');
+};
+
+function onMotion(e) {
+  const g = e.accelerationIncludingGravity;
+  if (!g || g.x === null) return;
+  // iOS reports m/s^2. Convert to g so the schema matches the band EXACTLY.
+  const ax=g.x/9.80665, ay=g.y/9.80665, az=g.z/9.80665;
+  const mag=Math.hypot(ax,ay,az), t=performance.now();
+  RING.push({t,ax,ay,az,mag}); if (RING.length>400) RING.shift();
+
+  if (state==="IDLE") {
+    const k=0.02; gpre=[gpre[0]+k*(ax-gpre[0]),gpre[1]+k*(ay-gpre[1]),gpre[2]+k*(az-gpre[2])];
+    if (mag<CFG.ff_g) { if(!tFF) tFF=t; else if (t-tFF>=CFG.ff_min_ms) state="FREEFALL"; }
+    else { tFF=0; if (mag>CFG.impact_soft_g){state="IMPACT";path="SOFT_FALL";peak=mag;tImpact=t;} }
+  } else if (state==="FREEFALL") {
+    if (t-tFF>400) {state="IDLE";tFF=0;}
+    else if (mag>2.2) {state="IMPACT";path="FREEFALL_IMPACT";peak=mag;tImpact=t;}
+  } else if (state==="IMPACT") {
+    peak=Math.max(peak,mag); if (t-tImpact>200){state="STILL";tStill=t;}
+  } else if (state==="STILL") {
+    if (t-tStill>=CFG.still_ms) {
+      const w=RING.filter(s=>s.t>=tStill), n=w.length||1;
+      const mu=w.reduce((a,s)=>a+s.mag,0)/n;
+      const sd=Math.sqrt(w.reduce((a,s)=>a+(s.mag-mu)**2,0)/n);
+      const gp=[w.reduce((a,s)=>a+s.ax,0)/n,w.reduce((a,s)=>a+s.ay,0)/n,w.reduce((a,s)=>a+s.az,0)/n];
+      const nm=v=>{const l=Math.hypot(...v)||1;return v.map(x=>x/l);};
+      const A=nm(gpre),B=nm(gp);
+      const deg=Math.acos(Math.max(-1,Math.min(1,A[0]*B[0]+A[1]*B[1]+A[2]*B[2])))*57.2957795;
+      if (sd<CFG.still_std_g && (deg>CFG.orient_deg || path==="FREEFALL_IMPACT")) send(peak,deg,sd);
+      state="REARM"; setTimeout(()=>{state="IDLE";tFF=0;peak=0;},10000);
+    }
+  }
+}
+
+function send(peak,deg,sd) {
+  fetch(HUB+"/v1/events",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      schema:"fallband.event.v1", event_id:crypto.randomUUID(),
+      device_id:"band-fallback-iphone",      // ONLY field that differs from the real band
+      user_id:"grandparent-nancy",
+      fw:{sketch:"fallback-web-1.0.0",python:"fallback-web-1.0.0"},
+      event:"fall_suspected", ts:new Date().toISOString(),
+      ts_monotonic_ms:Math.round(performance.now()),
+      confidence:Math.min(1,0.35*Math.min(peak/6,1)+0.25*Math.min(deg/90,1)
+                           +0.2*(1-Math.min(sd/0.3,1))+0.2),
+      detector:{ path, impact_peak_g:+peak.toFixed(2), orientation_change_deg:+deg.toFixed(1),
+                 post_impact_accel_std_g:+sd.toFixed(3), sample_rate_hz:RATE, accel_fs_g:8,
+                 freefall_min_g:null, freefall_duration_ms:null, jerk_peak_g_per_s:null,
+                 impact_duration_ms:null, post_impact_still_ms:CFG.still_ms,
+                 post_impact_gyro_max_dps:null },
+      location:{ room:null, room_confidence:0, source:"none", age_ms:null, beacons:[] },
+      window:{ pre_ms:1000, post_ms:3000, rate_hz:RATE, unit:"g",
+               ax:RING.map(s=>+s.ax.toFixed(3)), ay:RING.map(s=>+s.ay.toFixed(3)),
+               az:RING.map(s=>+s.az.toFixed(3)) },
+      grace:{seconds:30,cancelled:false,cancel_source:null},
+      battery:{source:"phone",level_pct:null}, net:{rssi_dbm:null,ssid:null}
+    })});
+  log("FALL sent  peak="+peak.toFixed(2)+"g  orient="+deg.toFixed(0)+"°");
+}
+</script>
+```
+
+**Three things that will trip you up:**
+1. **`DeviceMotionEvent.requestPermission()` is required on iOS 13+ and must be called from inside a user gesture.** Auto-calling it on page load silently fails.
+2. **It requires a secure context.** `http://` on a LAN IP will not deliver motion events. Serve `/fallback` over HTTPS with a self-signed cert, or tunnel it — `ngrok http 8000` or `cloudflared tunnel --url http://localhost:8000` — and open the https URL. **Set this up at hour 3, not hour 23.**
+3. **iOS reports m/s², the band reports g.** The `/9.80665` divide is what makes the two producers schema-identical. Get it wrong and every threshold is off by 9.8×.
+
+Demo it by dropping the phone onto the same cushion. The story becomes "our detection algorithm, running on a phone tonight and on the band in the lab, detected a fall". Smaller claim, honest one.
+
+### 12.2 Fall fallback, Tier 2 — replay a capture (5 min, last resort)
+
+```bash
+curl -s -X POST http://localhost:8000/v1/events \
+  -H 'Content-Type: application/json' -d @fixtures/fall_event_carpet_4g.json
+```
+Bind it to a hotkey. **If you use this on stage, say so out loud.** "This is a replayed capture from our calibration set" is a fine sentence. Pretending a `curl` is a fall is not, and judges catch it.
+
+### 12.3 RF localization degradation ladder
+
+**The governing rule: never a confident wrong room.** A wrong room is worse than no room, because a responder acts on it. Every tier below either produces a correct fix or produces `location_unknown`.
+
+| Tier | Source | Trigger to drop to it | Accuracy | What the hub reports | What the call says |
+|---|---|---|---|---|---|
+| **1** | **BLE beacons + Wi-Fi** | *(normal)* | room-level, `conf` 0.7–0.95 | `room`, `source: "ble_fingerprint"` | "Nancy fell **in the bathroom**" |
+| **1b** | **iPhone beacon scanner** posting the same `fallband.rfscan.v1` | UNO Q BLE dead at **H6 gate** | same as tier 1 | `source: "ble_fingerprint_phone"` | same |
+| **2** | **Wi-Fi RSSI only** | ≥ 3 beacons missing, or no BLE adapter | **coarse, unstable in a crowded venue (§10.4)** | `room` **only if `conf ≥ 0.55`**, else `location_unknown`; `source: "wifi_fingerprint"`, `degraded: true` | "Nancy fell — **probably** the kitchen" or no room at all |
+| **3** | **Manual zone button** | no usable RF at all | exact, but stale | `source: "manual"` + `age_ms`; **expires after 30 min** | "Nancy fell — last known zone **bedroom**, tagged 12 minutes ago" |
+| **4** | **`location_unknown`** | everything above failed or `conf < 0.55` | none | `room: null`, `source: "none"` | "Nancy fell — **location unknown**" |
+
+**Tier 3 mechanics:** hold Modulino Button **C** for 2 s to cycle the zone (LEDs blink 1×/2×/3×/4× for kitchen/bathroom/bedroom/door); the band POSTs `source: "manual"`. It is a five-line addition to the sketch and a genuine accessibility feature, not just a fallback — a resident who *can* say where they are should be able to.
+
+**Rules the hub must enforce, in code, not in a comment:**
+- `room_confidence < room_confidence_min` (0.55) → **emit `location_unknown`.** Never "best guess".
+- `age_ms > 60 000` → report the room **with its age**, flagged stale. Never silently.
+- A missing beacon is **dropped from the feature vector**, never imputed as −100 dBm (§3.5, test R5).
+- Tier 2 and 3 fixes carry `"degraded": true` and the UI renders them visibly differently. The person dispatching must be able to see, at a glance, how much to trust the room.
+
+**Every tier still calls.** Localization degrading never blocks or delays a fall alert — the room is context attached to the call, not a precondition for it. If the localizer throws, the fall event ships with `location: null` and the escalation runs on schedule.
+
+---
+
+## 13. Open Questions / Unverified
+
+Nothing here is confirmed by vendor documentation. Do not treat any of it as fact.
+
+| # | Item | Status |
+|---|---|---|
+| 1 | **BLE scanning on the shipped UNO Q Debian image.** The WCN3980 hardware and BT 5.1 / BLE certification are verified (datasheet §2.2.2, §13.1), but whether the shipped BlueZ + firmware exposes LE scanning cleanly to `bleak` is **not documented anywhere I could find**. **This is the single highest-risk unknown in the build.** Run §8.2 at hour 1. Gate at H6. | **`[UNVERIFIED]` — highest risk** |
+| 2 | **BLE advertising *from* the UNO Q.** Not needed by this design (the band scans, the beacons advertise) but also unverified, and it closes off a band-as-beacon variant. | **`[UNVERIFIED]`** |
+| 3 | **Simultaneous Wi-Fi + BLE performance on a shared PCB antenna.** The datasheet confirms the antenna is shared; it does not quantify the coexistence penalty. Expect dropped adverts when Wi-Fi is busy on 2.4 GHz. Mitigation: force the hotspot to 5 GHz. | **`[UNVERIFIED]` — mitigate** |
+| 4 | **UNO Q current draw.** Arduino publishes no typical/idle/peak figure anywhere — only "use ≥3 A". Every mA in §4.3 for the QRB2210, Wi-Fi, BLE scan, Wi-Fi scan, eMMC and regulator losses is an **estimate**. **Measure with a USB-C power meter at hour 2 and rewrite that table.** Battery runtime follows directly. | **`[UNVERIFIED]` — measure** |
+| 5 | **BLE/Wi-Fi scan burst currents specifically** (+70 mA, +200 mA). Estimates. Measure with the same power meter by toggling the scan loop. The *conclusion* (RF costs ~3 % of the budget) is robust to being wrong by 2× because the A53 baseline dominates. | **`[UNVERIFIED]` — measure** |
+| 6 | **Battery operation is not an Arduino-documented use case.** Docs list USB-C 5 V, the 5 V pin, and VIN 7–24 V. `VBAT` (3.8 V, JMISC) is explicitly *"reserved for system design and future features"*. A USB power bank is electrically just USB-C VBUS and should be fine, but Arduino does not bless a portable configuration. | **`[UNVERIFIED]`** |
+| 7 | **Power-bank auto-shutoff at low current.** Model-specific, rarely in the spec sheet, and Anker publishes nothing either way. Test with a 20-minute untouched idle soak at hour 3. | **`[UNVERIFIED]`** |
+| 8 | **ESP32-S3-DevKitC-1 board price and HackMIT lab stock.** The WROOM-1-N8 *module* is $5.66 @1 at DigiKey (verified). The DevKitC-1 *board* price and whether the lab actually stocks them are **not confirmed** — HackMIT publishes no hardware inventory (hackmit.org says only *"we will provide hardware that you can borrow"*; `/hardware` and `/faq` 404, no inventory repo in github.com/orgs/hackmit). **Ask the hardware lab at check-in before you count on anything.** | **`[UNVERIFIED]` — ask on arrival** |
+| 9 | **Purpose-built iBeacon puck prices** (Blue Charm BC021, MINEW, Estimote). Vendor product pages returned 404 and the web-search budget was exhausted. Typical street price is $15–30 each but I did not confirm it. Irrelevant if you use ESP32s. | **`[UNVERIFIED]`** |
+| 10 | **Beacon battery-life figures** (~6 months at 100 ms, ~2 years at 500 ms on CR2032). Derived from typical nRF52 advertising current, not measured and not vendor-quoted. | **`[UNVERIFIED]` — estimate** |
+| 11 | **PMIC part number conflicts inside Arduino's own docs.** The power-specification tutorial says **PM4125**; the user manual says **PM4145**. Doesn't affect the build — flagged because it means those pages weren't cross-checked, so treat other details there with mild suspicion. | **doc inconsistency** |
+| 12 | **Modulino Buttons is listed SOLD OUT** at store-usa.arduino.cc as of 2026-09-19. Plan the §1.4 substitution (Plug and Make Kit, or a plain switch on a JDIGITAL pin) **before** you need it. | **verified, but a supply risk** |
+| 13 | **Whether `ModulinoMovement` survives an external `CTRL1_XL` rewrite.** The library caches nothing visible, but I did not test that `available()` behaves at 208 Hz afterwards. §6.8 bypasses it with raw register reads for exactly this reason. | **`[UNVERIFIED]` — test at H5** |
+| 14 | **Sustained 208 Hz over the 100 kHz Modulino bus with three nodes.** Arithmetic says ~20 % utilisation. Not measured. If `loop_jitter_ms_p95 > 5 ms`, try `Wire1.setClock(400000)` *after* `Modulino.begin()` and re-scan the bus. | **`[UNVERIFIED]` — measure** |
+| 15 | **Exact `sketch.yaml` schema / UNO Q FQBN string.** Docs say it's mandatory with a sketch and that App Lab writes it when you add a library through the UI. I did not verify the literal FQBN. **Add libraries through the UI and never hand-edit it.** | **`[UNVERIFIED]`** |
+| 16 | **`Bridge.notify()` throughput** with a ~40 kB `window` payload. May need chunking or dropping `window` under pressure. | **`[UNVERIFIED]` — test at H10** |
+| 17 | **Fall thresholds (§6.4) and RF constants (§9).** These come from physics and published ranges, not from measurement on this hardware in this space. **They are starting points. §7 and §8 are not optional.** | **by design — must be tuned** |
+| 18 | **MIT / eduroam client isolation.** Whether the campus network passes band→Mac HTTP is unknown and policy-dependent. **Bring a phone hotspot and force it to 5 GHz. This is the single most likely cause of a dead demo.** | **`[UNVERIFIED]` — bring hotspot** |
+| 19 | **Wi-Fi fingerprint stability in the venue.** §10.4 argues it will be poor with ~1000 phones and hundreds of transient hotspot BSSIDs. That's reasoning from first principles, not measurement. **Measure it on arrival** — `iw dev wlan0 scan | grep -c SSID` twice, 5 minutes apart, and compare. Either way, demo on beacons. | **`[UNVERIFIED]` — measure on site** |
+| 20 | **Prices and stock move.** Every figure carries a URL and the date 2026-09-19. Re-check before ordering. | **verify live** |
+
+### Primary sources
+
+| Doc | URL |
+|---|---|
+| UNO Q hardware overview | https://docs.arduino.cc/hardware/uno-q |
+| UNO Q user manual | https://docs.arduino.cc/tutorials/uno-q/user-manual/ |
+| UNO Q power specifications | https://docs.arduino.cc/tutorials/uno-q/power-specification/ |
+| **UNO Q datasheet (radio module, RED/FCC power tables)** | https://docs.arduino.cc/resources/datasheets/ABX00162-ABX00173-datasheet.pdf |
+| UNO Q full pinout | https://docs.arduino.cc/resources/pinouts/ABX00162-full-pinout.pdf |
+| UNO Q schematics | https://docs.arduino.cc/resources/schematics/ABX00162-schematics.pdf |
+| UNO Q 4 GB store page | https://store-usa.arduino.cc/products/uno-q-4gb |
+| Modulino Movement product page | https://docs.arduino.cc/hardware/modulino-movement/ |
+| Modulino Movement datasheet (ABX00101) | https://docs.arduino.cc/resources/datasheets/ABX00101-datasheet.pdf |
+| Modulino Buttons datasheet (ABX00110) | https://docs.arduino.cc/resources/datasheets/ABX00110-datasheet.pdf |
+| Modulino Buzzer datasheet (ABX00108) | https://docs.arduino.cc/resources/datasheets/ABX00108-datasheet.pdf |
+| Modulino Pixels datasheet (ABX00109) | https://docs.arduino.cc/resources/datasheets/ABX00109-datasheet.pdf |
+| Arduino_Modulino library (v0.9.1) | https://github.com/arduino-libraries/Arduino_Modulino |
+| Arduino_LSM6DSOX library (v1.1.2) | https://github.com/arduino-libraries/Arduino_LSM6DSOX |
+| ST LSM6DSOX register driver | https://github.com/STMicroelectronics/lsm6dsox/blob/master/lsm6dsox_reg.h |
+| App Lab — anatomy of an App | https://docs.arduino.cc/software/app-lab/apps/about-apps/ |
+| App Lab — Bricks | https://docs.arduino.cc/software/app-lab/bricks/about-bricks/ |
+| App Lab — `arduino-app-cli` reference | https://docs.arduino.cc/software/app-lab/cli/commands/ |
+| Arduino_RouterBridge library | https://github.com/arduino-libraries/Arduino_RouterBridge |
+| Zephyr core boards-manager index | https://downloads.arduino.cc/packages/package_zephyr_index.json |
+| SparkFun Qwiic standard (connector + colour order) | https://www.sparkfun.com/qwiic |
+| ESP32-S3-DevKitC-1 user guide | https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s3/esp32-s3-devkitc-1/user_guide.html |
+| arduino-esp32 boards index | https://espressif.github.io/arduino-esp32/package_esp32_index.json |
+| NimBLE-Arduino | https://github.com/h2zero/NimBLE-Arduino |
+| bleak (Python BLE) | https://github.com/hbldh/bleak |
+| **Localization algorithms (k-NN, HMM, events)** | **`TECHNICAL_PRD.md` §7** |
