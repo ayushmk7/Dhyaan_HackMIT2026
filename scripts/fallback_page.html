@@ -1,0 +1,21 @@
+<!-- B9.1/B9.3 — the last-resort demo path. Open this file in a browser on the demo
+laptop (with the voice app running on :8000). One button, one job: acknowledge the
+open alert so the FSM advances even if Twilio AND Deepgram are dead.
+Decision tree (B9.4, printed next to the laptop): Twilio call fails → play
+test_audio/fallback_agent.wav on speakers → press this button. -->
+<!doctype html>
+<meta charset="utf-8">
+<title>Dhyaan — demo fallback</title>
+<body style="font-family: Georgia, serif; background:#F6F2E9; color:#221F19; display:grid; place-items:center; min-height:95vh">
+  <div style="max-width:28rem; text-align:center">
+    <h1 style="font-weight:900">Dhyaan demo fallback</h1>
+    <p>Acknowledges the open alert directly against the FSM — the same transition a
+    family member's "I've got her" makes. Use only if telephony is down.</p>
+    <button style="font-size:1.4rem; padding:1rem 2rem; background:#C0431F; color:#fff; border:0; border-radius:12px; cursor:pointer"
+      onclick="fetch('http://localhost:8000/demo/force_ack',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({alert_id:document.getElementById('a').value||'alr_demo',by:'demo-fallback'})}).then(r=>r.json()).then(j=>document.getElementById('out').textContent=JSON.stringify(j))">
+      Acknowledge the alert
+    </button>
+    <p><input id="a" placeholder="alert id (optional)" style="padding:.5rem; width:60%"></p>
+    <pre id="out" style="text-align:left"></pre>
+  </div>
+</body>

@@ -1,0 +1,9 @@
+# dhyaan voice slice (lane B). Python 3.12.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+websockets>=13
+twilio>=9
+httpx>=0.27
+python-multipart>=0.0.9
+pytest>=8
+pytest-asyncio>=0.24

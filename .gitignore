@@ -1,0 +1,4 @@
+.venv-voice/
+__pycache__/
+.pytest_cache/
+.env
