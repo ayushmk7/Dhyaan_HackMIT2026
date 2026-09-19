@@ -372,6 +372,19 @@ CREATE TABLE contacts (                          -- the escalation ladder, order
   UNIQUE(resident_id, ladder_order)
 );
 
+-- Bands are physical devices that get paired, swapped and re-paired. The mapping is NOT a column
+-- on residents: a band outlives a resident's tenancy in B2B, and a resident may swap bands mid-stay.
+CREATE TABLE bands (
+  id            TEXT PRIMARY KEY,                -- band_a3f2, printed on the strap
+  resident_id   TEXT REFERENCES residents(id),   -- NULL = unpaired, on the shelf
+  paired_at     TEXT,
+  last_seen_at  TEXT,                            -- updated by every heartbeat; drives band_offline
+  battery_pct   INTEGER,
+  thresholds_rev INTEGER NOT NULL DEFAULT 1,     -- hub notices a band running stale calibration
+  firmware      TEXT
+);
+CREATE INDEX idx_bands_resident ON bands(resident_id) WHERE resident_id IS NOT NULL;
+
 CREATE TABLE events (
   id             TEXT PRIMARY KEY,               -- ULID, evt_...
   schema_version INTEGER NOT NULL DEFAULT 1,
@@ -616,7 +629,7 @@ On trigger, the MCU sets a GPIO the Linux side watches; the Linux side starts th
 | on `no-answer` | `RETRY_RESIDENT` | Backend | **Exactly one** retry, 15 s after the first attempt ends, `Timeout=25` |
 | `T+~120 s` | `CALLING_CONTACT_1` | Backend | Call `contacts` where `ladder_order = 1`. Different agent prompt (§5.5). Simultaneously: push with `interruptionLevel: "timeSensitive"` + full-screen in-app alert |
 | `+60 s` unacked | `CALLING_CONTACT_2` | Backend | `ladder_order = 2`. Contact 1 is **not** hung up on — we place a second, parallel call |
-| `+60 s` unacked | `ESCALATED_FINAL` | Backend | B2B: ring the nurse station + top of Marcus's triage list. B2C: SMS to all contacts with **911 guidance text** and the resident's address. **We do not dial 911.** |
+| `+60 s` unacked | `ESCALATED_FINAL` | Backend | B2B: ring the nurse station + top of Marcus's triage list. B2C: **voice call** to every remaining contact with **911 guidance** and the resident's address, plus a push (not an SMS — A2P 10DLC gates SMS and will not clear in 24 h; §5.8). **We do not dial 911.** |
 | any time | `ACKNOWLEDGED` | Any human | "I called her" / `mark_ok` / staff tap → alert `state_changed_at` set, ladder halts |
 
 Two timing decisions worth defending to a judge:
@@ -710,11 +723,20 @@ Then, by branch:
 
 She says yes → `escalate_acknowledged` event, ladder stops, push confirms in her app.
 
-**Final step (B2C), SMS not voice:**
+**Final step (B2C) — a voice call to every remaining contact, plus a push. Not an SMS.**
 
-> "Kestrel: Eleanor may have fallen at 3:42 PM and nobody has been able to reach her. Nobody has
-> acknowledged. If you cannot reach her, call 911 and give them this address: 14 Elm St, Apt 3B,
-> Cambridge MA. Kestrel does not call emergency services."
+An earlier draft of this section sent an SMS here. It cannot: A2P 10DLC registration gates
+application-to-person SMS over a long code and takes days, not hours
+([A2P 10DLC](https://www.twilio.com/docs/messaging/compliance/a2p-10dlc)), while outbound **voice** is
+unaffected. The ladder is voice-only end to end, and the same text is spoken by Aura-2 and mirrored
+into the app as a push + a persistent alert card:
+
+> "This is Kestrel calling about Eleanor. She may have fallen at 3:42 PM, and nobody has been able to
+> reach her or acknowledge the alert. If you cannot reach her, call 911. Her address is 14 Elm Street,
+> apartment 3B, Cambridge, Massachusetts. Kestrel does not call emergency services."
+
+The address is spoken twice, slowly, and the call does not hang up until it has been said the second
+time — a person writing down an address under stress needs the repeat.
 
 ### 4.6 Tool definitions given to the voice agent
 
