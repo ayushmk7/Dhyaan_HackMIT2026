@@ -4,8 +4,12 @@ import React from 'react';
 import { ColorValue, Text } from 'react-native';
 import { palette } from '@/theme/tokens';
 
-const glyph = (g: string) =>
-  ({ color }: { color: ColorValue }) => <Text style={{ fontSize: 18, color }}>{g}</Text>;
+const glyph = (g: string) => {
+  function TabGlyph({ color }: { color: ColorValue }) {
+    return <Text style={{ fontSize: 18, color }}>{g}</Text>;
+  }
+  return TabGlyph;
+};
 
 export default function FamilyLayout() {
   return (

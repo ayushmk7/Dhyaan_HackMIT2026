@@ -1,5 +1,5 @@
 // The escalation ladder. Order matters — this is who Kestrel calls, in order,
-// when she doesn't answer.
+// when she doesn’t answer.
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
@@ -46,7 +46,7 @@ export default function Contacts() {
     <Screen>
       <Txt kind="title">Who should Kestrel call?</Txt>
       <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
-        If {residentName} doesn't answer, Kestrel calls these people — in this order.
+        If {residentName} doesn’t answer, Kestrel calls these people — in this order.
       </Txt>
 
       <View style={{ marginTop: sp(5), gap: sp(3) }}>
@@ -84,7 +84,7 @@ export default function Contacts() {
 
       {contacts.length === 1 && !adding && (
         <Txt kind="caption" tone="warn" style={{ marginTop: sp(3) }}>
-          If {contacts[0].name.split(' ')[0]} doesn't pick up, who should we call?
+          If {contacts[0].name.split(' ')[0]} doesn’t pick up, who should we call?
         </Txt>
       )}
 

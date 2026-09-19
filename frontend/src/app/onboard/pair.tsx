@@ -29,7 +29,7 @@ export default function Pair() {
 
   return (
     <Screen>
-      <Txt kind="title">Pair {residentName}'s band</Txt>
+      <Txt kind="title">Pair {residentName}’s band</Txt>
       <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
         The band shows a 6-digit code on its light — it will also read the code aloud.
         Type it here.

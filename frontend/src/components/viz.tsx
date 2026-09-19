@@ -1,6 +1,6 @@
 // Kestrel's information graphics: event rows, the room-time bar, the live
 // escalation ladder, and 14-day sparklines. Pure Views — no chart library.
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { palette, sp, radius, type, zoneColor } from '@/theme/tokens';
 import type { KEvent, LadderStep, LocationSegment } from '@/lib/types';
@@ -70,7 +70,7 @@ export function RoomTimeBar({ segments, night = false }: { segments: LocationSeg
 // ---- Live escalation ladder --------------------------------------------------------
 
 function Pulse({ color }: { color: string }) {
-  const v = useRef(new Animated.Value(0.4)).current;
+  const [v] = useState(() => new Animated.Value(0.4));
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([

@@ -6,7 +6,7 @@ import { View } from 'react-native';
 import { Btn, Card, Row, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
 import { homeZones } from '@/lib/mock/data';
-import { palette, sp } from '@/theme/tokens';
+import { sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
 
 type RoomState =

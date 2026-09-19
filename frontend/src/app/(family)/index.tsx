@@ -1,10 +1,9 @@
 // Home: one calm sentence about Eleanor, where she is, and how today is going.
 import { useQueryClient } from '@tanstack/react-query';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Row, SectionTitle, StatusDot, Tile, Txt } from '@/components';
-import { RoomTimeBar } from '@/components';
+import { RoomTimeBar, Row, SectionTitle, StatusDot, Tile, Txt } from '@/components';
 import { useLocationHistory, useResident, useTimeline } from '@/lib/hooks';
 import { ago, dayOf, mins, zoneLabel } from '@/lib/format';
 import { useLive } from '@/store/live';
@@ -36,6 +35,13 @@ export default function Home() {
   const { data: segments } = useLocationHistory(RES, todayKey);
   const live = useLive();
 
+  // Dwell time ticks every 30 s; Date.now() in render is off-limits under the compiler.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -45,7 +51,7 @@ export default function Home() {
 
   const state: ResidentState = live.states[RES] ?? resident?.state ?? 'learning';
   const location = live.locations[RES] ?? resident?.location ?? null;
-  const dwellS = location ? (Date.now() - new Date(location.since).getTime()) / 1000 : 0;
+  const dwellS = location ? (now - new Date(location.since).getTime()) / 1000 : 0;
 
   const todays = (events ?? []).filter((e) => dayOf(e.ts) === 'Today');
   const meals = todays.filter((e) => e.type === 'meal_observed').length;

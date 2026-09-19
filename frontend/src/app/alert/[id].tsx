@@ -75,14 +75,15 @@ export default function AlertTakeover() {
       ? residentName
       : resident?.display_name ?? 'the resident';
 
+  const hasAlert = !!alert;
   useEffect(() => {
-    if (!closed && alert) {
+    if (!closed && hasAlert) {
       Vibration.vibrate([0, 400, 300, 400], true);
       return () => Vibration.cancel();
     }
     Vibration.cancel();
     return undefined;
-  }, [closed, !!alert]);
+  }, [closed, hasAlert]);
 
   const act = async (fn: () => Promise<void>, note: string) => {
     await fn();

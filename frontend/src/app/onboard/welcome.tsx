@@ -13,7 +13,7 @@ export default function Welcome() {
       <View style={{ flex: 1, justifyContent: 'flex-end', minHeight: 320, paddingBottom: sp(8) }}>
         <Txt kind="display">Someone is{'\n'}looking out{'\n'}for her.</Txt>
         <Txt kind="body" tone="muted" style={{ marginTop: sp(4) }}>
-          Kestrel learns your mother's everyday rhythm — when she's up, when she eats,
+          Kestrel learns your mother’s everyday rhythm — when she’s up, when she eats,
           when she walks. When something is different, it calls her first, then you.
         </Txt>
       </View>

@@ -56,7 +56,7 @@ export default function Consent() {
           <Txt key={line} kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{line}</Txt>
         ))}
         <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
-          What family cannot see: video, audio, or anything Kestrel didn't observe.
+          What family cannot see: video, audio, or anything Kestrel didn’t observe.
         </Txt>
       </Card>
 
