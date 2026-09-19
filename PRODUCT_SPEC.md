@@ -80,9 +80,9 @@ Widowed four years, lives alone in a 1950s ranch house in Dayton, Ohio. Drives t
 > *"So it knows what room I'm in. All day. It knows when I'm in the bathroom, and how long, and Danny can see that on his phone in Denver. I raised that boy. I'm not going to have him checking up on my bathroom."*
 
 **The answer we give her, and it has to be literally true or the whole thing collapses:**
-> *"He can't see where you are. He can't see a map of your house, he can't see a dot, and he can't see 'Mum is in the bathroom.' There is no screen in his app that shows that, and there is no way for him to turn one on. What the band counts is how many times you got up in the night — and even that, he only ever sees if it's very different from your own normal, and only the next morning, never live. If you'd rather it didn't count the bathroom at all, there's a switch for that and you can flip it yourself, today, and the fall detection keeps working exactly the same."*
+> *"He can't see where you are. He can't see a map of your house, he can't see a dot, and he can't see 'Mum is in the bathroom.' There is no screen in his app that shows that, and there is no way for him to turn one on. What the band counts is how many times you got up in the night — and even that, he only ever sees if it's very different from your own normal, and only the next morning, never live. The only time he'd ever hear which room you're in is if you've had a fall and haven't answered us — so whoever comes knows where to find you. If you'd rather it didn't count the bathroom at all, there's a switch for that and you can flip it yourself, today, and the fall detection keeps working exactly the same."*
 
-Margaret is the veto. If she says no, the product does not ship into that house. Every design decision in §8 exists to make that paragraph true.
+Margaret is the veto. If she says no, the product does not ship into that house. Every design decision in §8 exists to make that paragraph true. (The emergency-call sentence was added on 2026-09-19 so the paragraph stays literally true once escalation calls name the room — `DECISIONS.md` D-001.)
 
 ### 3.2 Dan Doyle, 51 — *the person who pays*
 Margaret's son. Denver, three states away. Product manager, two teenagers, calls Sunday at 7 p.m. and gets "everything's fine, honey." He has no signal between those calls. He has a slow, permanent, low-grade dread that his phone will ring at 4 a.m.
@@ -114,10 +114,10 @@ Executive Director, 96 beds (64 AL + 32 memory care). Three pressures, in order:
 | # | Feature | Who it serves | Priority | In the 24h demo? |
 |---|---|---|---|---|
 | 1 | Band-side fall detection (IMU impact + post-impact stillness), on-device | Margaret | **P0** | **Yes** |
-| 2 | 30-second on-band cancel (buzz + button) before anything leaves the house | Margaret | **P0** | **Yes** |
+| 2 | 30-second on-band cancel (buzz + button) before anyone is contacted | Margaret | **P0** | **Yes** |
 | 3 | Outbound voice call to the resident via Twilio + Deepgram Voice Agent | Margaret | **P0** | **Yes** |
 | 4 | Intent classification of the answer → `resolved` / `uncertain` / `escalate` | Margaret, Dan | **P0** | **Yes** |
-| 5 | Escalation call + SMS to the family contact, with transcript | Dan | **P0** | **Yes** |
+| 5 | Escalation call + push to the family contact, with transcript (no SMS — A2P registration won't clear in 24 h, `DECISIONS.md` D-006) | Dan | **P0** | **Yes** |
 | 6 | Event timeline in the React Native app | Dan | **P0** | **Yes** |
 | 7 | RAG chat over the event history ("how was Mum's week?") | Dan | **P0** | **Yes** |
 | 8 | **Room-level indoor location** from band Wi-Fi/BLE + 4–6 BLE beacons. *The only location source in B2C — there are no cameras in a private home.* | Margaret, Dan | **P0** | **Yes** |
@@ -130,23 +130,24 @@ Executive Director, 96 beds (64 AL + 32 memory care). Three pressures, in order:
 | 15 | Recording disclosure in the first sentence of every call | Legal | **P0** | **Yes** |
 | 16 | Physical privacy switch: location off, fall detection stays on | Margaret | P1 | No (spec'd) |
 | 17 | Band wear-time tracking & low-wear nudge | Dan, us | P1 | No |
-| 18 | Escalation ladder ≥2 contacts, then 911 with a spoken location message | Dan | P1 | No (scripted) |
-| 19 | Time-in-room per day, aggregated (e.g. "8h in the armchair, up from 5h") | Dan | P1 | Partial (seeded) |
+| 18 | Escalation ladder ≥2 contacts, then a final voice call with 911 guidance and the address. **Dhyaan never dials 911** (D-005) | Dan | P1 | No (scripted) |
+| 19 | Time-in-room per day, aggregated (e.g. "8h in the armchair, up from 5h") — **Margaret's own view only**; Dan sees "less active than usual", never a room (§8.1, D-001) | Margaret | P1 | Partial (seeded) |
 | 20 | Weekly digest ("Mum's week in five lines") push | Dan | P1 | No |
-| 21 | Fall location ("she fell in the bathroom") attached to the escalation call | Dan, 911 | P1 | No |
+| 21 | Fall location ("she fell in the bathroom") attached to the escalation call — the one time the family hears a room name (D-001) | Dan, whoever responds | P1 | Partial (when the band's room fix is under 60 s old) |
 | 22 | Medication reminder as an inbound voice call | Margaret | P2 | No |
 | 23 | Two-way "call me back" button on the band | Margaret | P2 | No |
 | 24 | Cellular band (no phone/Wi-Fi dependency) | Margaret | P2 | No |
+| 25 | **Per-wearer walking profile**: the band learns her normal steps, so heavy walking stops counting as impacts and the bar can sit lower for soft falls. Learned on the hub, applied on the band (`TECHNICAL_PRD.md` §8.7, D-009) | Margaret | P1 | Stretch — Arduino expo demo (§10.2) |
 
 ### 4.2 Dhyaan Care (B2B — assisted living / memory care)
 
 | # | Feature | Who it serves | Priority | In the 24h demo? |
 |---|---|---|---|---|
 | 1 | Multi-resident band fleet, one event store | Alicia, Ray | **P0** | **Yes (3 simulated)** |
-| 2 | **Local VLM over existing hallway CCTV** → ADL events (ate / walked / slept / bathroom / wandering) | Alicia | **P0** | **Yes (1 camera, recorded clip)** |
+| 2 | **Local VLM over existing hallway CCTV** → ADL events (ate / walked / slept / bathroom / wandering) | Alicia | **P0** | **Stretch** — not built as of Saturday 17:00 and second on the team's cut list (D-012). If built: 1 camera, recorded clip |
 | 3 | Video never leaves the building; only event rows sync | Ray, Legal | **P0** | **Yes (show the architecture)** |
 | 4 | **Room-level indoor location** from band + beacons in rooms, hallways and at every exterior door | Alicia, Ray | **P0** | **Yes** |
-| 5 | **Wandering / elopement alert**: exit-door beacon + no staff escort + resident on the memory-care roster → immediate page | Alicia, Ray | **P0** | **Yes** |
+| 5 | **Wandering / elopement alert**: exit-door beacon + no staff escort + resident on the memory-care roster → immediate page. ("No staff escort" needs staff badges — roadmap) | Alicia, Ray | **P0** | **Yes — as a labelled replay** (§10.1) |
 | 6 | Night-wandering pattern (hallway transits vs the resident's own median) | Alicia | **P0** | **Yes** |
 | 7 | Per-resident learned baseline; alert on deviation, not on absolute thresholds | Alicia | **P0** | **Yes** |
 | 8 | Night-shift ranked check-list (3 rooms, not 32) | Alicia | **P0** | **Yes** |
@@ -177,16 +178,16 @@ Executive Director, 96 beds (64 AL + 32 memory care). Three pressures, in order:
 | Time | What happens | Where |
 |---|---|---|
 | **T+0.0s** | Margaret's right hip hits linoleum. IMU sees a >3g impact transient followed by an orientation change. | Band (STM32 real-time core) |
-| **T+0.4s** | Impact + post-impact stillness classifier passes threshold. Candidate fall. | Band |
-| **T+3.0s** | Band **buzzes** and shows `FALL DETECTED — press to cancel`. Two short haptic pulses every 5s. | Band |
-| **T+3–30s** | **The cancel window.** One button press ends it. Nothing has left the house. | Band |
-| **T+30.0s** | No cancel, still no meaningful motion. Band publishes `fall_candidate` with confidence + accel trace. | Band → hub |
+| **T+2.2s** | Impact, a 200 ms settle, then **2 s of stillness**: the cascade confirms a candidate fall. (The stillness check alone takes 2 s — an earlier draft said T+0.4 s.) | Band |
+| **T+2.2s** | Band **buzzes** (a chirp every second) and its LED turns red — it has no screen and no vibration motor. It reports the fall to the hub **immediately**, with its confidence, trace and latest room fix, so a band that breaks on impact still escalates. | Band → hub |
+| **T+2–30s** | **The cancel window.** One button press ends it. **No person has been contacted** — the hub knows, nobody else does (`DECISIONS.md` D-002). | Band |
+| **T+30.0s** | No cancel. The hub's own 30 s timer expires — it never waits on the band to send a second message. | Hub |
 | **T+31.5s** | Backend opens a Twilio outbound call to the landline **and** the mobile, whichever answers first. Family contact is **not** yet notified. | Backend |
 | **T+35.0s** | **The phone rings.** | Margaret's kitchen |
-| **T+42.0s** | She reaches it. Deepgram Voice Agent, first sentence, recording disclosure included: *"Hi Margaret, this is Dhyaan. Your band felt a hard fall about forty seconds ago. This call is recorded so I can log it for you. Are you hurt?"* | Deepgram + Twilio |
+| **T+42.0s** | She reaches it. Deepgram Voice Agent, first sentence, recording and AI disclosure included: *"Hi Margaret, this is Dhyaan, an automated safety check. Your band felt a hard fall about forty seconds ago. I'm recording this call for your log — say 'stop recording' any time. Are you hurt?"* | Deepgram + Twilio |
 | **T+50.0s** | *"Oh — no, I'm okay. I just sat down hard reaching for the pantry."* | — |
 | **T+52.0s** | Agent classifies `resolved_self_reported`. One confirm: *"Glad to hear it. Can you stand up on your own?"* → *"I'm up already."* | Deepgram |
-| **T+55.0s** | *"Alright. I've logged it. If anything changes, press your band twice and I'll call your son. Take care, Margaret."* Call ends. | — |
+| **T+55.0s** | *"Alright. I've logged it. If anything changes, give Dan a call. Take care, Margaret."* Call ends. (A band button that calls her son back is P2 feature #23 — not built, so the agent doesn't promise it.) | — |
 | **T+56.0s** | Timeline entry written: `Hard fall · 2:07 pm · answered in 7s · self-reported unhurt · no escalation`. Transcript attached. **Dan's phone does not ring.** A single line appears in his app. | Event store → RN app |
 
 **Branch B — escalation (the case that justifies the whole system).**
@@ -198,10 +199,10 @@ Executive Director, 96 beds (64 AL + 32 memory care). Three pressures, in order:
 | **T+65s** | **No answer** → this is now `unanswered`, the highest-risk state. |
 | **T+67s** | Second attempt on the other number, 20s. |
 | **T+90s** | Still nothing. Escalate. |
-| **T+92s** | SMS to Dan fires first (fastest channel): *"Dhyaan: hard fall detected for Margaret at 2:07 pm. She did not answer two calls. Calling you now."* |
-| **T+95s** | **Dan's phone rings.** Agent: *"This is Dhyaan. Margaret's band detected a hard fall at 2:07 pm. We called her twice and she did not answer. Do you want me to keep calling her, call a neighbour, or call 911?"* |
-| **T+110s** | Dan says *"Call 911."* Agent dials, plays a location message, and stays on the line with Dan. |
-| **T+112s** | Incident state → `escalated_911`, timestamped end to end. |
+| **T+92s** | A push to Dan's app fires first: *"Possible fall — Margaret didn't answer. We're calling you now."* (Push, not SMS — `DECISIONS.md` D-006.) |
+| **T+95s** | **Dan's phone rings.** Agent: *"This is Dhyaan, an automated call about Margaret, and this call is recorded. Her band detected a hard fall at 2:07 pm, and she hasn't answered two calls. Her band places her in the kitchen. Can you get to her, or send someone? If you can't reach her, call 911 — I can't place that call for you."* The room is named because this is an emergency escalation — the one time Dan ever hears it (D-001). |
+| **T+110s** | Dan says he's calling 911. The agent repeats her address twice, slowly, and ends the call; Dan's acknowledgement stops the ladder. **Dhyaan never dials or bridges 911 itself** (D-005). |
+| **T+112s** | Incident state → `acknowledged` (by Dan, who is calling 911), timestamped end to end. |
 
 **Branch B′ — answered but not okay.** At T+50s she says *"I can't get up, my hip hurts."* Agent does **not** interrogate. It says *"I'm calling Dan right now and staying on the line with you."* Escalation fires at **T+53s** — 37 seconds faster than the no-answer branch, because a bad answer is more informative than no answer.
 
@@ -212,7 +213,7 @@ Executive Director, 96 beds (64 AL + 32 memory care). Three pressures, in order:
 1. **Dan buys.** Band ships to *Margaret's* address, not his. (Deliberate: she unboxes it.)
 2. **Dan installs the app**, adds Margaret as the person, enters two phone numbers and one backup contact (her neighbour Cheryl).
 3. **Margaret is called by the system, once, to enrol.** The agent introduces itself, states plainly what the band does and what it does not do, and asks her to say "I agree" — recorded and stored as the consent artefact. If she says no, the account does not activate. *Dan cannot override this.*
-4. **Band pairing:** she holds the button; the app confirms. She walks 20 steps to calibrate.
+4. **Band pairing:** Dan types the code printed on the band; the app confirms. She walks 20 steps — this seeds the band's **walking profile**, so her normal, heavy or shuffling steps don't count as impacts (`TECHNICAL_PRD.md` §8.7).
 5. **Beacon install — the one physical task, and it belongs to the family.** Five coin-cell BLE beacons, adhesive-backed, no wiring, no app pairing. Dan (or the neighbour, or the grandson on a Sunday) sticks them at picture height in the **kitchen, bathroom, bedroom, living room, and inside the front door**, then walks each room once while the app says "kitchen — got it." Target: **under 6 minutes, no tools.** The beacons are labelled in plain English on the sticker, not with MAC addresses, because Margaret will read them.
 6. **Location consent, taken separately and taken second.** The agent calls back — a *different* call from the fall-detection enrolment — and asks specifically about room tracking, reads the copy in §8.4, and offers the bathroom opt-out *before* she has to ask for it. **She can say yes to falls and no to location and the product still works.** That is not a courtesy; it is the design.
 7. **The rehearsal.** The system deliberately fires one test fall, the band buzzes, she cancels it. Then it fires a second, she lets it run, the phone rings, and she talks to the agent once in a low-stakes setting. **This step is non-negotiable** — it converts "an alarm will go off" into "I've done this before."
@@ -237,10 +238,10 @@ The design constraint that makes this work: **the chat answers questions; it doe
 | Time | Event | What Alicia sees |
 |---|---|---|
 | 23:00 | Shift starts | Floor view: 32 residents, 3 flagged amber, 29 green. Amber = deviation from own baseline, not from a population norm. |
-| 23:40 | Mr. Kaminski's legacy bed alarm | *(Dhyaan suppresses it: band shows he's supine and still, hallway camera shows an empty hall. No page.)* |
+| 23:40 | Mr. Kaminski's legacy bed alarm | *(With a bed-alarm integration — roadmap, not in the prototype — Dhyaan suppresses it: his band has been still since 23:10 and the hallway camera shows an empty hall. No page. A forearm band can say "still", not "lying on his back".)* |
 | 00:00 | Rounds | Nothing. |
 | 01:20 | Same bed alarm again | Suppressed again. **Two pages she did not get.** |
-| **02:50** | **Mrs. Okoye, 214 — third hallway transit tonight** | **One page:** `214 Okoye · 3rd hallway trip 23:00–02:50 · 30-night median 0.6 · no fall · flag: possible UTI / delirium onset` |
+| **02:50** | **Mrs. Okoye, 214 — third hallway transit tonight** | **One page:** `214 Okoye · 3rd hallway trip 23:00–02:50 · 30-night median 0.6 · no fall · unusual for her — check on her` (the page never names a condition — §8.7, `DECISIONS.md` D-003; the clinical judgement is Alicia's) |
 | 02:52 | Alicia goes to 214 | She finds her disoriented and warm. Logs it. Day shift orders a urinalysis at 07:30. |
 | 03:31 | **Real fall, 207** — band impact + hall camera shows nobody enters or leaves 207 for 40s | `207 FALL · high confidence · no staff presence detected` — page at **03:31:12** |
 | 03:33 | Alicia arrives | **Time-to-discovery: 106 seconds.** Under the old pattern this was found at the 04:00 round — ~29 minutes. |
@@ -258,20 +259,28 @@ This is the journey that justifies indoor tracking at all, and it is the one tha
 | Sunday 01:10, 02:40, 03:55, 05:20 | **4 bathroom transitions**, one of 11 minutes | **Nothing yet** — one bad night is noise. |
 | Monday 00:50, 02:05, 03:20, 04:40, 06:05 | **5 transitions**, second consecutive night ≥4 | **Monday 08:00, one line:** `Two unusual nights — Mum was up 4 and 5 times, against her usual 0–1. Nothing else changed. Might be worth asking how she's feeling.` |
 
-**Everything in that design is deliberate.** *Deviation, not data*: a normal night is not information, it is surveillance with a number on it. *Two nights, not one*: a single-night trigger fires on a cup of tea and burns the channel's credibility. *Morning, not live*: a 1 a.m. push teaches Dan to watch his mother in real time, which is precisely the behaviour the product exists to prevent. *A conversation, not an intervention*: "might be worth asking how she's feeling," never "possible UTI" — that boundary is also the FDA boundary (§8.6). And **Margaret can switch this off and keep everything else**; if she does we lose nocturia trending and keep her wearing the band, which is the correct trade every time.
+**Everything in that design is deliberate.** *Deviation, not data*: a normal night is not information, it is surveillance with a number on it. *Two nights, not one*: a single-night trigger fires on a cup of tea and burns the channel's credibility. *Morning, not live*: a 1 a.m. push teaches Dan to watch his mother in real time, which is precisely the behaviour the product exists to prevent. *A conversation, not an intervention*: "might be worth asking how she's feeling," never "possible UTI" — that boundary is also the FDA boundary (§8.6–8.7). And **Margaret can switch this off and keep everything else**; if she does we lose nocturia trending and keep her wearing the band, which is the correct trade every time.
 
-### 5.6 The B2B wandering / door journey — the highest-value 40 seconds in the building
+### 5.6 The B2B wandering / door journey — the highest-value minute in the building
 
 Six in ten people living with dementia will wander at least once ([Alzheimer's Association](https://www.alz.org/help-support/caregiving/stages-behaviors/wandering)), and the Association's own guidance to caregivers is to call 911 if the person is not found within **15 minutes**. In a 96-bed community with 32 memory-care residents and one awake overnight nurse — a staffing level that [17 states satisfy with the words "at least one awake staff person"](https://aspe.hhs.gov/sites/default/files/migrated_legacy_files//73501/15alcom.pdf) — fifteen minutes is roughly one round.
 
 | Time | Event | System | Alicia |
 |---|---|---|---|
-| 03:38:00 | Mr. Ferreira (memory care, elopement-risk flag) leaves room 219 | Beacon: `219 → west hall` | — |
-| 03:38:26 | Enters the west vestibule | Beacon: `west hall → west exit vestibule`, resident on the elopement roster, **no staff band within range** | — |
-| 03:38:29 | — | Hall camera clip queried by the **local** VLM: *"one person, unaccompanied, moving toward the exterior door"* — confirms the beacon inference and suppresses the alternative hypothesis (a staff member carrying his band, a dropped band) | — |
-| **03:38:31** | — | **Page fires. 31 seconds after he left his room.** | `219 FERREIRA · WEST EXIT · unaccompanied · 31s ago` |
-| 03:39:10 | Alicia intercepts him in the vestibule | Event closed, `intercepted_in_building` | — |
-| 03:39:12 | — | Incident written with the full beacon trace, the camera confirmation, and **time-to-intercept: 72 seconds** | — |
+| 03:38:00 | Mr. Ferreira (memory care, elopement-risk flag) leaves room 219 | — | — |
+| 03:38:30 | — | Beacon: `219 → west hall` committed (two 20 s scans agree) | — |
+| 03:38:45 | Enters the west vestibule | — | — |
+| 03:39:10 | — | Beacon: `west hall → west exit vestibule` committed; resident on the elopement roster; no staff badge in range (staff badges are roadmap) | — |
+| 03:39:13 | — | Hall camera clip queried by the **local** VLM (where cameras are installed): *"one person, unaccompanied, moving toward the exterior door"* — confirms the beacon inference and suppresses the alternative hypothesis (a staff member carrying his band, a dropped band) | — |
+| **03:39:15** | — | **Page fires, 75 seconds after he left his room — still before the door.** | `219 FERREIRA · WEST EXIT · unaccompanied · 75s ago` |
+| 03:39:50 | Alicia intercepts him in the vestibule | Event closed, `intercepted_in_building` | — |
+| 03:39:52 | — | Incident written with the full beacon trace, the camera confirmation, and **time-to-intercept: 112 seconds** | — |
+
+**These timings are what the prototype can do** (`DECISIONS.md` D-014): a 20 s BLE scan and a two-scan
+commit mean each room change lands 20–60 s after it happens (`TECHNICAL_PRD.md` §7.4). An earlier draft
+said "31 seconds", which the scan period cannot deliver. A production band on the elopement roster would
+scan every few seconds and cut this sharply. **On stage, quote the number from the replay capture, not
+this table.**
 
 **Why the incumbent fails, in the literature's own words.** An analysis of **62 elopements** found three recurring causes: *"a lack of effective precautions… when residents had indicated an intent to elope"*, **"a lack of awareness by the staff of resident location"**, and **"ineffective use of alarm devices intended to alert staff to elopement attempts"** ([Aud, *Am J Alzheimers Dis* 2004](https://pmc.ncbi.nlm.nih.gov/articles/PMC10833955/)). The middle one is a location problem and the third is an alarm-fatigue problem — which is exactly the pair this system is built around.
 
@@ -380,19 +389,22 @@ Rates, looked up:
 | Twilio outbound voice, US | **$0.0140/min** | [twilio.com voice pricing](https://www.twilio.com/en-us/voice/pricing/us) |
 | Twilio inbound voice, US | $0.0085/min | [same](https://www.twilio.com/en-us/voice/pricing/us) |
 | Twilio local number | $1.15/month | [same](https://www.twilio.com/en-us/voice/pricing/us) |
-| Twilio SMS, US long code | $0.0083 + carrier fee $0.0035–$0.0050 | [twilio.com SMS pricing](https://www.twilio.com/en-us/sms/pricing/us) |
+| Twilio SMS, US long code *(reference only — not used; needs A2P 10DLC registration)* | $0.0083 + carrier fee $0.0035–$0.0050 | [twilio.com SMS pricing](https://www.twilio.com/en-us/sms/pricing/us) |
 
 **Cost per incident:**
 
 | Incident type | Composition | Cost |
 |---|---|---|
 | **Resolved by voice agent** (~75s call) | 1.25 min × ($0.075 + $0.014) | **$0.111** |
-| **Escalated** (2 unanswered attempts ~50s + 1 SMS + 90s call to the child) | 0.83 min × $0.089 + $0.013 + 1.5 min × $0.089 | **$0.221** |
-| **Escalated to 911** | + ~2 min bridged | **$0.40** |
+| **Escalated** (2 unanswered attempts ~50s + 90s call to the child; push is free) | 0.83 min × $0.089 + 1.5 min × $0.089 | **$0.207** |
+| **Reaches the final step** (+ ~1.5 min of calls to the remaining contacts) | + 1.5 min × $0.089 | **$0.341** |
+
+The ladder is voice + push only — no SMS (`DECISIONS.md` D-006) — and Dhyaan never bridges a 911 call
+(D-005), so both old line items are gone.
 
 **Blended B2C COGS per household per month** (3 fall checks/month, 80% resolved / 20% escalated; shared number pool; RAG chat ~$0.15/mo of LLM; **location adds essentially nothing** — beacon RSSI classification runs on the band and the hub, not in the cloud, and the event store writes ~2 kB/day/household):
 
-`3 × (0.8 × $0.111 + 0.2 × $0.221) + $1.15 (number) + $0.15 (LLM) + $0.05 (storage/sync) ≈ $1.75`
+`3 × (0.8 × $0.111 + 0.2 × $0.207) + $1.15 (number) + $0.15 (LLM) + $0.05 (storage/sync) ≈ $1.74`
 
 **Against $29/month revenue: ~94% gross margin on the service line.**
 
@@ -407,7 +419,7 @@ Rates, looked up:
 
 At $149 the prototype kit is **sold at a small loss**; at scale it carries ~70% margin but that is not the point. **Hardware is a customer-acquisition cost, not a revenue line — price it near cost, never discount the subscription, and note that the beacons are what stop a customer churning**, because ripping five stickers off the wall is a higher-friction cancellation than returning a pendant. That is a retention asset and it is also, uncomfortably, a mild dark pattern; the mitigation is that cancellation is one tap and we do not ask for the beacons back.
 
-**B2B inference cost.** Video stays on premises, so per-minute inference cost is electricity, not API spend. One local box (~$1,200–1,800, Jetson Orin-class) running a small VLM at ~1 fps over 4 hallway cameras, amortised over 36 months, is **$33–50/month**. A box covering a ~30-bed wing is **~$1.30/bed/month**. Beacons add ~1.3 units/bed at $3 = **$4/bed one-time**, i.e. **$0.11/bed/month** over three years — location is the cheapest thing in the system and the most valuable per dollar. The voice agent is largely unused in memory care by design (§4.2). **B2B gross margin lands near 85% including the appliance. The local-inference decision is simultaneously the privacy story and the margin story** — say that out loud to a judge, because those two things almost never point the same way.
+**B2B inference cost.** Video stays on premises, so per-minute inference cost is electricity, not API spend. One local box (~$1,200–1,800, Jetson Orin-class) running a small VLM at ~1 fps over 4 hallway cameras, amortised over 36 months, is **$33–50/month**. **`[UNVERIFIED]`** — the only throughput budget we have (`TECHNICAL_PRD.md` §6.7) is for a 48 GB M5 Pro MacBook with roughly 3× a Jetson Orin NX's memory bandwidth; measure before quoting cameras-per-box (`DECISIONS.md` D-012). A box covering a ~30-bed wing is **~$1.30/bed/month**. Beacons add ~1.3 units/bed at $3 = **$4/bed one-time**, i.e. **$0.11/bed/month** over three years — location is the cheapest thing in the system and the most valuable per dollar. The voice agent is largely unused in memory care by design (§4.2). **B2B gross margin lands near 85% including the appliance. The local-inference decision is simultaneously the privacy story and the margin story** — say that out loud to a judge, because those two things almost never point the same way.
 
 ### 7.4 The wedge: which one do you sell first?
 
@@ -418,7 +430,7 @@ At $149 the prototype kit is **sold at a small loss**; at scale it carries ~70% 
 - The buyer has **three independent compliance/financial drivers** — survey deficiencies, insurance re-quoting, agency labour cost — any one of which closes a deal.
 - **One signature covers 33–96 beds.** B2C CAC in eldercare is brutal (the incumbents spend heavily on TV) and the ARPU is $29.
 - **SafelyYou has already done the market education.** Directors know what camera-based fall tech is and that it works. Selling against a category that exists is far cheaper than creating one.
-- **Elopement is the sharpest single wedge inside the wedge, and now it has a price tag.** Elopement is only **1.8% of aging-services liability claims but the most expensive allegation of all** — average total incurred **$360,840**, versus $250,048 across all claims, and **over $400,000 in assisted living specifically** ([CNA, 11th ed.](https://www.cna.com/sites/default/files/assets/c6254fff-15ca-474e-929d-ca868d402917/CNA-Aging-Services-Claim-Report-11th-Edition.pdf)). On the regulatory side, CMS tag **F689 accounts for ~28% of every immediate-jeopardy citation** in the deficiency dataset. **One prevented elopement pays for a 96-bed deployment for roughly nineteen years.** That is the only ROI arithmetic in this document that survives contact with a CFO. **Lead the B2B sales conversation with the 31-second door alert (§5.6), not with falls** — falls are what the buyer has learned to tolerate; elopement is what keeps him awake.
+- **Elopement is the sharpest single wedge inside the wedge, and now it has a price tag.** Elopement is only **1.8% of aging-services liability claims but the most expensive allegation of all** — average total incurred **$360,840**, versus $250,048 across all claims, and **over $400,000 in assisted living specifically** ([CNA, 11th ed.](https://www.cna.com/sites/default/files/assets/c6254fff-15ca-474e-929d-ca868d402917/CNA-Aging-Services-Claim-Report-11th-Edition.pdf)). On the regulatory side, CMS tag **F689 accounts for ~28% of every immediate-jeopardy citation** in the deficiency dataset. **One prevented elopement pays for a 96-bed deployment for roughly nineteen years.** That is the only ROI arithmetic in this document that survives contact with a CFO. **Lead the B2B sales conversation with the before-the-door alert (§5.6), not with falls** — falls are what the buyer has learned to tolerate; elopement is what keeps him awake.
 - The B2B deployment generates the **baseline data** that makes the per-resident model good, which is the only durable moat.
 
 **Why B2C leads the demo:** Margaret's phone ringing is legible in eleven seconds to a judge who has a grandmother. A staff dashboard is not. **Pitch the B2C story, close on the B2B slide.**
@@ -455,7 +467,7 @@ The family app **has no floor plan, no map, no live location and no per-room dwe
 | Bathroom visit counts | Yes | **Only as a 2-night deviation flag** | Yes (B2B) | No | Aggregate only |
 | Room-transition count/day | Yes | **Yes, as a number vs her own median** | Yes | No | Aggregate only |
 | CCTV video (B2B) | On request via the facility | **No** | Yes, for an open incident, time-boxed | **No** | **Never. Inference runs on the local box; only event rows sync** |
-| Call recordings & transcripts | Yes, all of them | Only for calls she was told would be shared | Incident-scoped | No | Yes, encrypted |
+| Call transcripts (text only — **no call audio is ever stored**; kept 7 days, then only the classification) | Yes, all of hers | Only for alert calls that reached him | Incident-scoped | No | Yes, encrypted |
 | Fall events | Yes | Yes | Yes | No | Yes |
 
 **What the family is explicitly NOT shown, and we say this in the marketing, not just the terms:** live location, a floor plan, a heat map, time-in-bathroom, sleep staging, any inference about cognition or "decline scores", any raw audio, and any camera image whatsoever. **We do not ship a "decline score."** A number that tells a son his mother is getting worse is a product that will be used to override her.
@@ -466,10 +478,10 @@ Every one of these is reachable by Margaret without the app, without Dan, and wi
 
 | Control | How | Effect |
 |---|---|---|
-| **Cancel this alert** | One press on the band, within 30 s | Nothing leaves the house |
+| **Cancel this alert** | One press on the band, within 30 s | Nobody is contacted (the hub logs the cancel) |
 | **Privacy window** | Hold the band button 3 s → "Location paused 2 hours" | Location stops; **fall detection keeps running** |
 | **"Don't track the bathroom"** | A first-class setting, offered at enrolment before she asks | The bathroom beacon is unenrolled. Transitions into it are recorded as `private`. No counts, no deviation flags, no nocturia trend — permanently, until she changes it |
-| **Physical switch: location off** | A recessed slide switch on the band | **Radios used for positioning are disabled; IMU fall detection continues.** The app shows "location off, by Margaret" — it does not show it as an error or nag Dan about it |
+| **Physical switch: location off** | A recessed slide switch on the production band (the demo band has none) | **Room scanning stops; IMU fall detection continues.** The radio itself stays on, because the same radio carries fall alerts — turning it off would silently break rule 2 below. The app shows "location off, by Margaret" — it does not show it as an error or nag Dan about it |
 | **Stop recording this call** | Say "stop recording" at any point | Recording ends mid-call, the agent confirms out loud, the partial transcript is deleted, the incident is still logged |
 | **"Don't call my son for this"** | Say it to the agent | That incident does not escalate. The next one still will |
 | **Off** | Hold both buttons 10 s | Everything stops. Dan is told it is off, not why |
@@ -489,21 +501,23 @@ Consent is taken as **three independent grants**, not one checkbox: **(a) fall d
 > **Dhyaan watches for falls.**
 > The band on your arm feels sudden impacts. If it thinks you've had a hard fall, it will buzz and give you **30 seconds to cancel**. If you don't cancel, we'll **call you and ask if you're alright** — a real conversation, not an alarm. If you say you're fine, that's the end of it and nobody else is called.
 > If you don't answer, or you tell us you need help, we'll call **Dan** and tell him what happened.
-> **We will never call an ambulance without asking you or Dan first.**
+> **Dhyaan never calls an ambulance itself.** If you need help, we call Dan, and he decides.
 > Do you agree to this? You can change your mind any time by holding the band's button.
 
 **Exact on-screen / read-aloud copy — indoor location (this is its own screen and its own spoken consent, deliberately separated):**
 
 > **Dhyaan can also tell which room you're in.**
-> Small stickers in your kitchen, bathroom, bedroom, living room and front door let the band work out roughly which room you're in. We use it for three things: to know **if you've been out of the house today**, to count **how many times you get up at night**, and to tell the paramedics **which room you're in** if you ever need them.
-> **Here is what Dan can and cannot see.** He **cannot** see where you are. There is no map in his app, no dot, no floor plan, and no way for him to turn one on — not even by calling us. He will only ever see **how many times you went out** and, if your nights change a lot for **more than one night in a row**, one sentence the next morning saying so.
-> **You can turn the bathroom off right now** and we'll never count it. You can pause location for a couple of hours whenever you want, or switch it off for good with the slider on the band — **and your fall detection keeps working exactly the same either way.**
+> Small stickers in your kitchen, bathroom, bedroom, living room and front door let the band work out roughly which room you're in. We use it for three things: to know **if you've been out of the house today**, to count **how many times you get up at night**, and — only if you've had a fall and haven't answered us — to tell whoever is coming **which room you're in**.
+> **Here is what Dan can and cannot see.** He **cannot** see where you are. There is no map in his app, no dot, no floor plan, and no way for him to turn one on — not even by calling us. He will only ever see **how many times you went out** and, if your nights change a lot for **more than one night in a row**, one sentence the next morning saying so. **The only time he will ever hear a room name is on an emergency call**, after a fall you didn't cancel or answer, so he can send help to the right place.
+> **You can turn the bathroom off right now** and we'll never count it. You can pause location for a couple of hours whenever you want, or switch it off for good on the band — **and your fall detection keeps working exactly the same either way.**
 > This is a separate question from the fall alarm. **You can say no to this and yes to that.**
 > Do you agree to location? — **[ Yes ] [ No ] [ Yes, but not the bathroom ]**
 
 **Exact call preamble — spoken as the first sentence of every outbound call, before any question is asked:**
 
-> *"Hi Margaret, this is Dhyaan. Your band felt a hard fall about forty seconds ago. **I'm recording this call so it goes in your log — say 'stop recording' any time and I'll stop.** Are you hurt?"*
+> *"Hi Margaret, this is Dhyaan, **an automated safety check**. Your band felt a hard fall about forty seconds ago. **I'm recording this call so it goes in your log — say 'stop recording' any time and I'll stop.** Are you hurt?"*
+
+This is now the greeting in `TECHNICAL_PRD.md` §4.5 and §5.2 too. Until 2026-09-19 the PRD's greeting, and the greetings in the built voice code, had no recording or AI disclosure at all — `DECISIONS.md` D-004, follow-up F-06.
 
 ### 8.5 The two-party consent problem — real, and not solvable by a checkbox
 
@@ -520,7 +534,7 @@ An AI voice agent that records a phone call sits inside two bodies of law at onc
 **The engineering consequences, which are design constraints and not legal boilerplate:**
 
 1. **Disclosure is the first sentence, always, on every call, to every party** — including the escalation call to Dan and any bridged third party. Not a menu, not a footer, not buried at enrolment. Massachusetts turns on *secrecy*; a recording announced in the opening sentence of every call is not secret.
-2. **"Stop recording" is an implemented function call in the voice agent**, not a promise. It halts the recorder, deletes the partial audio, and the agent says so out loud. The incident is still logged as metadata.
+2. **"Stop recording" is an implemented function call in the voice agent** (`stop_recording`, `TECHNICAL_PRD.md` §4.6), not a promise. It stops the transcript, deletes what was captured on that call, and the agent says so out loud. The incident is still logged as metadata. There is no audio to delete — **call audio is never stored**; "recording" means the transcript.
 3. **The consent artefact is itself recorded with disclosure**, and stored per-party.
 4. **Jurisdiction is resolved from the called number's area code and the account address, and the strictest applicable rule is applied.** We do not run a per-state matrix in the product; we run the all-party rule everywhere. It costs one sentence and removes an entire class of risk.
 5. **For the hackathon demo specifically:** anyone whose voice will be on a call — including a judge who picks up the phone — is told before they answer, on a slide and out loud. If a judge says no, the demo runs on the pre-recorded track.
@@ -531,7 +545,7 @@ An AI voice agent that records a phone call sits inside two bodies of law at onc
 |---|---|
 | Is this a robocall? | **No — it is an outbound call placed to a subscriber who gave prior express consent, about their own account, triggered by their own device.** That is the standard TCPA consent posture, and it is why consent is captured at enrolment on a recorded call and re-confirmed annually (§8.4). |
 | Does the artificial voice need disclosure? | **We disclose in the first sentence regardless** — *"this is Dhyaan"* — and the agent never claims to be, or imitates, a person. **It never uses a cloned voice of a family member**, which is the abuse the ruling targets and which is also the single fastest way to destroy trust with a confused 79-year-old. |
-| Escalation call to Dan | Dan is an **enrolled user who consented**, not a cold-called third party. A bridged 911 call is an emergency call placed at the user's direction. |
+| Escalation call to Dan | Dan is an **enrolled user who consented**, not a cold-called third party. **Dhyaan never places or bridges a 911 call** (`DECISIONS.md` D-005): it tells Dan to call 911 if he can't reach her, and repeats her address. |
 | **The provision that actually threatens the B2B product** | **[47 CFR 64.1200(a)(1)(ii)](https://www.law.cornell.edu/cfr/text/47/64.1200) prohibits an artificial or prerecorded voice call — absent emergency purpose or prior express consent — "to the telephone line of any guest room or patient room of a hospital, health care facility, *elderly home*, or similar establishment."** An AI agent dialling a resident's room line in an assisted-living community lands on this squarely. **Two consequences, both already in the design:** (a) §4.2 already routes memory care to staff rather than calling the resident, which was a dignity decision and turns out to be a compliance one; (b) where we *do* call an AL resident, it runs on **written prior express consent captured at enrolment** plus the **"emergency purposes"** exemption at 64.1200(f)(4) — *"calls made necessary in any situation affecting the health and safety of consumers"* — which covers a fall alert and pointedly **does not** cover a routine check-in call. **We will not ship a non-emergency voice feature into facility room lines.** |
 | Healthcare-provider exemptions | We do **not** rely on them. 64.1200(a)(9)(iv) is available only to a health care provider or a covered entity/BA, caps calls at **1/day and 3/week**, requires the number to have been provided by the patient, and requires HIPAA compliance. Claiming it would also undercut the §8.7 non-provider posture. |
 
@@ -612,34 +626,84 @@ Every other number in the business is an input to this one. It is the number tha
 
 ## 10. Demo narrative for judges (3 minutes)
 
-**Setup on the table:** the band on a wrist (or a forearm mount), **two phones face-up with ringers loud** (one labelled MARGARET, one labelled DAN), a laptop mirrored to the screen showing the family app on the left and the facility dashboard on the right, and one ESP32 beacon visibly taped to the edge of the table labelled **BATHROOM**.
+**This is the only demo script** (`DECISIONS.md` D-007). `TECHNICAL_PRD.md` §13 points here and keeps
+the operator notes. It was rewritten on 2026-09-19 so that every beat fits the system's real timers,
+the family app never shows a room, and nothing on stage depends on the camera pipeline (not built as of
+Saturday 17:00).
+
+**Stage settings — set them, and say them out loud:** cancel window **10 s** (30 s in the product);
+contact step **20 s** (60 s). Everything else — detector, voice, FSM — is the real thing.
+
+**Setup on the table:** the band on a forearm, a **firm cushion** for the drop, **two phones face-up
+with ringers loud** (one labelled MARGARET, one labelled DAN), and a laptop mirrored to the screen with
+**Dan's family app on the left** and the **operator/staff view on the right** (countdown, ladder, live
+transcript). One ESP32 beacon labelled **BATHROOM** sits by the table for a single binary event only.
 
 | Time | Who / what | On screen | Said |
 |---|---|---|---|
-| **0:00–0:15** | Presenter A | Title slide with the disclaimer line | *"Quick disclaimer, then we start: this is a prototype, not a medical device, all the resident data is synthetic, and any call you hear is announced and consented first."* |
+| **0:00–0:15** | Presenter A | Title slide with the disclaimer line | *"Quick disclaimer: this is a research prototype — not FDA-cleared, and it can't detect every fall. Every call you'll hear is automated, recorded and announced first, and all the resident data is synthetic."* |
 | **0:15–0:35** | Presenter A | One stat, large: **80%** | *"When an older person falls and can't get up — in a home that already has an alarm — the alarm doesn't get pressed 80% of the time. For the falls where they lie there over an hour, it's 97%. The pendant isn't broken. Nobody presses it, because being wrong costs an ambulance."* |
-| **0:35–0:50** | Presenter B | Family app, status line: `Mum · active · out this morning` | *"This is her son's app. Notice what isn't here: no map, no camera, no live location. He can't see where his mother is. He gets one line a day. That's deliberate and I'll come back to it."* |
-| **0:50–1:00** | **Presenter B drops the band onto the table from ~1 m** | Dashboard flips to `FALL DETECTED — 30s to cancel` with a visible countdown | *"So — that's a fall."* |
-| **1:00–1:20** | — | Countdown runs 30 → 0. Silence in the room. | *"Thirty seconds to cancel. Nothing has left the room yet. No ambulance, no phone call to anyone's son."* |
-| **1:20** | **MARGARET's phone rings, loudly, on the table** | Dashboard: `CALLING RESIDENT` | — |
-| **1:20–1:50** | **A judge is invited to pick it up.** Agent: *"Hi, this is Dhyaan. Your band felt a hard fall about forty seconds ago. I'm recording this call so it goes in your log — say 'stop recording' any time. Are you hurt?"* Judge: *"I'm fine, I just sat down hard."* Agent: *"Glad to hear it. Can you get up on your own?"* Judge: *"Yes."* Agent: *"Alright, I've logged it. Take care."* | Live transcript streams. Dashboard flips **red → green: `RESOLVED BY VOICE · no escalation`**. A single line appears in the son's timeline. **DAN's phone stays silent.** | — |
-| **1:50–2:05** | **← THE 10-SECOND MOMENT.** Presenter B drops the band again. Phone rings. Judge picks up. Agent asks. Judge says: ***"I can't get up. My hip hurts."*** | Dashboard: **`ESCALATING`** — and **DAN's phone rings on the table within 5 seconds**, agent already speaking: *"This is Dhyaan. There's been a hard fall at 2:07. She says she can't get up. Do you want me to call 911?"* | *(say nothing — let the second phone ring)* |
-| **2:05–2:25** | Presenter A | Facility dashboard: 32 residents, 2 pages all night. Then the beacon trace of §5.6 replays: `219 → west hall → west exit` and a page at **31 seconds** | *"Same band, same event store, at a memory-care facility. One awake nurse, 32 residents — which is all 17 states require. Six in ten people with dementia wander. The old system tells you after the door opens. We page 31 seconds before it." * |
-| **2:25–2:40** | Presenter B | Camera view with a **LOCAL — never leaves the building** badge; then the family chat: *"How was Mum's week?"* → the §5.3 answer | *"The camera inference runs on a box in the building. No video leaves. And what the family gets isn't a feed — it's an answer."* |
-| **2:40–3:00** | Presenter A | Final slide: `$149 + $29/mo · $16/bed/mo` and **"the product shows deviations, not surveillance"** | *"Eleven cents a call. Ninety-four percent margin. But the reason it works isn't the price — it's that we ask her first, and we never show him where she is. That's what gets it worn."* |
+| **0:35–0:50** | Presenter B | Family app: `Mum · at home · active this morning` | *"This is her son's app. Notice what isn't here: no map, no room, no camera. He can't see where his mother is — the server won't even send it to his phone. He gets one line a day."* |
+| **0:50–1:03** | **Presenter B unstraps the band and drops it ~0.5 m onto the cushion** | Operator view: `FALL DETECTED · 10 s to cancel`. **Dan's app shows nothing.** | *"That's a fall. She has ten seconds to cancel — thirty in real life, we shortened it for the stage. Nobody has been called, and her son's phone shows nothing."* |
+| **~1:03** | **MARGARET's phone rings** (≈2 s to confirm + 10 s window + a few seconds to ring) | Operator: `CALLING RESIDENT` | — |
+| **1:05–1:35** | **A judge is invited to pick it up.** Agent: *"Hi Margaret, this is Dhyaan, an automated safety check. Your band felt a hard fall a moment ago. I'm recording this call for your log — say 'stop recording' any time. Are you hurt?"* Judge: *"I'm fine, I just sat down hard."* Agent: *"Glad to hear it. Can you get up on your own?"* Judge: *"Yes."* Agent: *"Alright, I've logged it. Take care."* | Live transcript streams. Operator view flips **red → green: `RESOLVED BY VOICE · no escalation`**. One quiet line appears in Dan's timeline. **DAN's phone stays silent.** | — |
+| **1:40–2:15** | **← THE MOMENT.** Presenter B drops the band again. MARGARET's phone rings about 15 s later. Judge picks up; the agent asks. Judge says: ***"I can't get up. My hip hurts."*** | Operator: **`ESCALATING`**. `escalate` fires on the answer — no timeout involved — and **DAN's phone rings within a few seconds**; his app opens the alert. Agent: *"This is Dhyaan, an automated call about Margaret, and this call is recorded. She's had a hard fall and says she can't get up. Her band places her in the kitchen. Can you get to her? If you can't reach her, call 911."* | *(say nothing — let the second phone ring)* |
+| **2:15–2:30** | Presenter A | Staff view of a memory-care facility (live rooms, access logged). Then a trace labelled **`REPLAY`**: `219 → west hall → west exit`, and the page | *"Same band at a memory-care facility — one awake nurse, 32 residents. The old wander system tells you after the door opens. We page from the corridor, before it: in this capture, ⟨N⟩ seconds after he left his room."* — **N is read off the replay capture, never a target** (§5.6, D-014) |
+| **2:30–2:45** | Presenter B | Family chat: *"Has she been out this week?"* → a cited answer that names no room | *"What the family gets isn't a feed — it's an answer. And it will never tell him which room she's in."* |
+| **2:45–3:00** | Presenter A | Final slide: `$149 + $29/mo · $16/bed/mo` and **"the product shows deviations, not surveillance"** | *"About eleven cents a call. But the reason it works isn't the price — it's that we ask her first, and we never show him where she is. That's what gets it worn."* |
 
-**The single 10-second moment** is 1:50–2:05: the judge answers *badly*, and **the second phone on the table starts ringing while they're still holding the first one.** It works because they can hear both. Do not narrate over it.
+**The single moment** is 1:40–2:15: the judge answers *badly*, and **the second phone on the table
+starts ringing a few seconds later, while they're still holding the first one.** It works because they
+can hear both, and because it is the one thing the prior art does not do (§12.1). Do not narrate over it.
+
+**Why these timings and not the old ones.** The old script dropped the band from ~1 m onto the table
+(the detector rejects a 1 m drop as "dropped, not worn"), ran a second fall-to-ring inside 15 s (every
+fall starts a fresh cancel window), and quoted a 31-second elopement page that a 20 s scan cannot
+produce. If a camera beat is built in time, it gets 5 seconds at 2:30 with the **LOCAL — never leaves
+the building** badge; nothing else depends on it.
+
+**Never quote a timing from the app's mock mode.** Until integration, the app's mock backend runs the
+ladder 6× faster than real. Any elapsed-time figure on stage comes from the live run's alert record.
 
 ### 10.1 Fallback ladder if the hardware fails
 
 | Failure | Fallback | Rehearsed? |
 |---|---|---|
-| Band doesn't detect the drop | **A second presenter has a phone with a big red `SIMULATE FALL` button** wired to the same event endpoint. Say *"the band is being shy — here's the same event from the simulator"* and keep moving. **Never debug on stage.** | Yes — press it once in rehearsal so the muscle memory exists |
-| Wi-Fi dies / venue network blocked | Everything runs on a **local hotspot** carried in the bag; the voice call is the only thing needing the internet, so the hotspot is the primary network, not the venue's | Yes |
-| Twilio call doesn't connect, or A2P verification isn't through | **Pre-recorded audio of the exact same call**, played from the laptop, with the live transcript pane replaced by a screen recording. Say *"this is a recording of the call we placed this morning"* — judges forgive a recording, they do not forgive a stall | Yes — record it at hour 18, not hour 23 |
+| Band doesn't detect the drop | **A second presenter has a phone with a big red `SIMULATE FALL` button** wired to the same event endpoint. Say *"the band is being shy — here's the same event from the simulator"* and keep moving. **Never debug on stage.** That run no longer counts as live sensor input for the Arduino track — the expo-table demo (§10.2) must use the real band | Yes — press it once in rehearsal so the muscle memory exists |
+| Wi-Fi dies / venue network blocked | Everything runs on a **local hotspot** carried in the bag; the hotspot is the primary network, not the venue's. The calls, the chat and pushes need the internet through it | Yes |
+| Twilio call doesn't connect | **Pre-recorded audio of the exact same call**, played from the laptop, with the live transcript pane replaced by a screen recording. Say *"this is a recording of the call we placed this morning"* — judges forgive a recording, they do not forgive a stall. (A2P registration only affects SMS, which we don't use) | Yes — record it at hour 18, not hour 23 |
 | Expo-hall noise wrecks the agent's ASR | **Wired headset** into the phone; judge holds the headset, not the handset. Plus a scripted single-utterance path so the agent doesn't need to turn-take under noise | Yes |
 | **BLE beacon localization is wrong on stage** (likely — see §12) | The beacon trace for the facility segment is a **replay of a real capture recorded in a quiet room**, explicitly labelled `REPLAY` on screen. The *live* beacon on the table is used only for one binary event: `entered BATHROOM zone` / `left`, which is robust | Yes |
 | Judge declines to take the call | Presenter takes it and speaks the resident's lines | Trivially |
+
+### 10.2 Expo-table demos — the beats that need more than 3 minutes
+
+These run at the table during expo judging (Sunday 12:00–14:30), at real speed, for the judges who come
+to us. They moved out of the stage script because they cannot honestly fit in it (D-007).
+
+**A · Arduino track — "the band learns her walk" (~90 s, real band only).** Arduino judges on live
+UNO Q + Modulino input, so **no simulator, no phone, no replay** here. Staff screen shows the walking-
+profile panel (`TECHNICAL_PRD.md` §8.7): an impact ticker and a live readout of the impact threshold
+between its floor and ceiling.
+1. Profile reset to the floor (2.5 g), demo chirp on. Heavy-walk with the band on: impacts register —
+   the ticker ticks and the band chirps.
+2. Hold button B to enter calibration mode and walk for 60 s. The readout climbs above her step peaks.
+3. Heavy-walk again: silence. Unstrap and drop the band 0.5 m onto the cushion: it still fires.
+4. Say it exactly: *"Personalized on-device detection — the hub learns her walk, the band applies it on
+   every sample, and it can never raise the bar above the softest fall we calibrated."* Not "on-device
+   learning"; it isn't.
+
+If forearm step peaks never reach 2.5 g, skip the chirps and show the before/after as the readout and
+the step-peak trace. Don't lower the floor to make it chirp.
+
+**B · Room tracking (~2 min, taped-out floor plan, staff screen).** Four beacons 3–8 m apart at chest
+height (`HARDWARE_SPEC.md` §10.4). Split screen: raw per-scan guess flapping on the left, the filtered
+room on the right, ~40 s behind each change. Leave the band in the bathroom zone; with the threshold
+forced to 45 s, the bathroom check-in call fires. Say the latency out loud — that honesty is the point.
+
+**C · Technical judges.** The architecture diagram, the detector log table from `HARDWARE_SPEC.md`
+§10.2 (evidence, not claims), and `DECISIONS.md` — a design log that shows what we changed and why
+earns the Learning & Collaboration points.
 
 ---
 
@@ -663,7 +727,7 @@ Note that **Long Lake, ASUS, Arduino and ElevenLabs publish no dollar amounts** 
 | Track | Fit | Why | What to emphasise in *that* submission |
 |---|---|---|---|
 | **Deepgram — "Build Something Worth Talking To"** (must call a Deepgram API; 1st: a Switch per member) | **Very strong — submit** | A **full end-to-end Voice Agent** with function calling that makes a routing decision with real consequences — not a TTS wrapper. Their framing (*"pick something you would actually use"*) fits a product whose whole thesis is that the call *is* the feature. | Lead with the **state machine**, not the voice: `resolved / uncertain / escalate` as tool calls, visibly changing the dashboard. Mention low-latency turn-taking (Flux `EagerEndOfTurn`) and the `stop_recording` function call as the agent *doing* something. Show **$0.11 per incident**. |
-| **Arduino — "Touch Grass"** (UNO Q; top 2) | **Very strong — submit** | The brief says the best projects *"won't just visualize sensor data, they'll transform it into meaningful, intelligent experiences."* An IMU transient becoming a phone conversation with a human being is about as literal a reading of that as exists. | Emphasise the **dual-brain split** the UNO Q was built for: STM32U585 runs the fall classifier deterministically; the Dragonwing QRB2210 Linux side runs BLE scanning, room classification and networking. Show the raw accel trace beside the resolved conversation. **Most likely track to win outright.** |
+| **Arduino — "Touch Grass"** (UNO Q; top 2) | **Very strong — submit** | The brief says the best projects *"won't just visualize sensor data, they'll transform it into meaningful, intelligent experiences."* An IMU transient becoming a phone conversation with a human being is about as literal a reading of that as exists. | Emphasise the **dual-brain split** the UNO Q was built for: the STM32U585 runs the threshold fall cascade and the step detector deterministically at 208 Hz; the Dragonwing QRB2210 Linux side runs BLE scanning, networking and the walking summary (room classification runs on the hub). Lead the "intelligent" claim with the **per-wearer walking profile** — learned on the hub, applied on the band every sample (§10.2 A, `TECHNICAL_PRD.md` §8.7). Show the raw accel trace beside the resolved conversation. **Requirements to meet exactly:** built in Arduino App Lab, at least one Modulino, and **live sensor input during judging** — the simulator, iPhone and replay fallbacks don't count for this track. **Most likely track to win outright.** |
 | **Espressif — "Best Use of Espressif Hardware (In AIoT)"** (ESP32-S3-DevKitC-1 / S3-Box at the hub) | **Strong — submit** | The beacon mesh is Espressif hardware doing real work: **ESP32-S3 boards as BLE room beacons** feeding room classification, and if time permits an **ESP32-S3-Box as the in-home voice endpoint** so the resident never has to reach a phone. Literal AIoT — edge radios feeding an inference layer. | Frame it as a **mesh, not a gadget**: N cheap nodes + one wearable = room-level location for under $20 of silicon, with the intelligence in the fusion. Note the door node is mains-powered and heartbeat-monitored, because reliability *is* the product. |
 | **Healthcare (general track)** | **Strong — the one general track to enter** | Falls are the leading cause of injury death in 65+: **43,000+ deaths, ~$80B/yr** ([CDC](https://www.cdc.gov/falls/about/index.html)), and the long-lie argument is peer-reviewed and specific. | Lead with **evidence, not tech**: the 80%/97% non-activation numbers and the Shorr RCT showing bed alarms don't reduce falls — then position the voice agent as the intervention that fixes the *behavioural* failure the literature identifies. State the FDA general-wellness boundary explicitly; clinical judges respect the restraint. |
 | **Meta — "Bringing People Closer Together with AI"** (top 3 advance to Menlo Park Round 2) | **Medium — submit, but honestly** | The family RAG chat and the daily digest genuinely change a relationship: Dan calls his mother about the pantry instead of asking "are you okay?". Meta's own examples include *"organize scattered family updates into a shared story."* **But be honest: this is a safety product with a connection feature, not a social product.** Meta judges on *"how meaningfully they strengthen human connection"* and *"how essential AI is"* — AI is essential here, connection is real but secondary. | Submit the **connection half as the project**: the chat, the digest, and — this is the strongest Meta-specific argument — the **deliberate refusal to show live location.** Most "family connection" products build a map. We removed the map so the relationship survives. That is a connection thesis, not a safety one. Requirements: 2–3 min demo video, public repo, and a write-up on who it's for and why AI is essential. **Do not oversell; a thin social claim reads worse than a modest true one.** |
@@ -718,7 +782,7 @@ Note that **Long Lake, ASUS, Arduino and ElevenLabs publish no dollar amounts** 
 | **Room-level accuracy is genuinely imperfect in production too** | Medium | 90% coarse-zone accuracy means one in ten samples is wrong. Deviation statistics built on noisy room labels can manufacture a "2 unusual nights" alert out of RF drift. | Never publish a deviation when confident-coverage is under 85% for that night (§9). Require **two consecutive** anomalous nights. Fuse with the IMU — a bathroom transition with no walking signature is discarded. In B2B, the hallway camera arbitrates. |
 | **The demo reads as surveillance, not care** | **High — the reputational risk** | A demo that opens on a floor plan with a dot moving through a bathroom is a product nobody funds and a story that writes itself badly. Location is, on its face, the creepiest thing here. | **Verbatim stage framing:** *"Here's what her son sees. No map. No dot. No floor plan. There is no screen in this product that shows you where your mother is, and no setting that adds one. The location exists so paramedics know which room, and so we can tell him one sentence if her nights change. That's it."* Show the **absence** of the map as a feature, early, before anyone asks. **Never render a floor plan on stage**, not even to explain the tech. |
 | **Two products, 24 hours** | **High** | The most common way this build fails is shipping two convincing halves of two things. | **B2C is the demo; B2B is a slide plus one replayed beacon trace and one camera clip.** Cut the staff dashboard to a single screen. If at hour 18 the B2B half is not working, cut it entirely and pitch one product well. |
-| **Band false positives** | High | 24 hours of tuning vs Apple's five years. Sitting down hard, a dropped band, and a car door all look like falls. | The 30-second cancel window and the voice call are *themselves* the mitigation — this is the one risk the product's own design absorbs. Say that: *"our detector is worse than Apple's, and it matters less, because being wrong costs a phone call."* |
+| **Band false positives** | High | 24 hours of tuning vs Apple's five years. Sitting down hard, a dropped band, and a car door all look like falls. | The 30-second cancel window and the voice call are *themselves* the mitigation — this is the one risk the product's own design absorbs. Say that: *"our detector is worse than Apple's, and it matters less, because being wrong costs a phone call."* The per-wearer walking profile (stretch, `TECHNICAL_PRD.md` §8.7) then trims heavy-step and walk-then-stop false alarms without ever raising the bar above the softest calibrated fall. |
 | **Twilio A2P / number provisioning stalls** | High | A known hackathon killer; verification can take hours or days. | Buy the number and place a test call in **hour 1**, not hour 20. Pre-recorded call audio ready by hour 18. |
 | **Judges challenge liability** — "what if it says she's fine and she isn't?" | Medium | A fair question with no perfect answer. | Answer honestly and in advance: uncertainty escalates, ambiguity escalates, silence escalates, **and the agent never de-escalates a call it could not complete.** The only path to "no escalation" is an affirmative, coherent answer from the resident. |
 | **Consent theatre** | Medium | It is easy to write beautiful consent copy and build a product that ignores it. | The family-scoped API returning no room identifiers (§8.1) is the test. If that is true in the code, the copy is true. If it isn't, delete §8 and the pitch. |

@@ -1,12 +1,31 @@
 # TECHNICAL PRD — Dhyaan
 
 **Elder-care sensing platform. One codebase, two products.**
-HackMIT 2026 · team of 4 · 24 hours · local-first on a MacBook Pro M5 Pro (48 GB unified memory)
+HackMIT 2026 · team of 3 · 24 hours · local-first on a MacBook Pro M5 Pro (48 GB unified memory)
 
 > **Verification convention.** Every external API claim below carries a source URL. Anything I could not
 > verify against a live doc in the build-up to this PRD is tagged **`[UNVERIFIED]`** and must be
 > checked against the vendor console in hour 0–1 before anyone writes code against it.
 > Backend language is **Python 3.12** throughout. All code in this doc is Python unless a fence says otherwise.
+
+> **Build status — Saturday 19 Sept, ~17:00 (H6).** This PRD is the original design. Where it and the
+> code disagree, the code and [`backend/README.md`](./backend/README.md) describe what runs, and
+> [`backend/fixtures/*.json`](./backend/fixtures/) are the band's wire contract. Design changes made
+> since the first draft are logged, with reasons, in [`DECISIONS.md`](./DECISIONS.md) (D-011).
+>
+> | Area | This PRD describes | What is built |
+> |---|---|---|
+> | Team | 4 people, roles A–D (§13) | **3 people** — Utsav (band, beacons), Ayush (backend, localization, learner, RAG), Abhinav (voice, app). The todo files supersede §13's split |
+> | Data store | One SQLite file + `sqlite-vec` (§2, §3.3, §9.4) | **MongoDB 7 in Docker**; brute-force cosine in numpy; `nomic-embed-text` via Ollama |
+> | Auth | JWT with resident IDs taken from the token (§9.7, §10.5) | Two static shared keys; the band sends `X-Band-Key`; websocket is `/v1/live?token=…&resident_id=…` |
+> | Band payloads | §10.5 examples | `backend/fixtures/band_fall.json`, `heartbeat.json`, `rf_scan.json` |
+> | Alert FSM + ladder (§4) | — | Built and tested |
+> | Voice (§5) | — | Bridge built and tested offline; wired to the real FSM via `backend/app/voice_adapter.py` |
+> | Room localization (§7) | k-NN + HMM | k-NN + hysteresis; HMM state is process-local |
+> | Baseline learner (§8), RAG (§9) | — | Built |
+> | App (§10) | — | Expo app on an in-memory mock backend (ladder runs 6× faster than real) |
+> | Camera + VLM (§6) | — | **Not built** — stretch goal, second on the team's cut list (D-012) |
+> | Walking profile (§8.7) | — | **Not built** — stretch goal (D-009) |
 
 ---
 
@@ -42,14 +61,15 @@ Dhyaan is one sensing-and-reasoning backend with two front doors.
 | Sensing | 1 Arduino UNO Q arm band per resident | N bands + M fixed CCTV cameras |
 | Primary job | Fall → phone call → escalation to family | ADL tracking → deviation alerts → staff triage |
 | Human in the loop | Adult child, by phone + app | Night nurse + director, by dashboard |
-| Who the voice agent calls | The resident, then children | The resident, then the nurse station |
+| Who the voice agent calls | The resident, then children | Assisted-living residents, then the nurse station. **Memory care goes straight to staff**, and calls to facility room lines are for emergencies only (`PRODUCT_SPEC.md` §4.2, §8.5) |
 | Surface | React Native app (iOS first) | React web dashboard + the same RN app in "staff" mode |
 | Who pays | Family, ~$25/mo | Facility, per-bed |
 
 **The shared spine** (the actual product): everything either surface observes becomes a row in one
 `events` table. Events are summarised into per-resident daily narratives, embedded, and vectorised, so
 that *both* Priya and Marcus ask the same natural-language question of the same store:
-*"has mum been eating this week?"*, *"which residents on floor 2 were up after 2 a.m. this month?"*
+*"has mum been getting out this week?"*, *"which residents on floor 2 were up after 2 a.m. this month?"*
+(Meal questions only have answers in the facility, where a camera can see the dining room — D-010.)
 
 And the baseline learner is per-person, not global: Eleanor gets up at 06:40 ± 25 min and walks once at
 10:15; Harold in 214 sleeps until 09:30 and never leaves the room. A global rule ("alert if not up by
@@ -70,7 +90,7 @@ Write these on the whiteboard. Say them out loud to the judges.
 | Camera calibration, multi-camera re-identification across rooms | Per-camera tracking only; a resident is bound to a camera zone |
 | Cloud deployment, autoscaling, Postgres | Everything runs on one Mac; SQLite; Cloudflare Tunnel for phone access |
 | Speaker diarisation / voice biometrics on the call | We assume whoever answers the phone is the resident |
-| Fall detection ML model trained on a real dataset | Threshold cascade on the band (§4); honest about it |
+| Fall detection ML model trained on a real dataset | Threshold cascade on the band (§4); honest about it. The one adaptive part is the per-wearer walking profile (§8.7): robust statistics learned on the hub that move one threshold within fixed bounds — not a trained classifier |
 
 ---
 
@@ -83,11 +103,11 @@ FSM and the event bus; three sibling worker processes do the things that must no
 ```mermaid
 graph TB
     subgraph EDGE["Edge — on the person / in the room"]
-        MCU["STM32U585 MCU<br/>Zephyr/Arduino sketch<br/>IMU @104 Hz, fall cascade"]
+        MCU["STM32U585 MCU<br/>Zephyr/Arduino sketch<br/>IMU @208 Hz ±16 g, fall cascade"]
         LNX["UNO Q · QRB2210 Debian<br/>Python agent<br/>cancel window, Wi-Fi + BLE scan"]
         BCN["BLE beacons ×4-6<br/>iBeacon / ESP32"]
         CAM["IP cameras (RTSP)<br/>+ UVC webcam"]
-        MCU -->|GPIO IRQ| LNX
+        MCU -->|Bridge.notify · MessagePack RPC| LNX
         BCN -.->|advertisements| LNX
     end
 
@@ -144,7 +164,7 @@ graph TB
 
 | Service | Language / runtime | Responsibility | Talks to |
 |---|---|---|---|
-| `band-mcu` | C, Arduino/Zephyr on STM32U585 | 104 Hz IMU read, 4-condition fall cascade (§4.1), GPIO interrupt, button | `band-agent` over GPIO/UART |
+| `band-mcu` | C, Arduino/Zephyr on STM32U585 | 208 Hz ±16 g IMU read, fall cascade (§4.1, `HARDWARE_SPEC.md` §6), step detector (§8.7), buttons | `band-agent` over Bridge (MessagePack RPC via `arduino-router`) |
 | `band-agent` | Python 3.11 on QRB2210 Debian | 30 s cancel window, buzzer/LED, BLE `bleak` scan (3 s/20 s), Wi-Fi `iw` scan (60 s), HTTPS POST, 60 s heartbeat | `dhyaan-api` over HTTPS |
 | `dhyaan-api` | Python 3.12, FastAPI + uvicorn | REST, client websocket, in-process event bus, **alert FSM**, escalation timers, push fanout, Twilio call placement | SQLite, Twilio, Expo, all workers |
 | `voice-bridge` | Python, same process, `/twilio/stream` | Twilio ⇄ Deepgram audio relay, barge-in `clear`, `FunctionCallRequest` → FSM | Twilio Media Streams, Deepgram Voice Agent |
@@ -210,13 +230,12 @@ nothing else correctly, build this correctly. Two rules:
     "meal": "lunch",
     "seated_duration_s": 1308,
     "utensil_to_mouth_observed": true,
-    "plate_state_start": "full",
-    "plate_state_end": "mostly_empty",
+    "plate_present_frames": 11,
     "vlm_model": "mlx-community/Qwen3-VL-8B-Instruct-4bit",
     "keyframe_ids": ["kf_8841", "kf_8846", "kf_8859"],
     "raw_vlm_json": { "...": "..." }
   },
-  "embedding_text": "On Friday 19 September at 12:41 PM, Eleanor was observed eating lunch in the dining room for about 22 minutes. She used utensils and her plate went from full to mostly empty.",
+  "embedding_text": "On Friday 19 September at 12:41 PM, Eleanor was observed eating lunch in the dining room for about 22 minutes, with a plate in front of her and repeated hand-to-mouth movement.",
   "derived_from": ["evt_01JBQX8...", "evt_01JBQX8..."],
   "supersedes": null,
   "review_state": "unreviewed",
@@ -251,14 +270,15 @@ Grouped by producer. `⚠` = can trigger an alert. `β` = consumed by the baseli
 
 | type | ⚠ | β | payload keys |
 |---|---|---|---|
-| `fall_suspected` | ⚠ | | `peak_g`, `free_fall_ms`, `post_impact_tilt_deg`, `stillness_ms`, `battery_pct` |
+| `fall_suspected` | ⚠ | | `peak_g`, `free_fall_ms`, `post_impact_tilt_deg`, `stillness_ms`, `confidence` (no `battery_pct` — the demo band's USB power bank reports no charge level, D-013) |
+| `impact_only` | | | `peak_g`, `orient_deg`, `std_g`, `path` — an impact that failed the angle or stillness check. Not embedded. Feeds the walking profile (§8.7) and the demo impact ticker |
 | `fall_confirmed` | ⚠ | β | `confirmed_by` (`voice`\|`staff`\|`timeout`), `call_id` |
 | `fall_cancelled` | | | `cancelled_by` (`button`\|`voice`\|`family`\|`staff`), `latency_ms` |
 | `band_motion_high` | | β | `activity_counts`, `window_s` |
 | `band_still` | | β | `still_duration_s` |
 | `prolonged_inactivity` | ⚠ | β | `inactive_since`, `duration_s`, `expected_max_s` |
 | `band_offline` | ⚠ | | `last_seen`, `reason` |
-| `band_low_battery` | | | `battery_pct` |
+| `band_low_battery` | | | `battery_pct` — **production band only**; the demo band cannot report a charge level, so it never emits this (liveness comes from `band_offline`) |
 | `button_pressed` | ⚠ | | `press_type` (`short`\|`long`) — the manual SOS |
 
 **Location / RF (`source: band`, produced by the localizer — §7)**
@@ -299,7 +319,7 @@ the RAG layer can only say *"I don't know where she was between 2 and 3 PM"* if 
 | type | ⚠ | β | payload keys |
 |---|---|---|---|
 | `person_present` | | | `track_id`, `bbox`, `dwell_s` — cheap, pre-VLM, not embedded |
-| `meal_observed` | | β | `meal`, `seated_duration_s`, `plate_state_start/end`, `utensil_to_mouth_observed` |
+| `meal_observed` | | β | `meal`, `seated_duration_s`, `plate_present_frames`, `utensil_to_mouth_observed` (the VLM schema, §6.4, reports whether a plate is present — not how full it is) |
 | `meal_skipped` | ⚠ | β | `meal`, `expected_window`, `last_seen_in_dining` |
 | `walk_started` | | β | `zone`, `gait_note` |
 | `walk_completed` | | β | `duration_s`, `zones_traversed`, `assistive_device` |
@@ -309,7 +329,7 @@ the RAG layer can only say *"I don't know where she was between 2 and 3 PM"* if 
 | `unsteady_gait` | ⚠ | | `description`, `vlm_confidence` — **advisory only, never diagnostic** |
 | `fall_suspected` | ⚠ | | `vlm_description`, `keyframe_ids` — camera can also raise a fall |
 | `visitor_present` | | β | `n_people`, `duration_s` |
-| `medication_taken` | | β | `observed_at_station`, `staff_present` |
+| `medication_taken` | | β | `observed_at_station`, `staff_present` — **roadmap, not emitted in v1**: a pill going into a mouth is not reliably visible from hallway CCTV at 640×360 |
 | `assistance_given` | | | `staff_id`, `duration_s` |
 | `prolonged_inactivity` | ⚠ | β | `zone`, `duration_s` |
 
@@ -332,6 +352,8 @@ the RAG layer can only say *"I don't know where she was between 2 and 3 PM"* if 
 | `baseline_deviation` | ⚠ | | `feature`, `observed`, `expected_mu`, `expected_mad`, `robust_z`, `severity` |
 | `daily_summary` | | | `narrative`, `n_events`, `model`, `date_local` — **the primary RAG chunk (§9)** |
 | `baseline_updated` | | | `feature`, `old_mu`, `new_mu`, `n_obs` |
+| `gait_profile_updated` | | | `profile_rev`, `impact_g_soft`, `impact_g_after_ff`, `bounds`, `n_windows`, `mode` (`normal`\|`calibration`) — §8.7. Not embedded |
+| `gait_profile_shift` | ⚠ | | `feature` (`step_peak_p95`\|`step_rate_hz`), `change_pct`, `window_days` — **staff-only, advisory, never worded medically**; freezes the profile (§8.7) |
 | `staff_note` | | | `text`, `staff_id` |
 | `family_note` | | | `text`, `user_id` |
 | `feedback_given` | | | `target_event_id`, `verdict`, `reason` — Priya saying "that was fine, she was at her sister's" |
@@ -379,8 +401,8 @@ CREATE TABLE bands (
   resident_id   TEXT REFERENCES residents(id),   -- NULL = unpaired, on the shelf
   paired_at     TEXT,
   last_seen_at  TEXT,                            -- updated by every heartbeat; drives band_offline
-  battery_pct   INTEGER,
-  thresholds_rev INTEGER NOT NULL DEFAULT 1,     -- hub notices a band running stale calibration
+  battery_pct   INTEGER,                         -- always NULL on the demo band (USB power bank, D-013)
+  thresholds_rev INTEGER NOT NULL DEFAULT 1,     -- hub notices a band running stale calibration / walking profile (§8.7)
   firmware      TEXT
 );
 CREATE INDEX idx_bands_resident ON bands(resident_id) WHERE resident_id IS NOT NULL;
@@ -605,38 +627,37 @@ Split of responsibility:
 > is `CTRL1_XL = 0x56` (208 Hz, ±16 g) with raw-register reads, because `readAcceleration()` hard-codes
 > a ÷4 scale. Read the hardware spec before writing firmware; the trap is silent.
 
-The cascade — four conditions, all must hold, within a 2.5 s window. These are threshold-based and we
-say so; we are not shipping a trained fall classifier in 24 hours.
+The cascade is threshold-based and we say so; we are not shipping a trained fall classifier in 24
+hours. Summary of `HARDWARE_SPEC.md` §6.4–6.5 (the source of truth — do not copy numbers from here into
+firmware):
 
-```c
-// sketch/fall.ino  — LSM6DSOX @ 104 Hz, ±8 g
-// SVM = sqrt(ax^2+ay^2+az^2) in g
-#define FREEFALL_G      0.60f   // 1) SVM dips below 0.6 g for >= 80 ms
-#define FREEFALL_MS     80
-#define IMPACT_G        2.80f   // 2) SVM peak >= 2.8 g within 400 ms of the dip
-#define IMPACT_WIN_MS   400
-#define TILT_DEG        60.0f   // 3) gravity vector rotates >= 60 deg vs pre-fall baseline
-#define STILL_MS        1500    // 4) SVM stays within 1.0 +/- 0.15 g for >= 1.5 s after impact
-```
+| Stage | Rule (starting values, all in `config.json`) |
+|---|---|
+| Free fall | \|a\| < **0.40 g** for **80–400 ms** (forearm falls bottom out at 0.3–0.6 g, not 0 g) |
+| Impact | > **2.8 g** within 400 ms of free fall, **or** > **3.5 g** with jerk > 30 g/s and no free fall |
+| Orientation | Gravity vector turns > **45°** — **required** on the no-free-fall path |
+| Stillness | For **2 s** after a 200 ms settle: σ(\|a\|) < 0.12 g and \|ω\| < 25 °/s |
 
-Condition 4 is what kills the false positives: taking the band off, setting it on a table, and an arm
-swing all trigger 1–3 but not the post-impact stillness. **Tunable at the venue** — expect to spend 45
-minutes of hour 6–12 re-tuning `IMPACT_G` on whoever is willing to fall onto a beanbag.
+Stillness is what kills most false positives: an arm swing, a clap or a slammed forearm is followed by
+more movement. **Tunable at the venue** by dropping the band — never a person — per
+`HARDWARE_SPEC.md` §7.2. The impact threshold on the no-free-fall path is personalised per wearer by the
+walking profile (§8.7), within fixed bounds.
 
-On trigger, the MCU sets a GPIO the Linux side watches; the Linux side starts the cancel window.
+On confirmation the MCU calls `Bridge.notify("fall_event", …)` once, immediately; the Linux side attaches
+the latest room fix, POSTs it, and runs the 30 s cancel window (`HARDWARE_SPEC.md` §5.3, §6.7).
 
 ### 4.2 The escalation ladder — exact timings
 
 | t | Step | Actor | Action |
 |---|---|---|---|
-| `T+0` | `SUSPECTED` | Band | Buzzer + red LED. `POST /v1/ingest/band` → `fall_suspected` event, `alerts` row opens. Push to family: *"Possible fall detected — calling Eleanor now."* |
-| `T+0…30 s` | `LOCAL_CANCEL` | Resident | Long-press the band button → `fall_cancelled`, alert closes, resolution `false_positive`. **Nothing else happens.** |
+| `T+0` | `SUSPECTED` | Band | Buzzer + red LED. `POST /v1/ingest/band` → `fall_suspected` event, `alerts` row opens. **No person is notified yet** (D-002): the hub knows immediately so a band that breaks on impact still escalates, but the family hears nothing unless the ladder reaches them. Staff and the demo operator screen may show the countdown |
+| `T+0…30 s` | `LOCAL_CANCEL` | Resident | Press button A on the band → `fall_cancelled`, alert closes, resolution `false_positive`. **Nothing else happens.** |
 | `T+30 s` | `CALLING_RESIDENT` | Backend | Twilio outbound to `residents.phone_e164`, `Timeout=25` (≈4 rings), Deepgram agent on the media stream |
 | `T+30…~75 s` | — | Voice agent | Greeting + up to 3 turns. Classifies (§4.4) |
 | on `no-answer` | `RETRY_RESIDENT` | Backend | **Exactly one** retry, 15 s after the first attempt ends, `Timeout=25` |
 | `T+~120 s` | `CALLING_CONTACT_1` | Backend | Call `contacts` where `ladder_order = 1`. Different agent prompt (§5.5). Simultaneously: push with `interruptionLevel: "timeSensitive"` + full-screen in-app alert |
 | `+60 s` unacked | `CALLING_CONTACT_2` | Backend | `ladder_order = 2`. Contact 1 is **not** hung up on — we place a second, parallel call |
-| `+60 s` unacked | `ESCALATED_FINAL` | Backend | B2B: ring the nurse station + top of Marcus's triage list. B2C: **voice call** to every remaining contact with **911 guidance** and the resident's address, plus a push (not an SMS — A2P 10DLC gates SMS and will not clear in 24 h; §5.8). **We do not dial 911.** |
+| `+60 s` unacked | `ESCALATED_FINAL` | Backend | B2B: ring the nurse station + top of Marcus's triage list. B2C: **voice call** to every remaining contact with **911 guidance** and the resident's address, plus a push (not an SMS — A2P 10DLC gates SMS and will not clear in 24 h; §5.7). **We do not dial 911.** |
 | any time | `ACKNOWLEDGED` | Any human | "I called her" / `mark_ok` / staff tap → alert `state_changed_at` set, ladder halts |
 
 Two timing decisions worth defending to a judge:
@@ -709,7 +730,12 @@ tool call, the classification defaults to `incoherent` and we escalate — **sil
 
 **Resident call, attempt 1 — greeting (Aura-2 TTS, spoken immediately on `SettingsApplied`):**
 
-> "Hi Eleanor, this is Dhyaan calling because your band thought you might have fallen. Are you okay?"
+> "Hi Eleanor, this is Dhyaan, an automated safety check. Your band thought you might have fallen.
+> I'm recording this call for your log — say 'stop recording' any time. Are you okay?"
+
+**Every call, to every party, opens with the recording and AI disclosure** (D-004). This is the legal
+safe harbour in all-party-consent states, and Massachusetts — where we demo — is the strictest
+(`PRODUCT_SPEC.md` §8.5). It costs one sentence. Never remove it to save time on stage.
 
 Then, by branch:
 
@@ -721,12 +747,17 @@ Then, by branch:
 | Confused / slurred / off-topic ×2 | "Okay, I'm going to call Priya to check on you. Hang tight." | `escalate(reason="incoherent")` |
 | "I'm busy, call back" | "No problem. I'll call you back in five minutes." | `request_callback(minutes=5)` |
 | Silence ≥ 20 s after greeting | *(repeat greeting once, then)* "I'm not hearing anything, so I'm calling Priya." | `escalate(reason="silence")` |
+| "Stop recording" | "Okay — I've stopped recording and deleted what I had. Are you okay?" | `stop_recording()`, then carry on |
 
 **Contact call (Priya):**
 
-> "Hi, this is Dhyaan calling about Eleanor. Her band detected a possible fall at 3:42 PM, and she
-> didn't answer when we called her. Can you check on her? Press any key or just say yes to confirm
-> you're on it."
+> "Hi, this is Dhyaan, an automated call about Eleanor. This call is recorded — say 'stop recording'
+> any time. Her band detected a possible fall at 3:42 PM, and she didn't answer when we called her.
+> Her band places her in the bathroom. Can you check on her? Just say yes to confirm you're on it."
+
+The room sentence is included only when the band's room fix is under 60 s old. This is the one place
+the family ever hears a room name: an emergency escalation, so whoever goes knows where she is (D-001).
+The contact call never mentions a room otherwise.
 
 She says yes → `escalate_acknowledged` event, ladder stops, push confirms in her app.
 
@@ -738,16 +769,17 @@ application-to-person SMS over a long code and takes days, not hours
 unaffected. The ladder is voice-only end to end, and the same text is spoken by Aura-2 and mirrored
 into the app as a push + a persistent alert card:
 
-> "This is Dhyaan calling about Eleanor. She may have fallen at 3:42 PM, and nobody has been able to
-> reach her or acknowledge the alert. If you cannot reach her, call 911. Her address is 14 Elm Street,
-> apartment 3B, Cambridge, Massachusetts. Dhyaan does not call emergency services."
+> "This is Dhyaan, an automated call about Eleanor, and this call is recorded. She may have fallen at
+> 3:42 PM, and nobody has been able to reach her or acknowledge the alert. If you cannot reach her,
+> call 911. Her address is 14 Elm Street, apartment 3B, Cambridge, Massachusetts. Dhyaan does not call
+> emergency services."
 
 The address is spoken twice, slowly, and the call does not hang up until it has been said the second
 time — a person writing down an address under stress needs the repeat.
 
 ### 4.6 Tool definitions given to the voice agent
 
-These go in `agent.think.functions` in the Deepgram `Settings` message (§5.2). All four are
+These go in `agent.think.functions` in the Deepgram `Settings` message (§5.2). All five are
 **client-side** (no `endpoint` key), so Deepgram sends us a `FunctionCallRequest` and our bridge
 process executes against the FSM
 ([Function Calling](https://developers.deepgram.com/docs/voice-agents-function-calling)).
@@ -788,6 +820,11 @@ process executes against the FSM
     }
   },
   {
+    "name": "stop_recording",
+    "description": "Call this immediately if anyone on the call asks you to stop recording. Then say out loud that recording has stopped and continue the check-in.",
+    "parameters": {"type": "object", "properties": {}}
+  },
+  {
     "name": "end_call",
     "description": "End the conversation after you have called mark_ok or escalate and said goodbye.",
     "parameters": {"type": "object", "properties": {}},
@@ -796,12 +833,17 @@ process executes against the FSM
 ]
 ```
 
+`stop_recording` (D-004) stops appending `ConversationText` to the call's transcript, deletes what was
+captured on this call, and writes a `call_recording_stopped` metadata line on the alert. The incident,
+its classification and its timings are still logged. There is no audio to delete: **call audio is never
+stored** (§12.3); "recording" in the disclosure means the transcript.
+
 `defer_until_eot: true` on `end_call` is the one that matters: it defers the function's execution until
 end-of-turn is confirmed, so the farewell TTS finishes playing before the socket closes — Deepgram's
 docs use `end_call` as the canonical example of this flag, and for it the `FunctionCallResponse` is
 only sent after `AgentAudioDone`
 ([Function Calling](https://developers.deepgram.com/docs/voice-agents-function-calling)).
-The other three are **not** deferred — we want `escalate` to fire the instant the model decides, while
+The other four are **not** deferred — we want `escalate` to fire the instant the model decides, while
 the agent is still speaking its reassurance line. That parallelism is worth ~2 seconds on the critical
 path.
 
@@ -838,7 +880,7 @@ audio ([Voice Agent getting started](https://developers.deepgram.com/docs/voice-
     "output": { "encoding": "mulaw", "sample_rate": 8000, "container": "none" }
   },
   "agent": {
-    "greeting": "Hi Eleanor, this is Dhyaan calling because your band thought you might have fallen. Are you okay?",
+    "greeting": "Hi Eleanor, this is Dhyaan, an automated safety check. Your band thought you might have fallen. I'm recording this call for your log — say 'stop recording' any time. Are you okay?",
     "listen": {
       "provider": { "type": "deepgram", "model": "flux-general-en" }
     },
@@ -849,7 +891,7 @@ audio ([Voice Agent getting started](https://developers.deepgram.com/docs/voice-
         "temperature": 0.2
       },
       "prompt": "<SYSTEM PROMPT, see 5.5>",
-      "functions": [ "<mark_ok, escalate, request_callback, end_call — see 4.6>" ]
+      "functions": [ "<mark_ok, escalate, request_callback, stop_recording, end_call — see 4.6>" ]
     },
     "speak": {
       "provider": { "type": "deepgram", "model": "aura-2-thalia-en" }
@@ -1053,11 +1095,15 @@ Rules:
   answers questions that were not asked: escalate immediately. Do not seek confirmation.
 - If you are unsure, escalate. A false escalation costs a phone call. A missed one does not.
 - After calling mark_ok or escalate, say one short closing line, then call end_call.
+- If anyone asks you to stop recording, call stop_recording at once, say that you have stopped, and
+  carry on.
+- If asked who you are, say you are Dhyaan, an automated safety system. Never claim to be a person.
 - Never say the words "emergency services", "ambulance" or "911". You do not call them.
 ```
 
 The contact prompt swaps the goal: confirm a human is going to physically check on Eleanor, then
-`escalate(reason="third_party")` if they say they cannot.
+`escalate(reason="third_party")` if they say they cannot. Contact calls **may** say "if you can't reach
+her, call 911" and may name the room (see the contact greeting in §4.5); the resident call never does.
 
 ### 5.6 Voicemail
 
@@ -1468,7 +1514,7 @@ in §1 — see §7.5.
 ### 7.1 Sensing mechanics on the UNO Q
 
 Both radios are read from the **Linux side** (QRB2210, Debian), not the STM32. The MCU owns the IMU and
-the 104 Hz fall cascade; the A53 owns the radios, the network, and the scan scheduler. They do not
+the 208 Hz fall cascade; the A53 owns the radios, the network, and the scan scheduler. They do not
 contend.
 
 **Wi-Fi RSSI scan.** Three interchangeable commands; we use `nmcli` because its output parses without
@@ -1784,9 +1830,10 @@ numbers from hour 6.]`
 
 Two rules that follow from this and that are in the product, not just the docs:
 
-1. **Never show a map or a dot.** Show a room name and a confidence. A dot on a floor plan is a promise
-   of metre accuracy that we cannot keep, and the first time it is in the wrong room the family stops
-   believing everything else.
+1. **Never show a map or a dot.** On staff and ops screens, show a room name and a confidence. A dot on
+   a floor plan is a promise of metre accuracy that we cannot keep, and the first time it is in the
+   wrong room the staff stop believing everything else. **The family never sees a room at all** —
+   only home/out, counts and deviations (§12.4, D-001).
 2. **Merge zones that RF cannot separate.** If the survey shows two rooms whose fingerprint centroids
    are < 6 dB apart, the onboarding flow tells the family to merge them. One correct "downstairs" beats
    two rooms that are right 55% of the time.
@@ -1824,23 +1871,28 @@ def fuse(rf: LocState, cam: CameraObservation) -> Location:
 
 > Every camera-only ADL system has the same unsolved problem — it can see that *a* person ate lunch, but
 > not *which* person, so it needs face recognition, which is exactly the thing a facility's residents
-> and their families will not consent to. Dhyaan already knows which resident is in the dining room,
-> because the band she is wearing told us. **We solve re-identification with a radio instead of a face.**
+> and their families will not consent to. When one resident is in view, Dhyaan already knows who it is,
+> because the band she is wearing told us. **We solve re-identification with a radio instead of a face —
+> for one person at a time.**
 
-So the B2B attribution rule is: the VLM produces an *unattributed* observation bound to a camera zone and
-a track; the localizer produces an authoritative `(resident_id → zone)` map; the joiner attributes the
-observation to whichever resident RF places in that zone at that instant. If RF places two residents in
-the zone and the VLM saw two tracks, we attribute only if the count matches; otherwise the observation is
-written with `resident_id = "res_unknown"` and never attributed. **An unattributed observation is better
-than a wrong one**, because a wrong one poisons a baseline.
+Say the last clause out loud; a judge will find it anyway. So the B2B attribution rule is: the VLM
+produces an *unattributed* observation bound to a camera zone and a track; the localizer produces an
+authoritative `(resident_id → zone)` map; the joiner attributes the observation **only when exactly one
+resident's band is in that zone at that instant** (D-012). With two or more residents in the zone —
+the dining room at lunch — room-level RF cannot say which track is which, so the observation is written
+with `resident_id = "res_unknown"` and never attributed. (An earlier draft attributed when the counts
+matched; matching counts still cannot tell two people apart.) **An unattributed observation is better
+than a wrong one**, because a wrong one poisons a baseline. Per-resident meal tracking in a shared
+dining room is therefore a roadmap item, not a demo claim.
 
 ### 7.6 What this buys the product
 
 Location converts every inactivity signal from a vague one into an actionable one. *"She hasn't moved in
-four hours"* makes a family member drive across town. *"She has been in the bathroom for 40 minutes and
-she normally takes 6"* makes them pick up the phone, and it is the single most common place an older
-adult falls. Same sensor, same band, same day of engineering — the difference is entirely that we know
-which room.
+four hours"* is ambiguous. *"She has been in the bathroom for 40 minutes and she normally takes 6"* is
+worth a phone call to her right now, and the bathroom is the single most common place an older adult
+falls. Same sensor, same band, same day of engineering — the difference is entirely that we know which
+room. **The system knows the room; the family does not see it** (D-001): the bathroom rule calls the
+resident, and the family hears a room name only if the ladder escalates to them.
 
 **The `bathroom_prolonged` rule**, evaluated live on every scan tick, not at the nightly rollup:
 
@@ -1856,11 +1908,14 @@ dwell_s > threshold_s AND a fall_suspected in the last 10 min
 ```
 
 The voice-agent greeting for this path differs and it matters:
-*"Hi Eleanor, it's Dhyaan. Just checking in — are you doing alright in there?"* — not
-*"we think you fell in the bathroom."*
+*"Hi Eleanor, it's Dhyaan, an automated safety check — I'm recording this call for your log. Just
+checking in — are you doing alright in there?"* — not *"we think you fell in the bathroom."* The
+`warn` step notifies nobody but her. In a facility this is a room-line call, so it runs only under the
+health-and-safety exemption (`PRODUCT_SPEC.md` §8.5) and never for memory-care residents, whose alerts
+go straight to staff.
 
 Same shape, different thresholds, for `zone_dwell` in any zone: `expected_p95_s` is carried in the
-payload so the app can show "40 min (usual max 6 min)" without a second query.
+payload so the **staff** app can show "40 min (usual max 6 min)" without a second query.
 
 ### 7.7 Calibration, drift and failure modes
 
@@ -1887,19 +1942,24 @@ the worst failure this product can have.
 **Real:** the BLE advertisement parsing, the RSSI capture, the fingerprint store, the k-NN, the HMM, the
 adjacency graph, the hysteresis, every event that comes out, the bathroom rule, the baseline features.
 
-**Faked:** the house. "Eleanor's home" is a 2 m table with three labelled beacons taped to books —
-`kitchen`, `bathroom`, `bedroom` — plus a fourth `hallway` beacon in the middle, so the adjacency graph
-is exercised for real. We surveyed it during setup like a real install. We say all of this out loud.
+**Faked:** the house. "Eleanor's home" is a **taped-out floor plan** — 3–4 zones, beacons **3–8 m
+apart at chest height** on chair backs or stands (`HARDWARE_SPEC.md` §3.2, §10.4). An earlier draft put
+four beacons on a 2 m table; the hardware spec's own placement rules say beacons closer than 3 m give
+indistinguishable readings, so that cannot work. We survey it in the demo space like a real install, and
+we say all of this out loud.
 
-The demo beat (20 s, and it is the second-best moment in the script after the phone call):
+This beat does **not** fit in the 3-minute pitch: every committed room change takes 20–60 s (§7.4), so
+bedroom → hallway → bathroom is roughly 80 s before the bathroom rule even starts counting. It runs at
+the **expo table** instead (`PRODUCT_SPEC.md` §10.2, D-007), on the **staff** screen:
 
 1. Split screen: raw per-scan k-NN argmax on the left, HMM-committed room on the right.
 2. Walk the band from `bedroom` past `hallway` to `bathroom`.
 3. **The left side flaps** — bedroom, hallway, bedroom, bathroom, hallway. The right side goes bedroom →
-   hallway → bathroom, cleanly, ~40 s behind. Point at the left side. *"That is why there is a filter."*
-4. Leave the band in `bathroom`. At the demo threshold (`threshold_s` forced to 45 s for the stage) the
+   hallway → bathroom, cleanly, ~40 s behind each change. Point at the left side. *"That is why there
+   is a filter."*
+4. Leave the band in `bathroom`. At the demo threshold (`threshold_s` forced to 45 s at the table) the
    `bathroom_prolonged` alert fires, the phone rings, and the Deepgram agent asks
-   *"are you doing alright in there?"*
+   *"are you doing alright in there?"* Total: about two minutes.
 
 Beacon batteries are checked at hour 20 and spares are in the bag. Two of the four beacons will be
 ESP32 boards flashed with an iBeacon sketch because that is what is in the hardware bin; they advertise
@@ -1924,16 +1984,22 @@ bathroom trip must not move the wake-time baseline.
 Computed once per resident per local day by `baseline/rollup.py` at 03:30 local (and on demand in the
 demo via `POST /admin/rollup`). Each is a scalar; each maps to one row in `baselines`.
 
+**Which product can compute which feature (D-010).** The home product has a band and beacons and no
+camera. Rows marked *facility* need a camera and are simply absent at home — the family app never shows
+an "ate" tile or answers "has she been eating?" with anything but "I don't have observations for that".
+Walking at home comes from the band's step detector (`steps_day`), not from camera walks.
+
 | Feature key | Units | Derived from | Estimator |
 |---|---|---|---|
-| `wake_time_min` | minutes after local midnight | first `bed_exit` or `band_motion_high` after 04:00 | median/MAD |
+| `wake_time_min` | minutes after local midnight | first `bed_exit` (facility) or `band_motion_high` after 04:00 | median/MAD |
 | `sleep_time_min` | minutes after local midnight (can exceed 1440) | last motion before a ≥90 min still block | median/MAD |
-| `meal_count` | count/day | `meal_observed` | Poisson λ |
-| `breakfast_min`,`lunch_min`,`dinner_min` | minutes after midnight | `meal_observed` by meal slot | median/MAD |
-| `max_meal_gap_h` | hours | max gap between consecutive `meal_observed` | median/MAD |
-| `walk_count` | count/day | `walk_completed` | Poisson λ |
-| `walk_total_s` | seconds | Σ `walk_completed.duration_s` | median/MAD |
-| `first_walk_min` | minutes after midnight | first `walk_started` | median/MAD |
+| `steps_day` | count/day | band step detector (§8.7), summed from heartbeat walking summaries | median/MAD, direction **low** — **both products** |
+| `meal_count` | count/day | `meal_observed` | Poisson λ — *facility* |
+| `breakfast_min`,`lunch_min`,`dinner_min` | minutes after midnight | `meal_observed` by meal slot | median/MAD — *facility* |
+| `max_meal_gap_h` | hours | max gap between consecutive `meal_observed` | median/MAD — *facility* |
+| `walk_count` | count/day | `walk_completed` | Poisson λ — *facility* |
+| `walk_total_s` | seconds | Σ `walk_completed.duration_s` | median/MAD — *facility* |
+| `first_walk_min` | minutes after midnight | first `walk_started` | median/MAD — *facility* |
 | `time_out_of_room_s` | seconds | Σ intervals where zone ≠ bedroom | median/MAD |
 | `night_activity_min` | minutes between 00:00–05:00 | `night_activity`, `bed_exit` | median/MAD |
 | `night_bed_exits` | count | `bed_exit` where 00:00 ≤ hour < 05:00 | Poisson λ |
@@ -2008,6 +2074,11 @@ p_low  = P(K ≤ k_today | λ) = Σ_{j=0..k} e^-λ λ^j / j!
 p_high = P(K ≥ k_today | λ) = 1 - P(K ≤ k_today-1 | λ)
 surprise = -log10( max(min(p_low, p_high), 1e-12) )
 ```
+
+**Worked example, corrected (D-015).** Zero walks against λ = 3.1: `p_low = e^-3.1 ≈ 0.045`, so
+`surprise ≈ 1.35` — a **warn**, not urgent. Zero reaches urgent (`surprise ≥ 2.0`, `p ≤ 0.01`) only when
+`λ ≥ ln 100 ≈ 4.6`. The seed script gives Eleanor λ ≈ 4.7 walks/day, which is why "no walk today" lands
+as urgent in the demo; a resident who walks three times a day would get a warn for the same day.
 
 `surprise ≥ 1.3` (p ≤ 0.05) is a warn; `≥ 2.0` (p ≤ 0.01) is urgent.
 
@@ -2108,16 +2179,15 @@ Three phases. A resident moves through them automatically.
 
 The cohort prior is not learned — it is a hardcoded table in `baseline/priors.yaml`, seeded from
 published ADL norms and adjusted by an intake questionnaire the family fills in during onboarding
-(§10.1 screen 3: "What time does she usually get up? Roughly how many meals? Does she go outside?").
+(§10.1 screen 3: "What time does she usually get up? Does she take a daily walk? Does she go outside?").
 **The onboarding answers ARE the prior.** This is the honest and the good design: we ask the family
 three questions, and that beats cohort statistics for a week.
 
 ```yaml
 # baseline/priors.yaml  — μ_prior, σ_prior, κ=4
-independent_senior:
+independent_senior:                               # the home product: band + beacons, no camera (D-010)
   wake_time_min:      {mu: 420,  sigma: 60}     # 07:00 ± 1h
-  meal_count:         {lam: 3.0}
-  walk_count:         {lam: 2.0}
+  steps_day:          {mu: 4000, sigma: 1500}   # band step detector, §8.7
   night_bed_exits:    {lam: 1.0}
   longest_inactivity_s: {mu: 7200, sigma: 3600}
 assisted_living_mobile:
@@ -2135,6 +2205,7 @@ assisted_living_limited_mobility:
 | Feature | Direction | warn | urgent | σ̂ floor | Rate limit |
 |---|---|---|---|---|---|
 | `wake_time_min` | high (late) | z ≥ 3.0 | z ≥ 4.5 | 20 min | 1/day |
+| `steps_day` | low | z ≤ −3.0 | z ≤ −4.0 | 500 steps | 1/day |
 | `meal_count` | low | p ≤ 0.05 | p ≤ 0.01 | — | 1/day |
 | `max_meal_gap_h` | high | z ≥ 3.0 | z ≥ 4.0 | 1.0 h | 1/day |
 | `walk_count` | low | p ≤ 0.05 | p ≤ 0.01 | — | 1/day |
@@ -2178,13 +2249,13 @@ Three things happen, in order:
 1. A `feedback_given` event is written, `review_state` on the triggering event → `expected`.
 2. **The observation is downweighted, not deleted.** For every feature that contributed to the alert,
    `baseline_observations.weight` for that `date_local` is set to `0.2`. It still nudges the median
-   (she *did* skip lunch), but it will not define normal. `scope: "day"` downweights every feature for
+   (she *did* stay in all day), but it will not define normal. `scope: "day"` downweights every feature for
    that date; `scope: "feature"` downweights only the alerting one.
 3. The (feature, resident) pair enters a **7-day cooldown** at the `warn` level. Only `urgent` fires.
    Stored as `baselines.updated_at` + a `suppress_until` column. If the same feature is marked
    `expected` **three times in 14 days**, the learner emits a `baseline_updated` event with
    `reason: "repeated_expected"` and the app shows Priya: *"Eleanor's normal seems to have changed —
-   she's been skipping lunch regularly. Update her baseline?"* — which just clears all weights back
+   she's been going out less on weekdays. Update her baseline?"* — which just clears all weights back
    to 1.0 and lets the median move.
 
 Verdict `false_positive` (the sensor was wrong, not the behaviour) does the opposite: weight → `0.0`
@@ -2194,6 +2265,97 @@ the label store we would use to recalibrate VLM confidence (§6.5) if we had mor
 **What we will fake in the demo:** the 14 days of history are seeded by `scripts/seed_history.py`,
 which generates plausible per-resident event streams with a known injected anomaly on "today". We say
 this out loud. The learner code running on it is real; the history is synthetic.
+
+### 8.7 Per-wearer walking profile (stretch goal — D-009)
+
+**Why.** A fixed impact threshold has to sit above the hardest *normal* impact of the heaviest walker —
+which is above what a soft forearm fall produces. A per-wearer profile lets the no-free-fall impact
+threshold (`IMPACT_G_SOFT`, `HARDWARE_SPEC.md` §6.4) sit low for a light walker and rise, within fixed
+bounds, for a heavy one. It also cuts `impact_only` noise from heavy steps. And it is the honest
+"it learns *her*" story for the Arduino track.
+
+**Where it runs.** **The hub learns; the band applies.** The backend fits the profile from walking
+summaries the band sends; the band enforces it on every 208 Hz sample and keeps the last profile when
+Wi-Fi drops. Say *"personalized on-device detection — learned on the hub, applied on the band"*. Never
+say "on-device learning"; it isn't.
+
+**What it learns from.**
+
+| Source | Used as | Rule |
+|---|---|---|
+| Walking summaries on each heartbeat | Her normal step impacts and step rate | Only windows that are worn, have ≥ 8 steps, and have no fall or impact event within ±60 s |
+| The onboarding 20-step walk (`PRODUCT_SPEC.md` §5.2) | The seed profile | Runs in **calibration mode** |
+| `fall_cancelled` (button) and voice `mark_ok(status="fine")` | "Not a fall" impacts | Their `peak_g`. **Never** `fell_but_fine`, never an escalated alert |
+| `impact_only` events | "Not a fall" impacts | Their `peak_g` |
+
+**What it may change — and what it may not.** It sets exactly one number, `IMPACT_G_SOFT`, and derives
+`IMPACT_G_AFTER_FF = IMPACT_G_SOFT − 0.7` (the `HARDWARE_SPEC.md` §7.2 relation). It never touches the
+free-fall threshold, the orientation check, the stillness check or the cancel button.
+
+```
+# per heartbeat window w that passes the filter above
+weight(w)  = 0.5 ** (age_days(w) / 14)                 # 14-day half-life
+walk_bar   = weighted_quantile(w.step_peak_g_max, 0.995) + 0.5 g
+cancel_bar = quantile(negative peak_g, 0.90) + 0.2 g    # only once ≥ 3 negatives exist
+target     = max(walk_bar, cancel_bar)
+target     = clamp(target, FLOOR = 2.5 g, CEIL = F_min − 0.3 g)
+soft       = prev_soft + clamp(target − prev_soft, −0.1 g, +0.1 g)   # per local day
+             # calibration mode: no daily cap, windows every 5 s, weight 1
+after_ff   = soft − 0.7 g
+```
+
+| Guarantee | How |
+|---|---|
+| Every calibrated fall still fires | `CEIL = F_min − 0.3 g`, where `F_min` is the softest drop in the `HARDWARE_SPEC.md` §7.2 calibration |
+| A hard sit-down is still not an impact | `FLOOR = 2.5 g`, just above the 1.5–2.5 g sit-down-hard band (`HARDWARE_SPEC.md` §10.2) |
+| A real fall while walking is still caught | The free-fall path, orientation and stillness checks are untouched |
+| It cannot drift silently | If the 7-day median of `step_peak_g_p95` or `step_rate_hz` moves more than 20 % from the prior 14 days, the profile **freezes** and emits `gait_profile_shift` — staff-only, advisory, never worded medically. A human unfreezes it (re-run the calibration walk). The family-facing signal for walking less is `steps_day` (§8.1), not this |
+| Offline | The band keeps its last profile; with none, it runs the §6.4 defaults |
+
+**Walk-then-stop.** Cancelled and "fine" impacts raise `cancel_bar`, so repeated couch plops push this
+wearer's bar up — never past the ceiling. And a `gait_match` term (the share of the 3 s before an event
+that looked like her normal walking) enters the confidence score (`HARDWARE_SPEC.md` §6.5). Confidence
+orders the dashboard and routing only; **it never blocks or cancels an alert.**
+
+**Wire contract** — extends `backend/fixtures/heartbeat.json` (no `battery_pct`; D-013):
+
+```json
+POST /v1/ingest/heartbeat
+{
+  "band_id": "band_a3f2",
+  "uptime_s": 38210,
+  "profile_rev": 3,
+  "activity": {
+    "mode": "normal", "window_s": 30, "worn": true,
+    "steps": 22, "step_rate_hz": 1.85,
+    "step_peak_g_p50": 1.21, "step_peak_g_p95": 1.58, "step_peak_g_max": 1.92,
+    "jerk_p95_g_per_s": 24.0, "swing_dps_p95": 142.0,
+    "impacts_only": 0
+  }
+}
+→ 200 {"profile_rev": 4, "profile": {"impact_g_soft": 2.9, "impact_g_after_ff": 2.2,
+                                     "floor_g": 2.5, "ceiling_g": 3.7, "mode": "normal"}}
+→ 204 when the band's profile_rev is already current
+```
+
+The Linux side of the band compares `profile_rev` and calls `Bridge.call("set_thresholds", …)` only
+when it changes. Every change also writes a `gait_profile_updated` event. Today the backend requires
+`battery_pct` and always returns 204 — follow-ups F-09 and F-11 in `DECISIONS.md`.
+
+**Demo — Arduino expo table, about 90 s** (`PRODUCT_SPEC.md` §10.2). Staff screen shows an impact
+ticker and a live readout of `impact_g_soft` with its floor and ceiling.
+1. Start from a reset profile at the floor (2.5 g) with the demo-only chirp on (`HARDWARE_SPEC.md` §9).
+2. Heavy-walk with the band on: impacts register — ticker ticks, band chirps.
+3. Switch to calibration mode and walk for 60 s: the readout climbs above her step peaks.
+4. Heavy-walk again: silence. Then unstrap and drop the band 0.5 m onto the firm cushion: it still fires.
+
+Rehearse step 2: forearm step peaks may not reach 2.5 g. If they don't, show the before/after as the
+readout and the step-peak trace rather than chirps — don't lower the floor to make it chirp.
+
+**Owners and budget (~3 h, stretch).** Utsav: step detector, walking summary, applying pushed
+thresholds, demo chirp (~45 min, `HARDWARE_SPEC.md` §6.9). Ayush: learner, heartbeat response, events
+(~2 h). Abhinav: the readout and ticker (~30 min). If it is not working by the H18 integration freeze,
+the band runs the §6.4 defaults and nothing else changes.
 
 ---
 
@@ -2210,6 +2372,11 @@ raw rows returns the seven `meal_observed` events it happens to rank highest and
 retrieve the absences** — the three days where no `meal_observed` exists have no row to embed, and
 absence is exactly what the question is about. You get a confidently wrong "yes, she ate lunch on
 Tuesday" from a store that has no idea she skipped Wednesday and Thursday.
+
+(This is a **facility** example — a dining-room camera is what produces `meal_observed`. At home there
+is no meal sensor, so the honest answer to "has mum been eating?" is rule 3's "I don't have
+observations for that" — D-010. The same absence problem applies to home questions like "has she been
+out this week?")
 
 So we add a second layer. Once per day (and on demand in the demo), a Claude Opus 5 call reads **all**
 of a resident's events for that local day plus her baseline state and writes a 120–200 word narrative
@@ -2464,7 +2631,8 @@ Sample output, with the citations the UI turns into tappable chips that deep-lin
 |---|---|---|
 | Never answer medical questions | Planner sets `refuses: true` → short-circuit **before retrieval**; answer prompt rule 5 is the second line of defence | Belt and braces. Both must be in place; neither alone is trustworthy |
 | Always cite with timestamps | Answer prompt rules 1–2 + a **post-hoc regex** over the response: if a sentence contains a digit or a day name and no `[chunk_…]`, we append *"(I can't source that — ask me again)"* and log it | Crude. It is 15 lines and it catches the demo-killing case |
-| Never leak another resident | `resident_id` is a **partition key** on the vector table and is bound server-side from the JWT, never from the request body | The one query that forgets it returns nothing, not someone else's data — partition keys fail closed |
+| Never leak another resident | `resident_id` is a **partition key** on the vector table and is bound server-side from the JWT, never from the request body | The one query that forgets it returns nothing, not someone else's data — partition keys fail closed. **Build status:** the built backend uses a shared key and takes `resident_id` as a query parameter, so this guarantee is not in the code yet |
+| Never tell the family which room she is in (D-001) | Family-scoped retrieval excludes `zone_*`, `bathroom_prolonged`, `location_unknown` and `rf_scan` chunks; daily narratives are written without room names ("she was up twice in the night", not "she went to the bathroom twice"); the answer prompt forbids room names for the family role | A narrative that slips a room name through. The prompt rule is the backstop; the exclusion list is the real control |
 | Never surface video/images | No image or frame path is ever in a chunk; frames are not in the DB at all (§12) | Structural, not prompt-based |
 | Never fabricate absence of data | Answer prompt rule 3 + we pass the retrieval window explicitly so the model can see what it was given | Weakest link. Watch for it in eval |
 | Rate limit | 20 questions/user/hour, in-process token bucket | — |
@@ -2517,17 +2685,17 @@ lie to the user.
 
 | # | Route | Screen | Key content | Actions |
 |---|---|---|---|---|
-| 1 | `/onboard/welcome` | Welcome | Two sentences + the NOT-A-MEDICAL-DEVICE notice (§12) | Continue |
+| 1 | `/onboard/welcome` | Welcome | Two sentences + the research-prototype notice (§12.1: not FDA-cleared, cannot detect all falls, does not call 911) | Continue |
 | 2 | `/onboard/consent` | **Consent** | Who is being monitored, what is sensed, what is stored, what Priya can and cannot see. **The resident's name is typed in by the person giving consent** | Cannot skip |
-| 3 | `/onboard/baseline` | "Tell us about her" | Wake time, meals/day, walks/day, goes outside?, mobility. **These answers become the cold-start prior** (§8.4) | Continue |
-| 4 | `/onboard/pair` | **Pair the band** | 6-digit code shown on the band's LED pattern / read aloud by the band agent → typed in. Live RSSI bar proves the band is talking | `POST /v1/bands/pair` |
+| 3 | `/onboard/baseline` | "Tell us about her" | Wake time, daily walk?, goes outside?, mobility. **These answers become the cold-start prior** (§8.4) | Continue |
+| 4 | `/onboard/pair` | **Pair the band** | 6-digit code **printed on a sticker on the band** → typed in (the band has no screen or speaker — D-013). Live RSSI bar proves the band is talking. Then the 20-step walk that seeds the walking profile (§8.7) | `POST /v1/bands/pair` |
 | 5 | `/onboard/survey` | **Room survey** (§7.2) | "Take the band to the kitchen and press Start. Walk around for 30 s." Per-room card, live anchor count, a merge prompt if two rooms are < 6 dB apart | `.../fingerprint/start|stop` |
 | 6 | `/onboard/contacts` | Escalation ladder | Ordered, drag-to-reorder list. Names + numbers. **Minimum 1, we push for 2** | `POST /v1/residents/{id}/contacts` |
-| 7 | `/` | **Home / status** | One big status card: *"Eleanor is OK"* + **"In the kitchen · 12 min"** (§7) + last-seen + band battery. Below: today's 4 ADL tiles (ate / walked / up at night / out of room) each green/amber/grey-unknown | Pull to refresh |
-| 8 | `/alert/[id]` | **LIVE ALERT** | Full-screen red takeover, ringtone looping, a **live step timeline** of the ladder (*calling Eleanor… no answer… calling you…*), what the voice agent heard | **"I've got her"** (ack), "Call Eleanor", "Call 911" (dials, does not auto-dial) |
-| 9 | `/timeline` | Timeline | Reverse-chron day sections. Event rows with icons. **A per-day room-time stacked bar** (§7) at the head of each day. Amber ring = deviation | Tap → detail; "This was expected" |
+| 7 | `/` | **Home / status** | One big status card: *"Eleanor is OK"* + **"At home · active this morning"** (home/out only — **never a room**, D-001) + band last seen. Below: today's 4 tiles (walked [band steps] / up at night / out of the house / active) each green/amber/grey-unknown. No "ate" tile at home — nothing observes meals (D-010) | Pull to refresh |
+| 8 | `/alert/[id]` | **LIVE ALERT** | Full-screen red takeover, ringtone looping, a **live step timeline** of the ladder (*called Eleanor… no answer… calling you…*), what the voice agent heard. **For the family role it opens when the ladder reaches the family (`CALLING_CONTACT_1`), not at `SUSPECTED`** (D-002); if Eleanor resolves it herself, the family gets one quiet timeline line instead | **"I've got her"** (ack), "Call Eleanor", "Call 911" (dials, does not auto-dial) |
+| 9 | `/timeline` | Timeline | Reverse-chron day sections. Event rows with icons. Amber ring = deviation. **No room-time bar and no room names for the family** (D-001) — that bar lives on the staff resident screen (S3) | Tap → detail; "This was expected" |
 | 10 | `/timeline/[eventId]` | Event detail | What was observed, when, by which sensor, confidence, the evidence sentence. **Never an image** | Feedback verdict |
-| 11 | `/chat` | **Ask about Eleanor** | RAG chat. Suggested chips: *"has she been eating?"*, *"when did she last go outside?"*, *"how did she sleep?"*. Citations render as tappable chips → deep-link to `/timeline/[eventId]` | Send |
+| 11 | `/chat` | **Ask about Eleanor** | RAG chat. Suggested chips: *"Has she been out this week?"*, *"How were her nights?"*, *"Anything unusual this week?"* — questions the band and beacons can actually answer (D-010). Answers never name a room (§9.7). Citations render as tappable chips → deep-link to `/timeline/[eventId]` | Send |
 | 12 | `/settings` | Settings | Contacts, quiet hours, **which alert types are on**, consent review + revoke, export, delete | — |
 
 **Staff app (B2B) — same binary, `role: staff` in the JWT flips the root layout.**
@@ -2536,7 +2704,7 @@ lie to the user.
 |---|---|---|---|
 | S1 | `/staff` | **Triage** | Residents **ranked by need**, not a grid. Row = name, room, one-line reason, age of signal. Marcus covers 40 rooms; the top of this list is the product |
 | S2 | `/staff/floor` | Floor view | Room tiles by floor, colour = state, the RF-located resident shown per room |
-| S3 | `/staff/resident/[id]` | Resident detail | Today + 14-day ADL sparklines, baseline μ/σ per feature, timeline, RAG chat scoped to this resident |
+| S3 | `/staff/resident/[id]` | Resident detail | Today + 14-day ADL sparklines, baseline μ/σ per feature, the per-day room-time bar, timeline, RAG chat scoped to this resident. **Walking profile panel** (§8.7): current `impact_g_soft` against its floor and ceiling, recent step peaks, impact ticker — the Arduino expo demo runs off this panel |
 | S4 | `/staff/alert/[id]` | Alert | Same as #8 + "Assign to me", "Resolved — checked", "False alarm" |
 | S5 | `/staff/rounds` | Night rounds | 23:00–07:00 mode: only residents with night deviations, sorted by severity. Dark UI |
 
@@ -2591,11 +2759,12 @@ we must assume we missed every message.
 up to 100 messages per request, 4096-byte APNs payload cap.
 
 ```jsonc
-// FALL — the one that matters
+// FALL — the one that matters. Sent to a family contact only when the ladder reaches them
+// (CALLING_CONTACT_1), never during the cancel window or while Eleanor is being called (D-002)
 {
   "to": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
   "title": "Possible fall — Eleanor",
-  "body": "Her band detected a fall at 3:42 PM. We're calling her now.",
+  "body": "Her band detected a fall at 3:42 PM and she didn't answer. We're calling you now.",
   "sound": "dhyaan-urgent.wav",
   "priority": "high",
   "interruptionLevel": "timeSensitive",      // "critical" needs an Apple entitlement we can't get
@@ -2610,21 +2779,22 @@ up to 100 messages per request, 4096-byte APNs payload cap.
 
 ```jsonc
 // BASELINE DEVIATION — quiet, next-morning
-{ "to": "…", "title": "Eleanor didn't walk yesterday",
-  "body": "She normally walks about 3 times a day. Tap to see her timeline.",
+{ "to": "…", "title": "Eleanor walked much less yesterday",
+  "body": "About 900 steps, against her usual 4,000. Tap to see her timeline.",
   "sound": "default", "priority": "normal", "interruptionLevel": "active",
-  "data": { "v": 1, "kind": "deviation", "event_id": "evt_…", "feature": "walk_count",
+  "data": { "v": 1, "kind": "deviation", "event_id": "evt_…", "feature": "steps_day",
             "deeplink": "dhyaan://timeline/evt_…" } }
 
 // LADDER PROGRESS — silent, updates an already-open screen
 { "to": "…", "_contentAvailable": true,
   "data": { "v": 1, "kind": "ladder", "alert_id": "alr_…", "step": "calling_contact_2" } }
 
-// BATHROOM (§7.6)
-{ "to": "…", "title": "Eleanor has been in the bathroom 40 minutes",
+// BATHROOM (§7.6) — STAFF ONLY. The family never gets this push: it names a room (D-001), and the
+// warn step only calls the resident. If the ladder escalates, the family gets the FALL-style push above.
+{ "to": "…", "title": "214 · 40 min in the bathroom",
   "body": "Her usual is about 6. We're calling to check on her.",
   "interruptionLevel": "timeSensitive", "priority": "high",
-  "data": { "v": 1, "kind": "alert", "alert_id": "alr_…", "severity": "warn" } }
+  "data": { "v": 1, "kind": "alert", "alert_id": "alr_…", "severity": "warn", "role": "staff" } }
 ```
 
 Receipts are checked ~15 min later via `POST https://exp.host/--/api/v2/push/getReceipts`
@@ -2650,25 +2820,31 @@ Base `https://<tunnel>/v1`. Auth: `Authorization: Bearer <JWT>`, claims `{sub, r
 resident_ids: [...]}`. **`resident_id` is always taken from the JWT, never trusted from the body** (§9.7).
 Errors: `{"error": {"code": "...", "message": "...", "detail": {...}}}`.
 
-**Ingest (band → backend, `X-Band-Key` HMAC, not JWT)**
+**Ingest (band → backend, `X-Band-Key` HMAC, not JWT)** — the exact built payloads are
+`backend/fixtures/*.json`; they win over the examples below (D-011). No payload carries `battery_pct`
+(D-013).
 
 | Method | Path | Request | Response |
 |---|---|---|---|
-| POST | `/ingest/band` | `{"band_id":"band_a3f2","kind":"fall_suspected","ts":"…","payload":{"peak_g":3.4,"free_fall_ms":95,"post_impact_tilt_deg":72,"stillness_ms":1800,"battery_pct":64}}` | `201 {"event_id":"evt_…","alert_id":"alr_…","cancel_window_s":30}` |
+| POST | `/ingest/band` | `{"band_id":"band_a3f2","kind":"fall_suspected","ts":"…","payload":{"peak_g":3.4,"free_fall_ms":95,"post_impact_tilt_deg":72,"stillness_ms":1800}}` | `201 {"event_id":"evt_…","alert_id":"alr_…","cancel_window_s":30}` |
 | POST | `/ingest/band/cancel` | `{"band_id":"…","alert_id":"alr_…","by":"button"}` | `200 {"cancelled":true,"latency_ms":8100}` |
 | POST | `/ingest/rf` | `{"band_id":"…","ts":"…","wifi":{"a4:2b:8c:11:02:9f":-47},"ble":{"bcn_kitchen":{"rssi":-58,"n":31}},"scan_ms":3040}` | `200 {"zone":"kitchen","confidence":0.88,"method":"ble","committed":true}` |
-| POST | `/ingest/heartbeat` | `{"band_id":"…","battery_pct":64,"uptime_s":38210}` | `204` |
+| POST | `/ingest/heartbeat` | `{"band_id":"…","uptime_s":38210,"profile_rev":3,"activity":{…walking summary, §8.7…}}` | `200 {"profile_rev":4,"profile":{…}}` when the walking profile changed, else `204` |
 
-**Residents, location, timeline**
+**Residents, location, timeline** — **role rule (D-001):** for `role: family`, no response contains a
+room identifier or label. `location` becomes `{"presence":"home"|"out"|"unknown","since":…}`; the two
+`/location` routes are **staff-only** (403 for family); `/events` omits `zone_*`, `bathroom_prolonged`
+and `location_unknown` rows and blanks the `zone` field. Staff see everything, and staff access to
+location is logged.
 
 | Method | Path | Request → Response |
 |---|---|---|
-| GET | `/residents` | → `[{"id","display_name","room","state":"ok","last_seen","band_battery_pct","location":{...},"open_alerts":0,"baseline_ready":true}]` |
-| GET | `/residents/{id}` | → resident + today's ADL tiles + baseline readiness (`n_obs` per feature) |
-| GET | `/residents/{id}/location` | → `{"zone":"kitchen","label":"Kitchen","since":"2026-09-19T14:31:02-04:00","dwell_s":740,"confidence":0.88,"method":"ble","posterior":{"kitchen":0.88,"hallway":0.09,"living_room":0.03},"expected_p95_s":2400,"stale":false}` |
-| GET | `/residents/{id}/location/history?date=2026-09-19` | → `{"segments":[{"zone":"bedroom","start":"…","end":"…","s":28800},…],"unknown_s":1200}` — this is the timeline's room-time bar |
+| GET | `/residents` | → `[{"id","display_name","room","state":"ok","last_seen","band_last_seen","location":{...},"open_alerts":0,"baseline_ready":true}]` — `location` is room-level for staff, `presence` only for family |
+| GET | `/residents/{id}` | → resident + today's tiles + baseline readiness (`n_obs` per feature) |
+| GET | `/residents/{id}/location` | **staff only** → `{"zone":"kitchen","label":"Kitchen","since":"2026-09-19T14:31:02-04:00","dwell_s":740,"confidence":0.88,"method":"ble","posterior":{"kitchen":0.88,"hallway":0.09,"living_room":0.03},"expected_p95_s":2400,"stale":false}` |
+| GET | `/residents/{id}/location/history?date=2026-09-19` | **staff only** → `{"segments":[{"zone":"bedroom","start":"…","end":"…","s":28800},…],"unknown_s":1200}` — the staff resident screen's room-time bar |
 | GET | `/residents/{id}/events?from=&to=&types=&limit=100&cursor=` | → `{"events":[Event],"next_cursor":"evt_…"}` |
-| GET | `/residents/{id}/summary?date=2026-09-19` | → `{"date_local","narrative","tiles":{"ate":{"state":"warn","detail":"2 of 3 meals"},"walked":…,"night":…,"location":…},"deviations":[…],"source_event_ids":[…]}` |
+| GET | `/residents/{id}/summary?date=2026-09-19` | → `{"date_local","narrative","tiles":{"walked":{"state":"ok","detail":"3,900 steps"},"night":…,"out":…,"active":…},"deviations":[…],"source_event_ids":[…]}` — facility residents also get an `ate` tile (D-010) |
 | POST | `/residents/{id}/contacts` | `{"contacts":[{"name":"Priya","phone_e164":"+1617…","relationship":"daughter","ladder_order":1}]}` → `201` |
 | POST | `/residents/{id}/fingerprint/start` | `{"zone_id":"kitchen","label":"Kitchen"}` → `200 {"survey_id":"srv_…","expect_s":30}` |
 | POST | `/residents/{id}/fingerprint/stop` | `{"survey_id":"srv_…"}` → `200 {"n_scans":10,"n_anchors":7,"separability_db":9.2,"warning":null}` |
@@ -2685,7 +2861,9 @@ Errors: `{"error": {"code": "...", "message": "...", "detail": {...}}}`.
 | POST | `/alerts/{id}/feedback` | `{"verdict":"expected"\|"false_positive","reason":"visiting her sister","scope":"day"\|"feature"}` → `200 {"downweighted":["walk_count","time_outside_home_s"],"suppress_until":"2026-09-26"}` (§8.6) |
 | POST | `/alerts/{id}/escalate_now` | `{}` → `200` — the staff "skip the timer" button |
 
-**Chat / RAG**
+**Chat / RAG** — the example below is a **facility** resident with a dining-room camera; a home-product
+resident has no meal observations, so the same question returns the "I don't have observations for
+that" answer (§9.1, D-010).
 
 | Method | Path | Request → Response |
 |---|---|---|
@@ -2725,15 +2903,18 @@ every 25 s.
 {"t":"alert.voice","alert_id":"alr_…","speaker":"agent"|"resident","text":"Are you okay?"}  // live transcript
 {"t":"alert.closed","alert_id":"alr_…","resolution":"ok","acked_by":"contact_1"}
 {"t":"location.changed","resident_id":"res_eleanor","zone":"bathroom","label":"Bathroom",
- "since":"…","confidence":0.84,"method":"ble","from_zone":"hallway"}
-{"t":"location.dwell","resident_id":"…","zone":"bathroom","dwell_s":2400,"expected_p95_s":360,"escalating":true}
-{"t":"event.new","event":{...}}                        // filtered: only β + alertable types
-{"t":"resident.state","resident_id":"…","state":"attention","reason":"walk_count low"}
+ "since":"…","confidence":0.84,"method":"ble","from_zone":"hallway"}          // STAFF ONLY
+{"t":"location.dwell","resident_id":"…","zone":"bathroom","dwell_s":2400,"expected_p95_s":360,"escalating":true}  // STAFF ONLY
+{"t":"presence.changed","resident_id":"res_eleanor","presence":"out","since":"…"}  // family + staff
+{"t":"profile.updated","resident_id":"…","profile_rev":4,"impact_g_soft":2.9}     // staff: walking-profile readout (§8.7)
+{"t":"event.new","event":{...}}                        // filtered: only β + alertable types; family never gets room-level types
+{"t":"resident.state","resident_id":"…","state":"attention","reason":"steps_day low"}
 ```
 
-`location.changed` is pushed the moment the HMM commits (§7.3), which is what makes the "where is she
-now" card on `/` feel alive rather than polled. It is also the highest-volume message on the socket, so
-it is the first thing we throttle if the demo machine struggles: coalesce to one per resident per 10 s.
+`location.changed` is pushed to **staff sockets only** the moment the HMM commits (§7.3), which is what
+makes the staff floor view feel alive rather than polled. Family sockets get `presence.changed`
+(home/out) instead (D-001). It is also the highest-volume message on the socket, so it is the first thing
+we throttle if the demo machine struggles: coalesce to one per resident per 10 s.
 
 ---
 
@@ -2746,7 +2927,7 @@ local LLM makes an 81-year-old think the line has gone dead.
 
 | Task | Local option | Cloud option | **We ship** | Why |
 |---|---|---|---|---|
-| Fall detection from IMU | Threshold cascade on STM32 | — | **Local (MCU)** | Must work with the Wi-Fi down. 104 Hz, sub-ms. No model needed |
+| Fall detection from IMU | Threshold cascade on STM32 | — | **Local (MCU)** | Must work with the Wi-Fi down. 208 Hz, sub-ms. No model needed; the per-wearer threshold arrives from the hub (§8.7) and the band keeps the last one offline |
 | Motion gate | OpenCV MOG2 | — | **Local** | Per-pixel op, 1.3 M frames/day. Cloud is absurd |
 | Person detect + track | YOLO11n (MPS) / CoreML ANE | Cloud detection API | **Local** | Privacy (§12) + cost. Frames never leave the Mac |
 | **ADL understanding from frames** | **Qwen3-VL-8B-4bit** via Ollama, schema-constrained | Claude Opus 5 vision | **Local** | **Non-negotiable.** Uploading video of elderly residents is the thing that makes this product unsellable. ~2–4 s/batch (§6.7) is fast enough for ADL, which is not a real-time problem |
@@ -2778,9 +2959,10 @@ negotiable and several parts of it are deliberately expensive.
 
 ### 12.1 The statement that goes in the app, the README, and the pitch
 
-> **Dhyaan is not a medical device.** It does not diagnose, treat, monitor or prevent any disease or
-> condition. It has not been evaluated or cleared by the FDA or any regulator. Nothing it says is
-> medical advice.
+> **Dhyaan is a research prototype.** It is not FDA-cleared or FDA-approved and has not been evaluated
+> by the FDA or any regulator. It is not intended to diagnose, treat, cure, prevent or mitigate any
+> disease or condition. **It cannot detect all falls**, and it will sometimes alert when nobody fell.
+> Nothing it says is medical advice.
 >
 > **Dhyaan does not call emergency services.** If someone needs help, **call 911**. Dhyaan calls
 > people you have chosen and tells them what it observed. It can fail: the band's battery dies, Wi-Fi
@@ -2788,7 +2970,9 @@ negotiable and several parts of it are deliberately expensive.
 > anyone's only safety net.**
 
 This is on `/onboard/welcome`, in the settings footer, on the staff dashboard header, and it is spoken
-in the first fifteen seconds of the pitch. A judge who has to ask us about it means we failed.
+in the first fifteen seconds of the pitch. A judge who has to ask us about it means we failed. **Do not
+say "not a medical device"** — `PRODUCT_SPEC.md` §8.7 concludes the automatic-alert path is probably a
+device, so that sentence is the one claim a regulatory-minded judge can take apart (D-003).
 
 ### 12.2 Consent
 
@@ -2808,10 +2992,10 @@ if not resident.consent_camera:
 | Principle | Implementation |
 |---|---|
 | The resident consents, not the family | The consent screen types **her** name and relationship. B2B: a signed form referenced by `consent_signed_by` / `consent_signed_at` |
-| Consent is per-modality | Cameras, voice calls, and RF location are three separate flags. **A resident can accept the band and refuse cameras** — that is the entire B2C product and it works |
+| Consent is per-modality | Cameras, voice calls, and RF location are three separate flags (the §3.3 DDL shows only the first two; `consent_location` is the third). **A resident can accept the band and refuse cameras** — that is the entire B2C product and it works |
 | Consent is revocable in one tap | `/settings` → Revoke. Takes effect on the next frame, not the next deploy |
 | Cameras are never in bedrooms or bathrooms | Enforced in `zones`: `kind ∈ {bedroom, bathroom}` may only hold a **doorway** polygon (§6.6). The staff dashboard shows every camera's zone kind so a resident's family can audit it |
-| Capability, not surveillance | The `/onboard/consent` screen lists **what Dhyaan can tell you** ("that she ate lunch") and **what it cannot** ("what she ate, who she talked to, what she looks like") |
+| Capability, not surveillance | The `/onboard/consent` screen lists **what Dhyaan can tell you** ("that she went out this morning", "that her nights changed") and **what it cannot** ("which room she is in, who she talked to, what she looks like") |
 
 ### 12.3 Video never leaves the Mac. Structurally.
 
@@ -2837,25 +3021,31 @@ What is retained:
 | Fingerprints (the survey) | Until re-survey or delete | SQLite |
 | Events (sentences + structured payload) | 90 days (demo: forever) | SQLite |
 | Daily narratives + embeddings | 90 days | SQLite |
-| Call transcripts | **7 days**, then only the classification survives | SQLite |
-| Call audio | **Never recorded.** We relay it; we do not store it | — |
+| Call transcripts | **7 days**, then only the classification survives. Deleted at once for any call where someone says "stop recording" (§4.6) | SQLite |
+| Call audio | **Never recorded.** We relay it; we do not store it. The disclosure's "recording" means the transcript (D-004) | — |
 
 `DELETE /v1/residents/{id}` cascades everything and is a real endpoint, not a roadmap item.
 
 ### 12.4 What the family can and cannot see
 
+This table was rewritten on 2026-09-19 to match `PRODUCT_SPEC.md` §8.1–8.2 (D-001). An earlier version
+let the family see room-level location, current and historical — the exact thing the product promises
+Margaret her son can never see.
+
 | Family (Priya) sees | Family never sees |
 |---|---|
-| Activity events: ate, walked, slept, room changes | Any image, frame, thumbnail or video. There is no endpoint that returns one |
-| Room-level location, current and historical | Metre-level position, a map, a dot |
-| Deviations from Eleanor's own baseline | `unsteady_gait` — **staff-only**, and never worded medically |
-| The voice-call transcript of the alert call | Any audio recording |
-| Daily narratives | Who visited, or anything about a visitor beyond `n_people` and a duration |
-| Band battery, camera/beacon health | Other residents in a facility, ever (partition key, §9.7) |
+| Whether she is **home or out**, and when she left and came back | **Which room she is in** — not live, not historical, not as a dwell chart. Enforced in the API by role (§10.5), not just the UI |
+| Activity from the band: steps walked, up at night (a count), active or still | A map, a dot, a floor plan, a per-room timeline |
+| Deviations from Eleanor's own baseline — next morning, as one sentence, and night changes only after **two** unusual nights | `unsteady_gait`, `gait_profile_shift` — **staff-only**, and never worded medically |
+| The voice-call transcript of any alert call that reached her | Any audio recording (none is stored) |
+| Daily narratives (written without room names, §9.7) | Who visited, or anything about a visitor beyond `n_people` and a duration |
+| Band online/offline, beacon health | Other residents in a facility, ever (partition key, §9.7) |
+| **One exception:** on an emergency escalation call — a fall she did not cancel or answer — the agent may name the room, so whoever goes knows where to find her (§4.5) | — |
 
-**Eleanor sees what Priya sees.** `/settings` has a "What Priya can see" screen that is the same list,
-and an alert history showing every time she was called. A monitoring product that the monitored person
-cannot inspect is a surveillance product.
+**Eleanor sees at least what Priya sees, plus her own room history.** `/settings` has a "What Priya can
+see" screen that is the same list, and an alert history showing every time she was called. A monitoring
+product that the monitored person cannot inspect is a surveillance product. **Facility staff** see live
+room-level location; that access is logged and attributable (`PRODUCT_SPEC.md` §8.1).
 
 ### 12.5 Safety behaviours in the code
 
@@ -2882,7 +3072,11 @@ fourteen hours, and here is the labelling pipeline (`review_state`, §3) we buil
 
 ## 13. 24-hour build plan
 
-**Team of 4.** A = backend/events/FSM. B = voice (Twilio + Deepgram). C = vision + RF localization.
+> **Superseded for staffing (D-011).** The team is three people, and the per-person plans in
+> `utsavtodo.md`, `ayushneedtodo.md` and `abhinavtodo.md` replace the A–D split below. The phase
+> checkpoints (T+3, T+6, T+12, T+18) still apply.
+
+**Team of 4 (original plan).** A = backend/events/FSM. B = voice (Twilio + Deepgram). C = vision + RF localization.
 D = React Native + dashboard + demo.
 
 **Rule zero:** the `Event` schema (§3) and the API contract (§10.5) are frozen at **T+2:00**. After that
@@ -2902,7 +3096,8 @@ The only three hours where serialisation kills you, so the long-lead items go **
 
 **Hardware triage, T+0:30, all four in the room:** does the UNO Q have an IMU? (No — §4.1.) Do we have
 an LSM6DSOX? Do we have 4 BLE beacons or 4 ESP32s? **If the answer to any of these is no, we decide at
-T+0:30 to fake the band as a laptop keypress, and we lose nothing else.** Do not discover this at hour 12.
+T+0:30 to fake the band as a laptop keypress, and we lose nothing else — except the Arduino track,
+which requires live UNO Q + Modulino sensor input during judging.** Do not discover this at hour 12.
 
 **T+3:00 checkpoint (hard):** a phone rings. An event lands in SQLite. A dev build is on a phone.
 
@@ -2912,7 +3107,7 @@ T+0:30 to fake the band as a laptop keypress, and we lose nothing else.** Do not
 |---|---|
 | **A** | Alert FSM (§4.3) as a transition table + timer wheel. Escalation ladder with real timings. Websocket `/v1/ws`. In-process event bus |
 | **B** | **The bridge (§5.4).** Twilio `<Connect><Stream>` → our ws → Deepgram Voice Agent. Get audio flowing both ways with a dumb agent. **This is the highest-risk integration in the project — it gets three hours and a fallback** |
-| **C** | RF: `bleak` scanner on the Mac (stand-in for the band), `POST /ingest/rf`, fingerprint capture endpoints, k-NN classifier. **Survey the table-top "house" now** |
+| **C** | RF: `bleak` scanner on the Mac (stand-in for the band), `POST /ingest/rf`, fingerprint capture endpoints, k-NN classifier. **Survey the taped-out floor plan now** (beacons 3–8 m apart, §7.8) |
 | **D** | expo-router skeleton, all routes stubbed, Zustand + WS provider, push token registration, `/` home screen against real API |
 
 **T+6:00 checkpoint:** **a real call, with a real Deepgram agent, that says a real greeting and
@@ -2941,8 +3136,8 @@ the demo. If it does not, cut B2B (§14 R7) and spend the next six hours making 
 | **C** | Camera↔RF fusion (§7.5), the identity trick. `meal_skipped` job. `/admin/health`. Staff dashboard data endpoints |
 | **D** | Chat screen with citation chips. Staff triage screen (S1). Onboarding + survey screens (they are in the demo) |
 
-**T+18:00 checkpoint:** every screen renders real data. Someone can ask "has mum been eating this week"
-and get a cited answer.
+**T+18:00 checkpoint:** every screen renders real data. Someone can ask "has she been out this week?"
+and get a cited answer that names no room.
 
 ### T+18:00 → T+22:00 — Freeze, harden, rehearse
 
@@ -2965,34 +3160,39 @@ test the whole demo on it** — venue Wi-Fi will be a 1000-person disaster at ju
 
 | Component | Real | Faked | We say so |
 |---|---|---|---|
-| Fall detection | Threshold cascade on a real IMU | If no IMU arrives: a keypress on the band's Linux side | Yes |
+| Fall detection | Threshold cascade on a real IMU | The fall is a **0.5 m band drop onto a firm cushion** — never a person (`HARDWARE_SPEC.md` §10.1). If no IMU arrives: a keypress on the band's Linux side, which costs the Arduino track | Yes |
 | The 30 s cancel window | Real | Shortened to 10 s on stage | Yes |
 | Voice call + agent | **Entirely real.** Real PSTN, real Deepgram, real tools | Nothing | — |
 | Escalation ladder | Real FSM, real timers | 60 s per contact → 20 s on stage | Yes |
-| Cameras | Real RTSP/webcam, real YOLO, real VLM, real events | A teammate acting in front of a laptop is "the dining room" | Yes |
-| RF localization | Real BLE, real RSSI, real k-NN + HMM | "Eleanor's home" is a table with 4 beacons on it | Yes, loudly |
+| Cameras | Real RTSP/webcam, real YOLO, real VLM, real events | A teammate acting in front of a laptop is "the dining room". **Not built as of H6 — stretch** (D-012) | Yes |
+| RF localization | Real BLE, real RSSI, real k-NN + HMM | "Eleanor's home" is a taped-out floor plan with 4 beacons 3–8 m apart | Yes, loudly |
+| Walking profile | Real step detection, real learner | The "before" state is a profile reset to the floor; calibration mode compresses days into 60 s | Yes |
 | 14 days of history | Real learner running on it | **The history itself is generated by `seed_history.py`** | **Yes — this is the one people try to hide. Say it first.** |
 | RAG | Real embeddings, real retrieval, real Claude | Nothing | — |
+| App | Real screens and websocket | Until integration, the app runs on a mock backend whose ladder is 6× faster than real — never quote a timing from it | Yes |
 | Facility | 3 residents | Not 40 | Yes |
 
-### The 3-minute demo script
+### The 3-minute demo script — see `PRODUCT_SPEC.md` §10
 
-| t | Who | What |
-|---|---|---|
-| 0:00–0:20 | D | *"My grandmother lives alone. Last year she fell and lay on the floor for six hours. The pendant was on the nightstand."* One slide: 2 personas, 2 products, one backend. **Say "not a medical device, we do not call 911" here.** |
-| 0:20–0:35 | D | Phone on the table, app open, **"Eleanor is OK · in the Kitchen · 12 minutes"** — live, from the band's radio |
-| 0:35–0:55 | C | **RF beat (§7.8).** Walk the band bedroom → hallway → bathroom. Split screen: raw k-NN flapping, HMM clean. *"That's why there's a filter."* |
-| 0:55–1:15 | B | **THE FALL.** B drops the band hard onto the table. Buzzer. The app goes red: *"Possible fall — calling Eleanor."* Countdown on screen |
-| **1:15–1:35** | **— nobody speaks —** | **THE TEN SECONDS.** A phone on the table rings — a real inbound PSTN call on speaker. The judges hear a warm voice: *"Hi Eleanor, this is Dhyaan calling because your band thought you might have fallen. Are you okay?"* **B says nothing.** Dead air. Two seconds. The app updates itself: *"No answer."* Then **a second phone rings**, and the agent says: *"Hi, this is Dhyaan calling about Eleanor. Her band detected a possible fall and she didn't answer. Can you check on her?"* |
-| 1:35–1:45 | D | Taps **"I've got her."** The ladder halts on screen, mid-timer. *"Thirty-one seconds from the floor to a human being told."* |
-| 1:45–2:10 | C | B2B: dashboard, 3 residents ranked. *"Room 214 — Harold hasn't walked today; he normally walks three times. And the camera saw someone eat lunch — the band told us it was Harold. **We solved re-identification with a radio instead of a face.**"* |
-| 2:10–2:35 | A | Chat: *"has mum been eating this week?"* → cited answer naming the days she **didn't** eat. Tap a citation → the timeline. *"That comes from a daily narrative Claude writes from the events — because you can't retrieve an absence from rows that don't exist."* |
-| 2:35–2:50 | A | The baseline screen: Eleanor's own wake-time distribution, μ and MAD. *"Nothing here is a global rule. Harold sleeps until 9:30 and that's fine — for Harold."* |
-| 2:50–3:00 | D | *"Everything you saw — every frame, every radio scan, the whole vector store — ran on this laptop. What went to the cloud was a phone call and some sentences. Fourteen days of that history is synthetic and we'll tell you exactly which parts."* |
+**There is one script, and it lives in `PRODUCT_SPEC.md` §10** (D-007). An earlier version of this
+section had its own script, and several of its beats were impossible under the system's own timers:
+- "No answer" after two seconds of dead air — the real ladder rings for 25 s, then retries once 15 s
+  later (§4.2), and an answered-but-silent call waits 20 s and repeats the greeting (§4.5).
+- "Thirty-one seconds from the floor to a human" — true only on the 6×-compressed mock.
+- A 20 s room-tracking beat — each committed room change takes 20–60 s (§7.4).
+- Live room on the family app, "has mum been eating?" at home, and camera-based identity — all
+  contradicted by D-001, D-010 and D-012.
 
-**The 10-second moment is 1:15–1:35, and the thing that makes it work is silence.** Every team demos a
-dashboard. Almost nobody makes the judges' own room go quiet while a phone rings and a machine asks an
-old woman if she is alright. Do not talk over it. Do not narrate it. Let it ring.
+Operator notes for the canonical script:
+- **Stage config, set and said out loud:** cancel window 10 s; contact step 20 s. Voice, FSM and
+  detector are otherwise the real thing.
+- **The escalation beat is answer-driven, not timeout-driven.** When the judge says "I can't get up",
+  `escalate` fires at once, and the contact phone rings within a few seconds. That is fast, it is real,
+  and it is the one thing prior art (`PRODUCT_SPEC.md` §12.1) does not do.
+- **Any elapsed-time number on stage comes from the live run** (the alert record), never from a target.
+- **Room tracking and the walking profile run at the expo table** (`PRODUCT_SPEC.md` §10.2), not in the
+  3-minute pitch.
+- **Open with a personal story only if it is true for someone on the team.**
 
 **Backup ladder, decided in advance:** live call fails → play the screen-recorded run (D has it) →
 `/admin/simulate` with the pre-recorded agent audio over `<Play>` → talk over the architecture diagram.

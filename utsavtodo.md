@@ -3,7 +3,18 @@
 Your lane: **E (band, beacons, firmware, site survey)**.
 Not yours: backend and ML are Ayush's ([`ayushneedtodo.md`](./ayushneedtodo.md)), voice and the app are Abhinav's ([`abhinavtodo.md`](./abhinavtodo.md)).
 
-Source of truth: [`HARDWARE_SPEC.md`](./HARDWARE_SPEC.md) — read §5 (fall cascade) and §5A (RF) before you wire anything.
+Source of truth: [`HARDWARE_SPEC.md`](./HARDWARE_SPEC.md) — read §6 (fall cascade) and §3 + §8 (RF) before you wire anything. Why the specs say what they say: [`DECISIONS.md`](./DECISIONS.md).
+
+## ⚠ Changed Saturday evening — read before you continue (`DECISIONS.md`)
+
+- **Drop from 0.5 m onto a firm cushion, not 1 m onto a mattress** (D-008). A 1 m drop falls ~450 ms and `FF_MAX_MS = 400` rejects it as "dropped, not worn". E9.4, E12.1 and E12.3 below are updated.
+- **Don't fit `FF_THRESHOLD_G` from the drops** (D-008). Keep 0.40 g. Drops read ≈0 g and would push it to ~0.1 g, below what a real forearm fall reaches. E9.5 is updated; do record `F_min` into `config.json → calibration.f_min`.
+- **`worn` is judged on the 10 s before an event**, not the stillness after it (D-008). Otherwise the "unworn never alerts" rule vetoes the drop. E5.4 is updated.
+- **Ring buffer 1024 samples, not 512** (D-008), so the fall trace is still in memory when the event is sent. E4.2 is updated.
+- **No `battery_pct`** (D-013). A USB power bank reports no charge level, and a voltage divider can't estimate it. The backend currently *requires* it (follow-up F-09 for Ayush); until that lands, send the field as the backend demands and tell the team the value is a placeholder.
+- **BLE fallback is a spare ESP32-S3 scanner or a Mac, not an iPhone** (D-013). E6.3's gate is updated.
+- **Stretch — walking profile, band side (~45 min, D-009, `HARDWARE_SPEC.md` §6.9):** step detector on the MCU (`Bridge.notify("step", …)`); Python aggregates a walking summary onto each heartbeat; apply the profile from the heartbeat reply via `set_thresholds` (clamped locally to [2.5 g, `F_min` − 0.3 g]); button B held 3 s = calibration mode; `demo_chirp_impact_only` flag. Tests 13–17 in §10.2. Drop it if it isn't working by H18.
+- **Arduino track needs the real band at judging.** Cut #6 below (a phone instead of the band) gives that track up.
 
 ## Do these in the first 15 minutes
 
@@ -74,7 +85,7 @@ You will be behind. Cut from the bottom up, never from the top.
 | 3 | Baseline learner | "We learn her normal" | Hard-rule alerts still fire |
 | 4 | RF localization | Room-level location | Fall detection unaffected |
 | 5 | Second contact in the ladder | Redundancy | Ladder still escalates once |
-| 6 | The physical band | The object judges can touch | A phone posting the same JSON demos the same system |
+| 6 | The physical band | The object judges can touch — **and the Arduino track**, which requires live UNO Q + Modulino input | A phone posting the same JSON demos the same system |
 
 **Never cut:** the event table, the FSM, the outbound call.
 
@@ -83,9 +94,9 @@ You will be behind. Cut from the bottom up, never from the top.
 Write these on the whiteboard. Say them out loud to judges. Being the team that volunteers which parts are synthetic buys more credibility than being the team that gets caught.
 
 - The 14 days of resident history come from a seed script. The learner running on it is real.
-- The "home" is a table with three beacons taped to it.
+- The "home" is a taped-out floor plan with four beacons 3–8 m apart at chest height.
 - The band is a dev board on a strap, not a product.
-- We do not dial 911, and this is not a medical device.
+- We do not dial 911. This is a research prototype — not FDA-cleared, and it cannot detect all falls. (Don't say "not a medical device" — `PRODUCT_SPEC.md` §8.7, D-003.)
 
 ## Two things that are already known to be true
 
@@ -208,7 +219,7 @@ Owner: Utsav. Scope: UNO Q band (MCU sketch + Linux Python), Modulino IMU chain,
   // scaling for raw reads: A_SCALE = 16.0f/32768.0f;  G_SCALE = 2000.0f/32768.0f;
   ```
   Note `FS_XL` bit ordering is non-obvious: `0=±2g, 1=±16g, 2=±4g, 3=±8g`. Verify against ST's driver if unsure (`lsm6dsox_reg.h`).
-- [ ] **E4.2** Build the 512-sample ring buffer + fixed-period 208 Hz loop — 30 min — ⛔ BLOCKER — _done when:_ loop uses a `micros()` deadline (`PERIOD_US = 4808`), never `delay()`, and pushes raw `int16` samples into a 512-slot ring (`& 511` mask).
+- [ ] **E4.2** Build the 1024-sample ring buffer + fixed-period 208 Hz loop — 30 min — ⛔ BLOCKER — _done when:_ loop uses a `micros()` deadline (`PERIOD_US = 4808`), never `delay()`, and pushes raw `int16` samples into a 1024-slot ring (`& 1023` mask). (Was 512 — too short to hold the fall trace at confirmation, D-008.)
 - [ ] **E4.3** Implement `IDLE → FREEFALL → IMPACT`, log-only — 45 min — ⛔ BLOCKER — _done when:_ dropping the board onto a cushion from ~30 cm prints a clean state transition to `Serial`.
   - Thresholds to start from `config.json` (not literals in the sketch): `FF_THRESHOLD_G=0.40`, `FF_MIN_MS=80`, `FF_MAX_MS=400`, `IMPACT_G_AFTER_FF=2.80`, `IMPACT_G_SOFT=3.50`, `JERK_MIN_G_PER_S=30`.
 - [ ] **E4.4** Add `POST_IMPACT_STILL` (orientation change + stillness σ) — 45 min — ⛔ BLOCKER — _done when:_ `orient_deg = acos(dot(g_pre,g_post))` and `std_g` over a 2 s window compute correctly against the pseudocode in spec §6.7.
@@ -232,7 +243,7 @@ Owner: Utsav. Scope: UNO Q band (MCU sketch + Linux Python), Modulino IMU chain,
     POST /v1/ingest/heartbeat   {"band_id","battery_pct","uptime_s"}
     ```
   - **A fall event is never dropped; `/v1/ingest/rf` posts are cheap and idempotent — drop them under pressure, not fall events.**
-- [ ] **E5.4** Add the 30 s telemetry/heartbeat timer — 15 min — 🔁 PARALLEL-OK — _done when:_ a heartbeat POST fires every 30 s including `worn` (from IMU activity/inactivity: `accel_std_g < 0.01` and steady gravity vector ⇒ `worn:false`) and current state.
+- [ ] **E5.4** Add the 30 s telemetry/heartbeat timer — 15 min — 🔁 PARALLEL-OK — _done when:_ a heartbeat POST fires every 30 s including `worn` (from IMU activity/inactivity: `accel_std_g < 0.01` and steady gravity vector ⇒ `worn:false`) and current state. **`worn` for a fall decision is judged over the 10 s *before* the event** — a band lying still on the cushion after a drop must still alert (D-008).
 - [ ] **E5.5** Auto-start on boot — 10 min — 🔁 PARALLEL-OK — _done when:_ the app survives a battery swap / reboot without manual restart.
   ```bash
   arduino-app-cli properties set default user:fallband
@@ -255,7 +266,7 @@ The band **only collects RSSI** and ships observations — the room classifier (
 - [ ] **E6.3** `[UNVERIFIED]` — confirm BLE scanning actually works on the shipped Debian image — already checked at E2.3; re-verify once `bleak` is wired into the loop — 10 min — ⛔ BLOCKER — _done when:_ `sudo btmgmt find -l` and the `bleak` loop both consistently see beacons over a 2-minute soak.
   > **🚦 HARD GATE — hour 6.** If BLE scanning is not working (no `hci0`, empty `btmgmt find`, or `bleak` throwing): **stop and pick a fallback now, do not let this eat the fall detector's time:**
   > - Fall back to **Wi-Fi-RSSI-only** room classification (works, but unstable in a crowded venue — say so honestly), OR
-  > - Have an **iPhone (or any phone) running a beacon-scanner app post the same RF JSON to the same endpoint** — the hub and demo stay untouched.
+  > - Flash a **spare ESP32-S3 as a BLE scanner** that posts the same RF JSON to the same endpoint over Wi-Fi (~45 min), or run the `bleak` scanner on a Mac for bench tests — the hub and demo stay untouched. **Not an iPhone:** iOS hides iBeacon adverts from ordinary Bluetooth scanning and Safari has no Web Bluetooth (D-013).
 - [ ] **E6.4** Force the demo hotspot to 5 GHz — 2 min — 🔁 PARALLEL-OK — _done when:_ `iw dev wlan0 info` (or the hotspot's own settings) confirms 5 GHz. Wi-Fi and BLE share the same 2.4 GHz PCB trace antenna on the UNO Q; keeping Wi-Fi traffic on 5 GHz is the single cheapest fix for dropped BLE adverts.
 
 ---
@@ -317,8 +328,8 @@ The band **only collects RSSI** and ships observations — the room classifier (
 - [ ] **E9.1** Static zero-g offset — 2 min — ⛔ BLOCKER — _done when:_ resting on a table in all six orientations (±X/±Y/±Z up, 5 s each) gives `bias_axis = (up+down)/2`, `gain_axis = (up-down)/2` written to `config.json → accel_bias/accel_gain`, and **resting `|a|` reads 1.00 ± 0.02 g in every orientation** — if it doesn't, this is an I2C/scaling bug (go back to E4.1), not a calibration problem.
 - [ ] **E9.2** Wear it for real, mark the position — 1 min — ⛔ BLOCKER — _done when:_ strap tension and forearm position match what will be worn at demo time (mounting compliance and position change the impact signature significantly).
 - [ ] **E9.3** Log 10 negatives — 8 min — ⛔ BLOCKER — _done when:_ 10× each of: sit down hard, slam forearm on table, clap hard 5×, set band on table and walk away, 20 steps normal walking, stand up quickly — all logged with peak_g.
-- [ ] **E9.4** Log 10 simulated falls — safe rig only — 10 min — ⛔ BLOCKER — _done when:_ drop the **band, never a person**, from 1.0 m onto a mattress/stacked cushions, varying landing (flat/edge-on/face-down), let it land and stay still 5 s, 10 times, all logged.
-- [ ] **E9.5** Fit thresholds from the negative/positive split — 4 min — ⛔ BLOCKER — _done when:_ `IMPACT_G_SOFT = N_max + 0.45*(F_min - N_max)`, `IMPACT_G_AFTER_FF = IMPACT_G_SOFT - 0.7`, `FF_THRESHOLD_G = p90(freefall minima)` are computed and written to `config.json`. If `F_min <= N_max` (classes overlap on peak alone), **do not widen the threshold** — lean on `ORIENT_CHANGE_DEG`/`STILL_STD_G` instead.
+- [ ] **E9.4** Log 10 simulated falls — safe rig only — 10 min — ⛔ BLOCKER — _done when:_ drop the **band, never a person**, from **0.5 m onto a firm cushion stack** (not a soft mattress), varying landing (flat/edge-on/face-down), let it land and stay still 5 s, 10 times, all logged, every `peak_g` ≥ 3 g. (Was 1.0 m — rejected by `FF_MAX_MS`, D-008.)
+- [ ] **E9.5** Fit thresholds from the negative/positive split — 4 min — ⛔ BLOCKER — _done when:_ `IMPACT_G_SOFT = N_max + 0.45*(F_min - N_max)` and `IMPACT_G_AFTER_FF = IMPACT_G_SOFT - 0.7` are computed and written to `config.json`, and `F_min` is written to `config.json → calibration.f_min` (it caps the walking profile). **Leave `FF_THRESHOLD_G` at 0.40 g — do not fit it from drops** (D-008). If `F_min <= N_max` (classes overlap on peak alone), **do not widen the threshold** — lean on `ORIENT_CHANGE_DEG`/`STILL_STD_G` instead.
 - [ ] **E9.6** Verify — 2 min — ⛔ BLOCKER — _done when:_ 5 fresh negatives + 5 fresh drops score **5/5 detected, 0/5 false**. If worse, re-fit once and stop — a threshold tuned to noise is worse than a conservative one. Bias toward false positives: a false positive is an annoying phone call, a false negative is nine hours on a bathroom floor.
 
 ---
@@ -342,7 +353,7 @@ The band **only collects RSSI** and ships observations — the room classifier (
 
 ### E12. Test suite: safe fall rig + false-positive suite (hour 15–18 first pass, hour 23–24 final rehearsal)
 
-- [ ] **E12.1** Build the safe fall test rig — 10 min — ⛔ BLOCKER — _done when:_ you have a mattress or 2+ stacked cushions positioned for a clean 1.0 m drop, and everyone on the team has said out loud "we drop the band, never a person — not a teammate, not a judge."
+- [ ] **E12.1** Build the safe fall test rig — 10 min — ⛔ BLOCKER — _done when:_ you have 2+ **firm** stacked cushions positioned for a clean **0.5 m** drop, and everyone on the team has said out loud "we drop the band, never a person — not a teammate, not a judge."
 - [ ] **E12.2** Run the false-positive suite and log every case — 20 min — ⛔ BLOCKER — _done when:_ all of the following are logged as `case, peak_g, ff_min_g, ff_dur_ms, orient_deg, std_g, gyro_max, room, state` and **none of them CONFIRM**:
   - sit down hard in a chair (expect impact 1.5–2.5 g, orientation change < 20°)
   - slam forearm onto a table (expect impact 2.5–5 g, jerk > 60 g/s, orientation < 15° — **the hardest case**, orientation is the only thing that saves you here)
@@ -351,7 +362,7 @@ The band **only collects RSSI** and ships observations — the room classifier (
   - normal walking, 20 steps (periodic 0.7–1.4 g at 1.8–2.2 Hz)
   - stand up quickly (brief 0.8 g dip, 1.3 g rise, orientation < 25°)
   - arm swing / reach overhead (gyro > 150°/s, no post-stillness)
-- [ ] **E12.3** Run the positive fall suite — 15 min — ⛔ BLOCKER — _done when:_ drop onto a cushion (1 m) and drop onto carpet-over-hardwood both CONFIRM, with the carpet drop's impact peak landing well above 4.0 g (proving the ±16 g fix from E4.1 actually works — pinning at 4.0 g here means the register fix regressed).
+- [ ] **E12.3** Run the positive fall suite — 15 min — ⛔ BLOCKER — _done when:_ drop onto a firm cushion (0.5 m) and drop onto carpet-over-hardwood (0.5 m) both CONFIRM, with the carpet drop's impact peak landing well above 4.0 g (proving the ±16 g fix from E4.1 actually works — pinning at 4.0 g here means the register fix regressed).
 - [ ] **E12.4** Run the cancel/timeout/power-loss cases — 10 min — ⛔ BLOCKER — _done when:_ (a) pressing button A at t+5s after a confirmed fall produces `CANCELLED` and the hub does not dial, (b) letting a confirmed fall run to grace expiry triggers the downstream call, (c) unplugging the power bank mid-grace still results in the hub's independent 30 s timer firing (proves the "fire on confirm, not on grace-expiry" design in E4.6).
 - [ ] **E12.5** Run RF test cases R1–R7 alongside the fall suite — 20 min — 🔁 PARALLEL-OK — _done when:_ standing still in each room holds a stable room classification, walking between rooms updates within 2 scans, unplugging one beacon triggers `beacon_offline` without shifting the reported room, and powering off all beacons degrades to `location_unknown` rather than a confident wrong room.
 - [ ] **E12.6** Final rehearsal — 3 full end-to-end runs — 30 min, hour 23–24 — ⛔ BLOCKER — _done when:_ strap on → talk → unstrap → drop → buzzer → no-cancel → call fires with the correct room named, three times in a row, on the real network, in the real demo space.

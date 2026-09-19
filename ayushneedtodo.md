@@ -3,7 +3,34 @@
 Your lanes: **A (backend core)** and **C (perception + intelligence)**.
 Not yours: voice and frontend are Abhinav's ([`abhinavtodo.md`](./abhinavtodo.md)), hardware is Utsav's ([`utsavtodo.md`](./utsavtodo.md)).
 
-Source of truth: [`TECHNICAL_PRD.md`](./TECHNICAL_PRD.md) · [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md)
+Source of truth: [`TECHNICAL_PRD.md`](./TECHNICAL_PRD.md) · [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md) · why they say what they say: [`DECISIONS.md`](./DECISIONS.md)
+
+## ⚠ Changed Saturday evening — read before you continue (`DECISIONS.md`)
+
+The PRD now opens with a build-status block that matches what you built (MongoDB, static keys,
+`/v1/live`) — A2's SQLite tasks below are the original plan, superseded. The follow-ups that land on you
+(full table at the bottom of `DECISIONS.md`):
+
+- **F-02 · Family never sees a room** (D-001). For the family role: no room identifiers or labels in any
+  response; `location` becomes `{presence: home|out|unknown, since}`; `/location` and
+  `/location/history` are staff-only; `location.changed` goes to staff sockets only, family gets
+  `presence.changed`. Spec: `TECHNICAL_PRD.md` §10.5, §12.4.
+- **F-03 · Family chat never names a room.** Exclude `zone_*`, `bathroom_prolonged`,
+  `location_unknown`, `rf_scan` from family retrieval; daily narratives written without room names
+  (`TECHNICAL_PRD.md` §9.7).
+- **F-04 · No bathroom push to family.** The warn step calls the resident only; family hears only if the
+  ladder escalates. No push to family during the cancel window either (D-002).
+- **F-08 · Home product = band + beacons only** (D-010). Add `steps_day` (from the band's walking
+  summaries); home priors drop meals (`TECHNICAL_PRD.md` §8.1, §8.4).
+- **F-09 · Make `battery_pct` optional** on `/ingest/band` and `/ingest/heartbeat` and drop it from the
+  fixtures — the band can't supply it (D-013). Fix the battery row in `backend/HARDWARE_INTEGRATION.md`.
+- **F-11 · Stretch — walking-profile learner** (D-009, `TECHNICAL_PRD.md` §8.7, ~2 h): consume the
+  heartbeat `activity` block, fit `impact_g_soft` within [2.5 g, `F_min` − 0.3 g], return
+  `200 {profile_rev, profile}` from the heartbeat (204 when unchanged), emit `gait_profile_updated` /
+  `gait_profile_shift`. Drop it if it isn't working by H18.
+- **F-13** · `backend/HARDWARE_INTEGRATION.md:94` cites `HARDWARE_SPEC.md` §6.9 for the free-fall
+  detector; §6.9 is now the walking profile.
+- C6.4 below had the wrong expectation for λ ≈ 3.1 (D-015) — fixed.
 
 ## Do these in the first 15 minutes
 
@@ -64,7 +91,7 @@ You will be behind. Cut from the bottom up, never from the top.
 | 3 | Baseline learner | "We learn her normal" | Hard-rule alerts still fire |
 | 4 | RF localization | Room-level location | Fall detection unaffected |
 | 5 | Second contact in the ladder | Redundancy | Ladder still escalates once |
-| 6 | The physical band | The object judges can touch | A phone posting the same JSON demos the same system |
+| 6 | The physical band | The object judges can touch — **and the Arduino track**, which requires live UNO Q + Modulino input | A phone posting the same JSON demos the same system |
 
 **Never cut:** the event table, the FSM, the outbound call.
 
@@ -73,9 +100,9 @@ You will be behind. Cut from the bottom up, never from the top.
 Write these on the whiteboard. Say them out loud to judges. Being the team that volunteers which parts are synthetic buys more credibility than being the team that gets caught.
 
 - The 14 days of resident history come from a seed script. The learner running on it is real.
-- The "home" is a table with three beacons taped to it.
+- The "home" is a taped-out floor plan with four beacons 3–8 m apart at chest height.
 - The band is a dev board on a strap, not a product.
-- We do not dial 911, and this is not a medical device.
+- We do not dial 911. This is a research prototype — not FDA-cleared, and it cannot detect all falls. (Don't say "not a medical device" — `PRODUCT_SPEC.md` §8.7, D-003.)
 
 ## Two things that are already known to be true
 
@@ -377,7 +404,7 @@ _🔁 PARALLEL-OK with C3/C4. Server consumes `POST /v1/ingest/rf` payloads `{wi
   age_i=(today-date_i)days; w̃_i=w_i·0.97^age_i; μ=weighted_median; σ̂=max(1.4826·MAD, floor_f)
   ```
   _done when:_ unit test reproduces §8.2's worked numbers and a midnight-crossing wake time does not wrongly compute a huge MAD
-- [ ] **C6.4** Poisson EWMA rate (`α=0.15`) + two-tailed surprise score, `score_today()` — 25 min — _done when:_ feeding the injected "0 walks" anomaly from C6.1 against λ≈3.1 returns `severity="urgent"` (surprise ≥2.0)
+- [ ] **C6.4** Poisson EWMA rate (`α=0.15`) + two-tailed surprise score, `score_today()` — 25 min — _done when:_ feeding the injected "0 walks" anomaly from C6.1 against λ≈4.7 (the seeded rate) returns `severity="urgent"` (surprise ≈2.0), and against λ≈3.1 returns `severity="warn"` (surprise ≈1.35 — zero reaches urgent only when λ ≥ ln 100 ≈ 4.6; D-015)
 - [ ] **C6.5** Cold start: `baseline/priors.yaml` (κ=4 pseudo-count blend) + P0/P1/P2 phase logic — 20 min — _done when:_ a resident with `n_obs=1` produces zero deviation alerts (P0), `n_obs=5` only fires on `urgent`-level deviations (P1), `n_obs=10` uses pure personal baseline (P2)
 - [ ] **C6.6** Threshold/direction table (§8.5) + the two real-time checks (`longest_inactivity_s` every 60 s vs μ+3σ̂, `bathroom_dwell_s` live vs §7.6's rule) + global damper (max 2 alerts/resident/24h, 1/feature/day, suppressed ones still logged as `severity:info`) — 30 min — _done when:_ a burst of 5 simultaneous deviations on one resident yields only 2 `baseline_deviation` alerts, with the other 3 present in `events` at `info` severity
 - [ ] **C6.7** Feedback endpoint logic: `expected` → weight 0.2 + 7-day cooldown (urgent-only) + repeated-3x-in-14-days → `baseline_updated`; `false_positive` → weight 0.0 — 25 min — _done when:_ POSTing `{"verdict":"expected"}` three times in a test harness for the same feature flips a `baseline_updated` event with `reason:"repeated_expected"` and resets weights to 1.0
@@ -410,7 +437,7 @@ _🔁 PARALLEL-OK with C3/C4. Server consumes `POST /v1/ingest/rf` payloads `{wi
 | 12 | Baseline learner scores the seeded synthetic history and flags the injected anomaly | `python -m dhyaan.baseline.rollup --resident res_eleanor --backfill` then check `alerts` table for the injected day |
 | 14 | RF fusion correctly reassigns/drops a mismatched camera track in a synthetic disagreement case | `pytest dhyaan/location/test_fusion.py -q` |
 | 16 | Daily narratives generated for all seeded days and embedded into sqlite-vec/FTS5 | `sqlite3 dhyaan.db "select count(*) from chunk_meta where kind='daily_summary'"` |
-| 18 | Hybrid RAG answers "has she been eating this week" with citations and correct absence-reporting | `python -m dhyaan.rag.ask --resident res_eleanor --q "has she been eating this week"` |
+| 18 | Hybrid RAG answers "has she been out this week?" with citations, correct absence-reporting, and no room names for the family role (D-001, D-010) | `python -m dhyaan.rag.ask --resident res_eleanor --q "has she been eating this week"` |
 | 20 | Full stack demo dry run: RF split-screen flap-vs-HMM beat + a RAG question in the same session | manual dry run per §7.8's demo beat script |
 
 ---

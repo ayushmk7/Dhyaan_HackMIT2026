@@ -3,7 +3,31 @@
 Your lanes: **B (Twilio + Deepgram voice)** and **D (React Native app)**.
 Not yours: backend and the ML/perception stack are Ayush's ([`ayushneedtodo.md`](./ayushneedtodo.md)), hardware is Utsav's ([`utsavtodo.md`](./utsavtodo.md)).
 
-Source of truth: [`TECHNICAL_PRD.md`](./TECHNICAL_PRD.md) (voice layer + app spec + API contract) · [`distinctive-frontend.md`](./distinctive-frontend.md) (design direction)
+Source of truth: [`TECHNICAL_PRD.md`](./TECHNICAL_PRD.md) (voice layer + app spec + API contract) · [`distinctive-frontend.md`](./distinctive-frontend.md) (design direction) · why they say what they say: [`DECISIONS.md`](./DECISIONS.md)
+
+## ⚠ Changed Saturday evening — read before you continue (`DECISIONS.md`)
+
+Follow-ups that land on you (full table at the bottom of `DECISIONS.md`):
+
+- **F-06 · Recording + AI disclosure on every call, and a `stop_recording` tool** (D-004). Both greetings
+  in `dhyaan/voice/settings.py:102-109` currently have neither. New text is in `TECHNICAL_PRD.md` §4.5;
+  the tool definition is in §4.6 (five tools now). This is the one item with legal exposure on stage —
+  judges are on these calls, in Massachusetts.
+- **F-01 · Family Home never shows a room** (D-001): replace "In the {room} · N min" with home/out +
+  activity, and drop the room-time bar from family Home and Timeline (keep it on staff S3).
+  `frontend/src/app/(family)/index.tsx:111-112`, `:158`. D5.1 and D7.1 below are updated.
+- **F-05 · Family alert takeover starts at `CALLING_CONTACT_1`**, not `SUSPECTED` (D-002). If Eleanor
+  resolves it herself, the family gets one quiet timeline line. Staff/operator view keeps the countdown.
+- **F-04 · No bathroom push to family**; that push is staff-only now (`TECHNICAL_PRD.md` §10.4).
+- **F-07 · The "31 seconds" applause stat** shows the measured elapsed time from the live run — never a
+  number from the 6× mock. D6.1 below is updated.
+- **F-08 · Home tiles and chips** (D-010): tiles walked / up at night / out of the house / active (no
+  "ate" at home); chips "Has she been out this week?", "How were her nights?", "Anything unusual this
+  week?". D8.1 below is updated.
+- **F-12 · Stretch — walking-profile panel** on staff S3 (impact ticker + live `impact_g_soft` readout
+  with floor and ceiling) for the Arduino expo demo (`PRODUCT_SPEC.md` §10.2 A). ~30 min.
+- **The demo script now lives only in `PRODUCT_SPEC.md` §10** (D-007): stage cancel window 10 s, contact
+  step 20 s, escalation driven by the judge's answer.
 
 ## Do these in the first 15 minutes
 
@@ -65,7 +89,7 @@ You will be behind. Cut from the bottom up, never from the top.
 | 3 | Baseline learner | "We learn her normal" | Hard-rule alerts still fire |
 | 4 | RF localization | Room-level location | Fall detection unaffected |
 | 5 | Second contact in the ladder | Redundancy | Ladder still escalates once |
-| 6 | The physical band | The object judges can touch | A phone posting the same JSON demos the same system |
+| 6 | The physical band | The object judges can touch — **and the Arduino track**, which requires live UNO Q + Modulino input | A phone posting the same JSON demos the same system |
 
 **Never cut:** the event table, the FSM, the outbound call.
 
@@ -74,9 +98,9 @@ You will be behind. Cut from the bottom up, never from the top.
 Write these on the whiteboard. Say them out loud to judges. Being the team that volunteers which parts are synthetic buys more credibility than being the team that gets caught.
 
 - The 14 days of resident history come from a seed script. The learner running on it is real.
-- The "home" is a table with three beacons taped to it.
+- The "home" is a taped-out floor plan with four beacons 3–8 m apart at chest height.
 - The band is a dev board on a strap, not a product.
-- We do not dial 911, and this is not a medical device.
+- We do not dial 911. This is a research prototype — not FDA-cleared, and it cannot detect all falls. (Don't say "not a medical device" — `PRODUCT_SPEC.md` §8.7, D-003.)
 
 ## Two things that are already known to be true
 
@@ -158,7 +182,7 @@ Also flagged, lower stakes: REST auths with `Authorization: Bearer <JWT>` while 
 ### B5. Function calling / escalation ladder execution
 
 - [ ] **B5.1** Wire `FunctionCallRequest` handling: parse `fn["arguments"]` JSON, call `FSM.handle_voice_tool(alert_id, role, fn["name"], args)`, send back `FunctionCallResponse` with `id`, `name`, `content` — 20 min — _done when:_ a scripted fake `mark_ok` FunctionCallRequest produces a `FunctionCallResponse` echoed to a mock DG socket.
-- [ ] **B5.2** Load the 4 tool defs (`mark_ok`, `escalate`, `request_callback`, `end_call`) verbatim from §4.6 into `agent.think.functions` in Settings — 10 min — _done when:_ Settings JSON round-trips through a JSON validator and matches PRD schema exactly, including `end_call`'s `defer_until_eot: true`.
+- [ ] **B5.2** Load the 5 tool defs (`mark_ok`, `escalate`, `request_callback`, `stop_recording`, `end_call`) verbatim from §4.6 into `agent.think.functions` in Settings — 10 min — _done when:_ Settings JSON round-trips through a JSON validator and matches PRD schema exactly, including `end_call`'s `defer_until_eot: true`.
 - [ ] **B5.3** Do NOT defer `mark_ok`, `escalate`, `request_callback` — only `end_call` gets `defer_until_eot: true` — 5 min — _done when:_ code review confirms only one function object has that key.
 - [ ] **B5.4** Handle `FunctionCallCancelled` as a no-op (FSM actions must already be idempotent — confirm this property with whoever owns `handle_voice_tool`, don't assume) — 5 min — _done when:_ calling `handle_voice_tool` twice with the same args does not double-fire escalation (e.g. does not place two contact calls).
 - [ ] **B5.5** On `AgentAudioDone`, check `ctx["pending_hangup"]` and hang up the Twilio call via the REST API if set (this is how `end_call`'s deferred execution actually closes the phone line after the farewell line finishes) — 15 min — _done when:_ a test call ending in `end_call` closes the call only after the goodbye audio is heard, not before.
@@ -352,7 +376,7 @@ in the client.
 
 🔁 depends on D3.1 (store) + D1.1 (fixtures).
 
-- [ ] **D5.1** `/` (family home) — big status card (name, "OK", current zone + dwell time, last-seen, band battery) + 4 ADL tiles (ate/walked/up-at-night/out-of-room) in green/amber/grey — 45 min — _done when:_ pull-to-refresh re-fetches `/residents/{id}` + `/residents/{id}/location` and tiles reflect mocked `summary.tiles` states.
+- [ ] **D5.1** `/` (family home) — big status card (name, "OK", **home/out + activity — never a room**, last-seen, band last seen — no battery, D-001/D-013) + 4 tiles (walked/up-at-night/out-of-the-house/active — no "ate" at home, D-010) in green/amber/grey — 45 min — _done when:_ pull-to-refresh re-fetches `/residents/{id}` + `/residents/{id}/location` and tiles reflect mocked `summary.tiles` states.
       Location card should read from the live `store.residents[id].location`, not a query — it's
       websocket-owned per §10.3. This card is what "location.changed" pushes make feel alive; wire it to
       the store, not to polling.
@@ -374,7 +398,10 @@ in the client.
       - **ESCALATED_FINAL** — max-urgency treatment, screen edge strobe or heavier red, explicit
         "we do not dial 911 for you" microcopy near the Call 911 button so nobody assumes auto-dial.
       - **ACKNOWLEDGED** — the ladder timeline freezes in place, big checkmark, elapsed time stat
-        ("31 seconds from the floor to a human being told") — this is the applause line, make it visible.
+        ("N seconds from the fall to a human being told") — this is the applause line, make it visible.
+        **N is measured from the alert record of the live run** — never a hard-coded "31", and never a
+        number from the 6× mock (D-007, F-07).
+      - **Family role:** the takeover opens at CALLING_CONTACT_1, not SUSPECTED (D-002, F-05).
       Buttons on every phase: **"I've got her"** (huge, primary, calls `POST /alerts/{id}/ack`), "Call
       Eleanor" (opens native dialer, does not auto-dial), "Call 911" (same — dials, never auto-dials).
       Live step timeline renders directly off `store.ladder` (websocket-appended array per §10.3) — do
@@ -387,14 +414,14 @@ in the client.
 
 🔁 PARALLEL-OK, depends on D3.2 (TanStack Query reads) or D1.1 fixtures alone.
 
-- [ ] **D7.1** `/timeline` — reverse-chron day sections, per-day stacked room-time bar at the head of each day, amber ring on deviation rows — 45 min — _done when:_ scrolling renders mocked `events[]` grouped by day with the `location/history` segments rendered as a proportional stacked bar per day.
+- [ ] **D7.1** `/timeline` — reverse-chron day sections, amber ring on deviation rows; **no room-time bar and no room names for the family** (that bar moves to staff S3 — D-001) — 45 min — _done when:_ scrolling renders mocked `events[]` grouped by day with the `location/history` segments rendered as a proportional stacked bar per day.
 - [ ] **D7.2** `/timeline/[eventId]` — event detail (what/when/sensor/confidence/evidence sentence, feedback verdict buttons) — 30 min — _done when:_ tapping a timeline row navigates here with the right event's mocked data and "This was expected" posts a feedback shape matching `/alerts/{id}/feedback` semantics (§10.5). **Never render an image or thumbnail here** — the PRD is explicit that no such endpoint exists; don't build a UI slot for one.
 
 ### D8. RAG chat
 
 🔁 PARALLEL-OK, depends on D3.2 or D1.1.
 
-- [ ] **D8.1** `/chat` — suggested chips ("has she been eating?", "when did she last go outside?", "how did she sleep?"), message list, citation chips that deep-link to `/timeline/[eventId]` — 40 min — _done when:_ sending a question calls `POST /chat` (mocked response with `answer`/`citations`/`counts`), citation chips render tappable and route correctly, and a `refused: true` mocked response renders a distinct "can't answer that" state instead of crashing.
+- [ ] **D8.1** `/chat` — suggested chips ("Has she been out this week?", "How were her nights?", "Anything unusual this week?" — questions the band can answer, D-010), message list, citation chips that deep-link to `/timeline/[eventId]` — 40 min — _done when:_ sending a question calls `POST /chat` (mocked response with `answer`/`citations`/`counts`), citation chips render tappable and route correctly, and a `refused: true` mocked response renders a distinct "can't answer that" state instead of crashing.
 
 ### D9. Settings & escalation
 
