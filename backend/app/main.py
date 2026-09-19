@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
-from .routers import chat, ingest, live, residents
+from .routers import chat, ingest, live, residents, setup
 
 
 @asynccontextmanager
@@ -31,6 +31,7 @@ app.add_middleware(
 
 app.include_router(ingest.router)
 app.include_router(residents.router)
+app.include_router(setup.router)
 app.include_router(chat.router)
 app.include_router(live.router)
 

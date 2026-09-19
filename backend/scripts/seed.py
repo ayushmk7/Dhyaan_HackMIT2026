@@ -113,13 +113,32 @@ async def main(wipe: bool, days: int):
         await seed_day(today - timedelta(days=i), anomalous=False)
     await seed_day(today, anomalous=True)  # today: no walk, no lunch
 
+    # Roll up every seeded day: the baseline learner has to actually run before
+    # the app has baselines to show, and the daily narratives it writes are the
+    # RAG chunks. Without this, `make seed` leaves /baselines and /summaries
+    # empty and the demo looks broken for reasons that are not bugs.
+    from app import baseline
+    from app.rag import daily_narrative
+
+    for i in range(days, -1, -1):
+        ds = (today - timedelta(days=i)).strftime("%Y-%m-%d")
+        try:
+            await baseline.rollup("res_eleanor", ds)
+            await daily_narrative("res_eleanor", ds)
+        except Exception as e:  # noqa: BLE001
+            print(f"  rollup {ds} failed: {type(e).__name__}: {e}")
+
     # Embeddings ride background tasks (rag._on_event_created). This process is
     # about to exit, which would cancel them and leave every seeded event
     # unembedded — so wait for them here.
     await rag.drain_embeddings()
 
     n = await d.events.count_documents({})
+    nb = await d.baselines.count_documents({})
+    nsum = await d.events.count_documents({"type": "daily_summary"})
+    ndev = await d.events.count_documents({"type": "baseline_deviation"})
     print(f"seeded {n} events over {days + 1} days for Eleanor")
+    print(f"  {nb} baselines learned, {nsum} daily narratives, {ndev} deviations flagged")
     print("today is deliberately anomalous: no walk, no lunch — the learner should flag it")
     await dbmod.close()
 

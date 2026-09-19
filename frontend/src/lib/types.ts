@@ -131,13 +131,27 @@ export type TileTone = 'ok' | 'warn' | 'unknown';
 export interface TileState { state: TileTone; detail: string }
 
 export interface DaySummary {
+  // Contract field is `date` — http.ts renames to `date_local` on the way in
+  // because timeline/index.tsx keys its day sections off `date_local`.
   date_local: string;
   narrative: string;
-  tiles: { ate: TileState; walked: TileState; night: TileState; location: TileState };
-  deviations: { feature: string; text: string }[];
+  // Contract shape is exactly `{feature, severity, text}` — matched as-is.
+  deviations: { feature: string; severity: string; text: string }[];
+  // ponytail: the real /summaries endpoint has no per-tile rollup (ate/
+  // walked/night/location) — that was a mock-only convenience. Optional and
+  // left unset by httpApi; only the mock still populates it, and no screen
+  // currently reads `.tiles` (grepped clean across src/app, src/components).
+  // Upgrade: drop entirely once the mock stops needing it, or have the
+  // backend expose real day tiles.
+  tiles?: { ate: TileState; walked: TileState; night: TileState; location: TileState };
 }
 
 export interface LocationSegment {
+  // Contract sends `{zone, from, to, seconds, method, confidence}` — renamed
+  // to start/end/s here because components/viz.tsx's RoomTimeBar (not owned
+  // by this facade) already reads `.start`/`.end`/`.s`. method/confidence are
+  // real fields nothing reads yet, so they're left off rather than invented
+  // further; add them back if a screen ever needs them.
   zone: string;
   start: string;
   end: string;
@@ -169,13 +183,26 @@ export interface ChatMessage {
 }
 
 export interface BaselineFeature {
+  // Real fields, contract-exact:
   feature: string;
-  label: string;
   mu: number;
   mad: number;
+  lam: number;
   n_obs: number;
+  cold_start: boolean;
+  last_value: number | null;
+  updated_at: string;
   unit: string;
-  series: number[]; // last 14 days for sparkline
+  direction: string;
+  // ponytail: not on the wire — httpApi derives `label` by title-casing
+  // `feature` (same trick as http.ts's locationLabel). `series` has no
+  // history endpoint behind it at all, so httpApi fills it with just
+  // `[last_value]` (or `[]` if null) rather than fabricating 14 fake points;
+  // resident/[id].tsx's sparkline degrades to one bar but its deviation
+  // check (`abs(last - mu) > 2*mad`) still runs on a real value. Upgrade:
+  // add a real per-feature history endpoint and drop this shim.
+  label: string;
+  series: number[];
 }
 
 // Mock-only variants (dhyaan.ts / store/live.ts) kept below — the real

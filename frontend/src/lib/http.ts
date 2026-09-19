@@ -1,15 +1,18 @@
-// Real API client. Written against the backend's live OpenAPI schema and
-// backend/app/routers/{residents,chat,live}.py — NOT the PRD's §10.5, which
+// Real API client. Written against the backend's live OpenAPI schema plus
+// backend/API_CONTRACT_V2.md (the baselines/summaries/location-history/events/
+// simulate/pairing/survey/contacts/push routes) — NOT the PRD's §10.5, which
 // describes a JWT and a different path/shape for nearly everything here (see
 // the big comment at the top of residents.py). Same function names and
 // signatures as the mock facade in api.ts — flipping USE_MOCKS must change
-// zero call sites; where the real backend has no equivalent endpoint at all,
-// each function says so and throws or degrades instead of faking data.
+// zero call sites; where a contract shape doesn't match what a screen already
+// expects, that's adapted here (each such spot is commented), never in the
+// screen. Where the real backend still has no equivalent endpoint at all,
+// the function says so and throws or degrades instead of faking data.
 import { API_BASE, API_KEY } from './config';
 import type {
   Alert, AlertKind, AlertSeverity, BaselineFeature, CallRow, ChatMessage,
   Contact, DaySummary, KEvent, LocationMethod, LocationSegment, Resident,
-  ResidentLocation, TileState,
+  ResidentLocation,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -45,6 +48,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const get = <T>(path: string) => request<T>(path);
 const post = <T>(path: string, data?: unknown) =>
   request<T>(path, { method: 'POST', body: JSON.stringify(data ?? {}) });
+const put = <T>(path: string, data?: unknown) =>
+  request<T>(path, { method: 'PUT', body: JSON.stringify(data ?? {}) });
+
+// ponytail: every real endpoint added below is scoped to Eleanor —
+// backend/scripts/seed.py only seeds her, and every other real function in
+// this file already hardcodes the same id (getContacts, chat, getEvent's old
+// scan). Not read from session state: session.ts has no resident id field,
+// only a display name. Upgrade: thread a real resident id through once
+// there's more than one onboarded resident.
+const RESIDENT_ID = 'res_eleanor';
+
+// zoneId -> in-flight survey, so surveyStop(zoneId) can find the survey_id
+// surveyRoom(zoneId) started (see surveyRoom's comment below for why).
+const activeSurveys = new Map<string, { surveyId: string; timer: ReturnType<typeof setInterval> }>();
 
 const isNotFound = (e: unknown) => e instanceof Error && /not found/i.test(e.message);
 
@@ -157,43 +174,6 @@ function toResident(raw: RawResidentListItem): Resident {
   };
 }
 
-interface RawDayRollup {
-  date: string;
-  meal_count: number;
-  walk_count: number;
-  night_bed_exits: number;
-  room_time_s: Record<string, number>;
-}
-
-function tile(ok: boolean, detail: string): TileState {
-  return { state: ok ? 'ok' : 'warn', detail };
-}
-
-// ponytail: GET /day gives raw counts only — no narrative, no deviations
-// (those exist, but only behind POST /admin/rollup, which also re-runs the
-// LLM narrative and rewrites baseline.py's rollup state; too slow and too
-// mutating to call once per day for a 6-day-back scan). Build a plain-facts
-// summary from the real counts instead of an LLM narrative, and report zero
-// deviations honestly rather than inventing any. Upgrade: cache
-// admin/rollup's real narrative+deviations server-side and serve them here
-// read-only.
-function toDaySummary(day: RawDayRollup): DaySummary {
-  const topZone = Object.entries(day.room_time_s).sort((a, b) => b[1] - a[1])[0]?.[0];
-  return {
-    date_local: day.date,
-    narrative: `${day.meal_count} meal(s) observed, ${day.walk_count} walk(s) completed, ${day.night_bed_exits} night bed exit(s).`,
-    tiles: {
-      ate: tile(day.meal_count >= 2, `${day.meal_count} meal(s) observed`),
-      walked: tile(day.walk_count >= 1, `${day.walk_count} walk(s) completed`),
-      night: tile(day.night_bed_exits === 0, `${day.night_bed_exits} night bed exit(s)`),
-      location: topZone
-        ? { state: 'ok', detail: `Mostly in the ${locationLabel(topZone).toLowerCase()}` }
-        : { state: 'unknown', detail: 'No location data yet' },
-    },
-    deviations: [],
-  };
-}
-
 // ---------------------------------------------------------------------------
 // client
 // ---------------------------------------------------------------------------
@@ -218,57 +198,43 @@ export const httpApi = {
   getEvents: (residentId: string) =>
     get<KEvent[]>(`/residents/${residentId}/timeline?limit=200`),
 
-  // ponytail: no GET /events/{id} exists — scan Eleanor's recent timeline
-  // (the only resident backend/scripts/seed.py seeds). Ceiling: misses
-  // events past the 200-row page and can't resolve another resident's event
-  // id at all. Upgrade: add GET /v1/events/{id} server-side.
-  getEvent: async (id: string) => {
-    const events = await get<KEvent[]>('/residents/res_eleanor/timeline?limit=200');
-    return events.find((e) => e.id === id) ?? null;
-  },
-
-  getSummaries: async (residentId: string): Promise<DaySummary[]> => {
-    const days: DaySummary[] = [];
-    for (let d = 1; d <= 6; d++) {
-      const date = new Date(Date.now() - d * 86_400_000).toISOString().slice(0, 10);
-      const day = await get<RawDayRollup | null>(`/residents/${residentId}/day?date=${date}`).catch(() => null);
-      if (day) days.push(toDaySummary(day));
-    }
-    return days;
-  },
-
-  // ponytail: no location-history endpoint — GET /day folds a whole day's
-  // room time into totals with no timestamps, and GET /location only knows
-  // the current zone. Reconstruct segments client-side from the timeline's
-  // zone-bearing events, the same single-forward-pass trick day_rollup takes
-  // server-side for room_time_s. Ceiling: capped at the timeline's 200-row
-  // max, and a sensor gap gets attributed to whichever zone was last seen.
-  // Upgrade: add GET /residents/{id}/location/history?date=.
-  getLocationHistory: async (residentId: string, date: string): Promise<LocationSegment[]> => {
-    const sinceEpoch = Math.floor(new Date(`${date}T00:00:00`).getTime() / 1000);
-    const nextDayEpoch = sinceEpoch + 86_400;
-    const events = await get<KEvent[]>(`/residents/${residentId}/timeline?since=${sinceEpoch}&limit=200`);
-    const zoned = events
-      .filter((e): e is KEvent & { zone: string } => !!e.zone)
-      .sort((a, b) => (a.ts_epoch ?? 0) - (b.ts_epoch ?? 0));
-    return zoned.map((e, i) => {
-      const startEpoch = e.ts_epoch ?? Math.floor(new Date(e.ts).getTime() / 1000);
-      const next = zoned[i + 1];
-      const endEpoch = next ? next.ts_epoch ?? startEpoch : nextDayEpoch;
-      return {
-        zone: e.zone,
-        start: e.ts,
-        end: next?.ts ?? new Date(nextDayEpoch * 1000).toISOString(),
-        s: Math.max(0, endEpoch - startEpoch),
-      };
+  // GET /events/{event_id} — contract-exact, or null on 404.
+  getEvent: async (id: string): Promise<KEvent | null> => {
+    const raw = await get<KEvent>(`/events/${id}`).catch((e) => {
+      if (isNotFound(e)) return null;
+      throw e;
     });
+    return raw;
   },
 
-  // ponytail: no baselines/sparkline endpoint — baseline.py writes aggregate
-  // rollup docs consumed by rag.daily_narrative, nothing per-feature is
-  // exposed over HTTP. Staff sparklines stay empty against the real backend.
-  // Upgrade: add GET /residents/{id}/baselines.
-  getBaselines: async (_residentId: string): Promise<BaselineFeature[]> => [],
+  // GET /residents/{id}/summaries?days=7 — contract-exact shape, just
+  // renamed date->date_local on the way in (see types.ts DaySummary).
+  getSummaries: async (residentId: string): Promise<DaySummary[]> => {
+    const raw = await get<{ date: string; narrative: string; deviations: DaySummary['deviations'] }[]>(
+      `/residents/${residentId}/summaries?days=7`,
+    );
+    return raw.map((s) => ({ date_local: s.date, narrative: s.narrative, deviations: s.deviations }));
+  },
+
+  // GET /residents/{id}/location/history?date= — contract sends
+  // from/to/seconds; renamed to start/end/s for RoomTimeBar (see types.ts).
+  getLocationHistory: async (residentId: string, date: string): Promise<LocationSegment[]> => {
+    const raw = await get<{ zone: string; from: string; to: string; seconds: number }[]>(
+      `/residents/${residentId}/location/history?date=${date}`,
+    );
+    return raw.map((s) => ({ zone: s.zone, start: s.from, end: s.to, s: s.seconds }));
+  },
+
+  // GET /residents/{id}/baselines — contract-exact fields, plus a derived
+  // label/series pair for the sparkline UI (see types.ts BaselineFeature).
+  getBaselines: async (residentId: string): Promise<BaselineFeature[]> => {
+    const raw = await get<Omit<BaselineFeature, 'label' | 'series'>[]>(`/residents/${residentId}/baselines`);
+    return raw.map((b) => ({
+      ...b,
+      label: locationLabel(b.feature), // reuses the same title-case helper zones use — it's just string formatting
+      series: b.last_value == null ? [] : [b.last_value],
+    }));
+  },
 
   // ponytail: no standalone contacts endpoint — contacts are embedded in
   // GET /residents/{id}. Hardcoded to res_eleanor, matching the mock facade's
@@ -339,43 +305,108 @@ export const httpApi = {
     };
   },
 
-  // ponytail: no POST /admin/simulate, and the only real trigger path
-  // (POST /v1/ingest/band, fall_suspected payload) needs the band's own
-  // shared secret (X-Band-Key) — a second static key this client doesn't
-  // carry, and not worth adding just for a staff demo button. Throwing
-  // rather than fabricating a fake Alert: a fake "fall" card is actively
-  // misleading in a fall-detection app. Upgrade: add a demo-only
-  // POST /admin/simulate authed with the app's own API key.
-  simulate: async (_kind: 'fall' | 'bathroom' = 'fall', _residentId?: string): Promise<Alert> => {
-    throw new Error('Simulating an alert needs the real band hardware — not available in this build.');
+  // POST /admin/simulate — the real demo trigger, walking the real ingest
+  // path (FSM + websocket + app all react as they would for a band). Not
+  // every kind is guaranteed an alert_id (e.g. a plain "walk"); this
+  // signature only ever passes fall/bathroom, which the contract's own note
+  // says must produce one, so a missing alert_id surfaces as a real error
+  // rather than a fabricated Alert card.
+  simulate: async (kind: 'fall' | 'bathroom' = 'fall', residentId = RESIDENT_ID): Promise<Alert> => {
+    const body = await post<{ event_id: string; alert_id?: string }>('/admin/simulate', {
+      resident_id: residentId,
+      kind,
+    });
+    if (!body.alert_id) {
+      throw new Error('Simulated event did not open an alert.');
+    }
+    return toAlert(await get<RawAlert>(`/alerts/${body.alert_id}`));
   },
 
-  // ponytail: none of the four below exist on the real backend — band
-  // pairing and RF fingerprinting are backend/app/routers/ingest.py's job,
-  // driven by the physical band/AP, not a staff phone tapping through
-  // onboarding, and there's no contacts-write or push-token route either.
-  // Throwing rather than faking success so onboarding visibly stops instead
-  // of pretending a band paired that didn't. Upgrade: add
-  // POST /bands/pair, /residents/{id}/fingerprint/start|stop,
-  // POST /residents/{id}/contacts, and POST /devices/push-token.
-  pairBand: async (_code: string): Promise<{ band_id: string; rssi: number }> => {
-    throw new Error('Band pairing needs a real endpoint — not available in this build.');
+  // POST /bands/pair — contract body is {band_id, resident_id}, but
+  // onboard/pair.tsx only ever collects a 6-digit code shown on the band, no
+  // separate band_id field. Treated as the same value (the band's own code
+  // *is* its id for pairing purposes here). Contract's `band: {...}` is left
+  // unspecified in the doc, so band_id/rssi are read defensively off it
+  // with sane fallbacks instead of assuming a shape. Upgrade: nail down
+  // `band`'s real fields with the backend and stop guessing.
+  pairBand: async (code: string): Promise<{ band_id: string; rssi: number }> => {
+    const body = await post<{ ok: boolean; band?: { band_id?: string; id?: string; rssi?: number } }>(
+      '/bands/pair',
+      { band_id: code, resident_id: RESIDENT_ID },
+    );
+    return { band_id: body.band?.band_id ?? body.band?.id ?? code, rssi: body.band?.rssi ?? -60 };
   },
-  surveyRoom: async (_zoneId: string): Promise<{ survey_id: string; expect_s: number }> => {
-    throw new Error('Room survey needs a real endpoint — not available in this build.');
+
+  // ponytail: this phone has no BLE radio access, so `surveyRoom` can only
+  // ever send wifi readings during the sampling loop below — real per-beacon
+  // RSSI (uuid/major/minor) comes from the band's own uplink, not a staff
+  // phone. And Expo's managed workflow has no built-in "list nearby wifi APs
+  // with RSSI" API either, so even the wifi reading is sent empty rather
+  // than faked. Ceiling: a survey run from this app teaches the fingerprint
+  // store nothing real yet. Upgrade: wire in a native wifi-scan module (e.g.
+  // react-native-wifi-reborn) and fill `wifi` with real {bssid, rssi} pairs.
+  //
+  // survey/start -> survey/sample (repeated) -> survey/stop is a three-call
+  // flow; onboard/survey.tsx only calls surveyRoom(zoneId) then, later,
+  // surveyStop(zoneId) — it never drives the sampling loop itself, and it
+  // re-passes the *zone id*, not the survey_id /start hands back. So the
+  // sampling loop and the zoneId->survey_id mapping both live here.
+  surveyRoom: async (zoneId: string): Promise<{ survey_id: string; expect_s: number }> => {
+    const { survey_id } = await post<{ survey_id: string; zone: string }>(
+      `/residents/${RESIDENT_ID}/survey/start`,
+      { zone: zoneId },
+    );
+    const timer = setInterval(() => {
+      post(`/residents/${RESIDENT_ID}/survey/sample`, { survey_id, beacons: [], wifi: [] }).catch((e) => {
+        console.warn('survey sample failed', e);
+      });
+    }, 2000);
+    activeSurveys.set(zoneId, { surveyId: survey_id, timer });
+    return { survey_id, expect_s: 30 };
   },
   surveyStop: async (
-    _surveyId: string,
+    zoneId: string,
   ): Promise<{ n_scans: number; n_anchors: number; separability_db: number; warning: string | null }> => {
-    throw new Error('Room survey needs a real endpoint — not available in this build.');
+    const active = activeSurveys.get(zoneId);
+    activeSurveys.delete(zoneId);
+    if (active) clearInterval(active.timer);
+    const surveyId = active?.surveyId ?? zoneId; // fallback: caller already held a real survey_id
+    const body = await post<{ zone: string; samples: number; stored: boolean }>(
+      `/residents/${RESIDENT_ID}/survey/stop`,
+      { survey_id: surveyId },
+    );
+    return {
+      n_scans: body.samples,
+      // ponytail: the real stop response has no per-anchor breakdown (no BLE
+      // beacons from a phone to count) — approximated from sample count so
+      // the "N anchors" readout still moves with real activity instead of
+      // being a fabricated number. Ceiling: not a real anchor count. Upgrade:
+      // have the backend return one, or drop the anchor UI for phone surveys.
+      n_anchors: Math.min(6, body.samples),
+      separability_db: 0, // not computed over REST — honest zero, not a fabricated confidence score
+      warning: body.stored ? null : 'Not enough signal collected — this room may not be recognized reliably yet.',
+    };
   },
-  saveContacts: async (_contacts: unknown): Promise<void> => {
-    throw new Error('Saving contacts needs a real endpoint — not available in this build.');
+
+  // PUT /residents/{id}/contacts — replaces the whole ladder. Contacts.tsx's
+  // draft objects carry `phone` (free-typed, may have spaces), not the
+  // contract's `phone_e164` — best-effort normalized here rather than
+  // rejected, since there's no client-side validation UI to send the user
+  // back to.
+  saveContacts: async (contacts: unknown): Promise<void> => {
+    const drafts = contacts as { name: string; phone: string; relationship: string; ladder_order: number }[];
+    const body = drafts.map((c) => ({
+      name: c.name,
+      phone_e164: c.phone.replace(/[^\d+]/g, ''),
+      relationship: c.relationship,
+      ladder_order: c.ladder_order,
+    }));
+    await put(`/residents/${RESIDENT_ID}/contacts`, body);
   },
   // Not part of the mock facade's surface (mockApi has no such method) — kept
   // only because lib/push.ts imports httpApi.registerPushToken directly,
   // guarded by `if (!USE_MOCKS)` and already wrapped in a try/catch there.
-  registerPushToken: async (_expoPushToken: string): Promise<void> => {
-    throw new Error('Push token registration needs a real endpoint — not available in this build.');
+  registerPushToken: async (expoPushToken: string): Promise<void> => {
+    await post('/push/register', { token: expoPushToken, resident_id: RESIDENT_ID, role: 'family' });
   },
 };
