@@ -27,8 +27,8 @@ export default function FamilyLayout() {
     >
       <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: glyph('⌂') }} />
       <Tabs.Screen name="timeline/index" options={{ title: 'Timeline', tabBarIcon: glyph('☰') }} />
-      <Tabs.Screen name="chat" options={{ title: 'Ask', tabBarIcon: glyph('✳') }} />
-      <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: glyph('⚙') }} />
+      <Tabs.Screen name="chat" options={{ title: 'Ask', tabBarIcon: glyph('✳︎') }} />
+      <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: glyph('⚙︎') }} />
       <Tabs.Screen name="timeline/[eventId]" options={{ href: null }} />
     </Tabs>
   );

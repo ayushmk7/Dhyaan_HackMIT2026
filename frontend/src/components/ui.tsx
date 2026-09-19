@@ -20,15 +20,16 @@ export function Screen({
     backgroundColor: night ? palette.night : palette.paper,
   };
   const pad: ViewStyle = padded
-    ? { paddingHorizontal: sp(5), paddingTop: sp(3), paddingBottom: insets.bottom + sp(6) }
+    ? { paddingHorizontal: sp(5), paddingBottom: insets.bottom + sp(6) }
     : {};
+  const top = { paddingTop: insets.top + sp(3) };
   if (!scroll) {
-    return <View style={[base, { paddingTop: insets.top }, pad, style]}>{children}</View>;
+    return <View style={[base, top, pad, style]}>{children}</View>;
   }
   return (
     <View style={base}>
       <ScrollView
-        contentContainerStyle={[{ paddingTop: insets.top + sp(2) }, pad, style]}
+        contentContainerStyle={[top, pad, style]}
         showsVerticalScrollIndicator={false}
       >
         {children}
