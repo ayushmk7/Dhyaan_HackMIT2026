@@ -1,56 +1,41 @@
-# Welcome to your Expo app 👋
+# Kestrel — React Native app
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Family + staff app for the Kestrel elder-care sensing platform (see `../TECHNICAL_PRD.md` §10).
+Expo SDK 57 · RN 0.86 · expo-router · Zustand (websocket-owned state) · TanStack Query (server reads).
 
-## Get started
+## Run it
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```sh
+npm install
+npx expo start        # press i for the iOS simulator
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+The app currently runs against an **in-memory mock backend** (`src/lib/mock/`) that
+implements the §10.5 API contract, including a real-time fall escalation ladder
+(§4.2 timings, compressed 6×). When the Python backend exists, set `MODE = 'http'`
+and `BASE_URL` in `src/lib/api.ts` — screens and hooks don't change.
 
-### Other setup steps
+## The demo
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+- **Family**: Welcome → "Explore the family demo" → Home shows Eleanor's status,
+  live room, ADL tiles, room-time bar. Settings → "Rehearse a fall alert" runs the
+  full ladder: takeover screen, live call transcript, "I've got her" halts it.
+- **Staff**: "Explore the staff demo" → Triage (ranked, not a grid), Floor, night
+  Rounds, per-resident 14-day baselines. "Simulate a fall in 214" from Triage.
+- **Ask**: chat answers are retrieved from the mock event store with tappable
+  citations that deep-link into the timeline.
 
-## Learn more
+## Structure
 
-To learn more about developing your project with Expo, look at the following resources:
+```
+src/
+  app/           expo-router routes (§10.2): onboard/, (family)/, (staff)/, alert/[id]
+  components/    ui.tsx (primitives) + viz.tsx (event rows, room bar, ladder, sparklines)
+  lib/           types, api facade, TanStack hooks, format helpers, mock backend
+  store/         live.ts (websocket state) + session.ts (role/onboarding)
+  theme/         tokens.ts — the single source of color/type/spacing truth
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Design rules live in `DESIGN.md`. Short version: serif sentences for the human
+statements, rust only for alerts, no cards-for-everything, evidence is always a
+sentence and never an image.
