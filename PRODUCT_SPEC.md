@@ -1,10 +1,10 @@
-# Porchlight — Product & System Spec
+# Dhyaan — Product & System Spec
 ### HackMIT 2026 · one platform, two products · elder-care sensing
 
 > **Scope of this document.** This is the *product, go-to-market and judging* layer.
 > The wearable (Arduino UNO Q + Modulino IMU, band mechanics, power, firmware) is specified in **`HARDWARE_SPEC.md`**.
 > The implementation (Deepgram Voice Agent, Twilio telephony, local VLM on CCTV, RAG over the event store, React Native app) is specified in **`TECHNICAL_PRD.md`**.
-> "Porchlight" is a working name. B2C product = **Porchlight Home**. B2B product = **Porchlight Care**.
+> "Dhyaan" is a working name. B2C product = **Dhyaan Home**. B2B product = **Dhyaan Care**.
 
 ---
 
@@ -13,7 +13,7 @@
 An arm-worn band detects a fall in the first three seconds; thirty seconds later, before anybody's family is woken and before anybody dials 911, the phone in the next room rings and a voice agent asks the person on the floor a simple question — *"Margaret, your band felt a hard fall. Are you hurt?"* — and then actually listens to the answer. Everything downstream is decided by that answer: "I just sat down hard" closes the incident and writes one line to a timeline; silence, slurred speech, or "I can't get up" escalates to the adult child by phone in under twenty seconds and hands them a transcript instead of a siren. The same band's Wi-Fi and BLE radios, read against a handful of cheap beacons in the kitchen, bathroom, bedroom and front door, place the person **room by room** — which is what turns a fall alarm into a health instrument: how many bathroom trips last night, did she leave the house today, how many rooms does she move between compared with her own thirty-day median, and at a facility, did somebody just go through the west door at 03:40. The same band, the same event store and the same escalation ladder run at facility scale, where existing hallway CCTV is read by a **local** vision-language model and fused with the beacon trace to log activities of daily living — ate, walked, slept, bathroom trips, night wandering — against a baseline learned per resident, so a night nurse covering 32 people gets a ranked list of three rooms to check instead of 32 rooms and a hunch. The family app is deliberately not a surveillance console and never a live dot on a floor plan: it is a status line, a timeline, and a chat that answers *"how was Mum's week?"* from the event history. **The product shows deviations, not surveillance** — that single sentence is both the design constraint and the pitch.
 
 **The one sentence for a judge:**
-> Every fall-detection product on the market decides *for* the person on the floor — Porchlight is the one that asks them first, in a real phone conversation, and it earns the right to ask by only ever showing the family what changed, not where she is.
+> Every fall-detection product on the market decides *for* the person on the floor — Dhyaan is the one that asks them first, in a real phone conversation, and it earns the right to ask by only ever showing the family what changed, not where she is.
 
 ---
 
@@ -109,7 +109,7 @@ Executive Director, 96 beds (64 AL + 32 memory care). Three pressures, in order:
 
 ## 4. The two products
 
-### 4.1 Porchlight Home (B2C)
+### 4.1 Dhyaan Home (B2C)
 
 | # | Feature | Who it serves | Priority | In the 24h demo? |
 |---|---|---|---|---|
@@ -138,7 +138,7 @@ Executive Director, 96 beds (64 AL + 32 memory care). Three pressures, in order:
 | 23 | Two-way "call me back" button on the band | Margaret | P2 | No |
 | 24 | Cellular band (no phone/Wi-Fi dependency) | Margaret | P2 | No |
 
-### 4.2 Porchlight Care (B2B — assisted living / memory care)
+### 4.2 Dhyaan Care (B2B — assisted living / memory care)
 
 | # | Feature | Who it serves | Priority | In the 24h demo? |
 |---|---|---|---|---|
@@ -183,7 +183,7 @@ Executive Director, 96 beds (64 AL + 32 memory care). Three pressures, in order:
 | **T+30.0s** | No cancel, still no meaningful motion. Band publishes `fall_candidate` with confidence + accel trace. | Band → hub |
 | **T+31.5s** | Backend opens a Twilio outbound call to the landline **and** the mobile, whichever answers first. Family contact is **not** yet notified. | Backend |
 | **T+35.0s** | **The phone rings.** | Margaret's kitchen |
-| **T+42.0s** | She reaches it. Deepgram Voice Agent, first sentence, recording disclosure included: *"Hi Margaret, this is Porchlight. Your band felt a hard fall about forty seconds ago. This call is recorded so I can log it for you. Are you hurt?"* | Deepgram + Twilio |
+| **T+42.0s** | She reaches it. Deepgram Voice Agent, first sentence, recording disclosure included: *"Hi Margaret, this is Dhyaan. Your band felt a hard fall about forty seconds ago. This call is recorded so I can log it for you. Are you hurt?"* | Deepgram + Twilio |
 | **T+50.0s** | *"Oh — no, I'm okay. I just sat down hard reaching for the pantry."* | — |
 | **T+52.0s** | Agent classifies `resolved_self_reported`. One confirm: *"Glad to hear it. Can you stand up on your own?"* → *"I'm up already."* | Deepgram |
 | **T+55.0s** | *"Alright. I've logged it. If anything changes, press your band twice and I'll call your son. Take care, Margaret."* Call ends. | — |
@@ -198,8 +198,8 @@ Executive Director, 96 beds (64 AL + 32 memory care). Three pressures, in order:
 | **T+65s** | **No answer** → this is now `unanswered`, the highest-risk state. |
 | **T+67s** | Second attempt on the other number, 20s. |
 | **T+90s** | Still nothing. Escalate. |
-| **T+92s** | SMS to Dan fires first (fastest channel): *"Porchlight: hard fall detected for Margaret at 2:07 pm. She did not answer two calls. Calling you now."* |
-| **T+95s** | **Dan's phone rings.** Agent: *"This is Porchlight. Margaret's band detected a hard fall at 2:07 pm. We called her twice and she did not answer. Do you want me to keep calling her, call a neighbour, or call 911?"* |
+| **T+92s** | SMS to Dan fires first (fastest channel): *"Dhyaan: hard fall detected for Margaret at 2:07 pm. She did not answer two calls. Calling you now."* |
+| **T+95s** | **Dan's phone rings.** Agent: *"This is Dhyaan. Margaret's band detected a hard fall at 2:07 pm. We called her twice and she did not answer. Do you want me to keep calling her, call a neighbour, or call 911?"* |
 | **T+110s** | Dan says *"Call 911."* Agent dials, plays a location message, and stays on the line with Dan. |
 | **T+112s** | Incident state → `escalated_911`, timestamped end to end. |
 
@@ -237,7 +237,7 @@ The design constraint that makes this work: **the chat answers questions; it doe
 | Time | Event | What Alicia sees |
 |---|---|---|
 | 23:00 | Shift starts | Floor view: 32 residents, 3 flagged amber, 29 green. Amber = deviation from own baseline, not from a population norm. |
-| 23:40 | Mr. Kaminski's legacy bed alarm | *(Porchlight suppresses it: band shows he's supine and still, hallway camera shows an empty hall. No page.)* |
+| 23:40 | Mr. Kaminski's legacy bed alarm | *(Dhyaan suppresses it: band shows he's supine and still, hallway camera shows an empty hall. No page.)* |
 | 00:00 | Rounds | Nothing. |
 | 01:20 | Same bed alarm again | Suppressed again. **Two pages she did not get.** |
 | **02:50** | **Mrs. Okoye, 214 — third hallway transit tonight** | **One page:** `214 Okoye · 3rd hallway trip 23:00–02:50 · 30-night median 0.6 · no fall · flag: possible UTI / delirium onset` |
@@ -275,7 +275,7 @@ Six in ten people living with dementia will wander at least once ([Alzheimer's A
 
 **Why the incumbent fails, in the literature's own words.** An analysis of **62 elopements** found three recurring causes: *"a lack of effective precautions… when residents had indicated an intent to elope"*, **"a lack of awareness by the staff of resident location"**, and **"ineffective use of alarm devices intended to alert staff to elopement attempts"** ([Aud, *Am J Alzheimers Dis* 2004](https://pmc.ncbi.nlm.nih.gov/articles/PMC10833955/)). The middle one is a location problem and the third is an alarm-fatigue problem — which is exactly the pair this system is built around.
 
-**Why this beats the incumbent.** The installed base in memory care is RF wander bracelets on magnetically locked doors, deployed at [6,500+ senior living communities](https://www.securitashealthcare.com/solutions/wander-management): they tell you someone crossed the threshold, *after* the threshold. No interior granularity, no per-resident baseline, and no way to distinguish an escorted exit from an elopement — which is exactly why doors get propped and alarms get muted. Porchlight fires **before the door**, on the corridor, with a camera check that removes the commonest false positive. **The exportable trace with a to-the-second time-to-intercept is what Ray shows his insurance carrier** — the actual reason he signs.
+**Why this beats the incumbent.** The installed base in memory care is RF wander bracelets on magnetically locked doors, deployed at [6,500+ senior living communities](https://www.securitashealthcare.com/solutions/wander-management): they tell you someone crossed the threshold, *after* the threshold. No interior granularity, no per-resident baseline, and no way to distinguish an escorted exit from an elopement — which is exactly why doors get propped and alarms get muted. Dhyaan fires **before the door**, on the corridor, with a camera check that removes the commonest false positive. **The exportable trace with a to-the-second time-to-intercept is what Ray shows his insurance carrier** — the actual reason he signs.
 
 ---
 
@@ -307,7 +307,7 @@ Six in ten people living with dementia will wander at least once ([Alzheimer's A
 | [Teton.ai](https://www.teton.ai/) · [Kepler Vision](https://keplervision.ai/) | Anonymised CV on room/existing cameras | **No** | Camera field of view | Partial | Not public | $26M · €1.5M | Self-reported outcomes; camera-in-room exposure |
 | **Wander management** — [Accutech ResidentGuard](https://www.accutechsecurity.com/products/residentguard-wander-management/), Securitas [WanderGuard BLUE](https://www.securitashealthcare.com/solutions/wander-management) | Not a fall product | **No** | **Door threshold only** | No | **Published:** ~**$950/door** (LC1200) or ~**$1,750** (LS2400); bands **$80/6mo or $120/yr**; **no recurring fee**. Full 1-door kit list **$4,028** | — | Installed at **6,500+ senior living communities** — the incumbent to displace. Its own trade literature admits: *"Staff get an exit warning, not continuous movement history"*; *"A discharged pendant generates no alert"*; *"routing every door event to the whole shift… trains caregivers to mute the system"*; *"Rules should reflect baseline routines"* |
 | ~~Tellus~~ · ~~Arquella~~ · ~~Cherry Home/Labs~~ | — | — | — | — | — | — | **Dead or dying.** Tellus's domain returns NXDOMAIN; [Arquella Ltd filed a winding-up resolution 25 June 2026](https://find-and-update.company-information.service.gov.uk/company/11206238); Cherry Labs' domain has lapsed to spam. **The category has real churn** |
-| **Porchlight** | **Band IMU** (impact + post-impact stillness) **+ local VLM on existing hallway CCTV**, fused | **Yes — an autonomous voice agent calls the resident; their answer routes the incident** | **Yes — band Wi-Fi/BLE + beacons, room-level; the *only* location source in B2C (no home cameras)** | **Yes**, vs a **per-resident learned baseline** | **B2C $149 + $29/mo · B2B $16/bed/mo** | — | 24 hours of detector tuning; BLE is 1–3 m; two products at once (§12) |
+| **Dhyaan** | **Band IMU** (impact + post-impact stillness) **+ local VLM on existing hallway CCTV**, fused | **Yes — an autonomous voice agent calls the resident; their answer routes the incident** | **Yes — band Wi-Fi/BLE + beacons, room-level; the *only* location source in B2C (no home cameras)** | **Yes**, vs a **per-resident learned baseline** | **B2C $149 + $29/mo · B2B $16/bed/mo** | — | 24 hours of detector tuning; BLE is 1–3 m; two products at once (§12) |
 
 ### 6.1 Why this is defensible — and where the pitch is weak
 
@@ -327,7 +327,7 @@ Every row in both tables above says **No** in the "asks the person first" column
 Every consumer product in the table above — Life Alert, Medical Guardian, Bay Alarm, Lively — is a **reactive button or accelerometer with no activity layer whatsoever**. Every product that *does* infer ADLs is sold to a facility or an agency. **And Amazon tried to bridge that gap and retreated**: Alexa Together ($19.99/mo, family eldercare, third-party fall detection) was discontinued on 21 May 2025 and replaced by a $5.99/mo panic button with no fall detection. That is either proof the consumer market doesn't exist, or proof that a bundle assembled from other people's sensors was the wrong way in. **We should say which we think it is, and why our answer is different: they rented the sensing; we own the band.**
 
 **3. BLE beacons over infrared, and local-only inference. (Medium-strong, and underrated.)**
-CarePredict's positioning patent [argues explicitly](https://patents.google.com/patent/US10959645B2/en) that modulated IR beats RF because *"IR emissions [cannot] pass through walls."* True — and the same physics means **a cardigan sleeve, a blanket, or an arm tucked under a body blinds it**, which is precisely the posture of a person who has fallen. BLE degrades gracefully where IR fails hard: worse precision, but it still reports. Meanwhile every camera-based incumbent processes video off-box or reserves the right to, into a [17-state consent-law patchwork](https://kffhealthnews.org/aging/cameras-eldercare-facilities-debate-the-new-old-age-column/). Porchlight's video never leaves the building and the family app is **architecturally incapable** of showing a live position. That is a product-policy moat rather than a technical one — but in eldercare, policy *is* the product, because the resident holds the veto (§8). It is also the margin story (§7.3).
+CarePredict's positioning patent [argues explicitly](https://patents.google.com/patent/US10959645B2/en) that modulated IR beats RF because *"IR emissions [cannot] pass through walls."* True — and the same physics means **a cardigan sleeve, a blanket, or an arm tucked under a body blinds it**, which is precisely the posture of a person who has fallen. BLE degrades gracefully where IR fails hard: worse precision, but it still reports. Meanwhile every camera-based incumbent processes video off-box or reserves the right to, into a [17-state consent-law patchwork](https://kffhealthnews.org/aging/cameras-eldercare-facilities-debate-the-new-old-age-column/). Dhyaan's video never leaves the building and the family app is **architecturally incapable** of showing a live position. That is a product-policy moat rather than a technical one — but in eldercare, policy *is* the product, because the resident holds the veto (§8). It is also the margin story (§7.3).
 
 **4. The per-resident baseline and the family RAG chat. (Weakest — say so.)**
 Wander-management's own trade literature already concedes the gap — *"rules should reflect baseline routines, because a normal bathroom trip should not be treated like a night-time exit risk"* — which means the idea is obvious and only the data is hard. Baselines are a data-accumulation advantage: a real moat at year three, **no moat at all at hour 24**. The RAG chat is a UI pattern anyone can copy in a week; its value is the *restraint* it encodes, not the retrieval. **Do not lead with either.**
@@ -338,7 +338,7 @@ Wander-management's own trade literature already concedes the gap — *"rules sh
 
 ## 7. Business model
 
-### 7.1 B2C pricing — Porchlight Home
+### 7.1 B2C pricing — Dhyaan Home
 
 | Line | Price | Benchmark |
 |---|---|---|
@@ -352,7 +352,7 @@ Wander-management's own trade literature already concedes the gap — *"rules sh
 
 **The pricing message is one line: *half the price of Life Alert, no contract, no activation fee, fall detection included rather than a $10 upsell — and it asks your mother before it calls an ambulance.*** Note what the competitor research makes newly sayable: **every consumer incumbent charges $10/month extra for the one feature the category is named after**, and the market leader by brand recognition does not offer it at all. The vulnerability is not their price, it is their **contracts, activation fees and add-on pricing.**
 
-### 7.2 B2B pricing — Porchlight Care
+### 7.2 B2B pricing — Dhyaan Care
 
 | Line | Price |
 |---|---|
@@ -433,7 +433,7 @@ At $149 the prototype kit is **sold at a small loss**; at scale it carries ~70% 
 
 There is one line between a reassurance product and a tracking product. It is not encryption and it is not a privacy policy. It is **what resolution the other person can see.**
 
-| | Tracking product | **Porchlight** |
+| | Tracking product | **Dhyaan** |
 |---|---|---|
 | Family sees | Live position on a floor plan | **A status line and a timeline of exceptions** |
 | Update cadence | Real time | **Daily, and only when something deviates** |
@@ -447,7 +447,7 @@ The family app **has no floor plan, no map, no live location and no per-room dwe
 
 ### 8.2 Who can see what
 
-| Data | Margaret | Dan (family) | Facility staff | Porchlight staff | Leaves the building? |
+| Data | Margaret | Dan (family) | Facility staff | Dhyaan staff | Leaves the building? |
 |---|---|---|---|---|---|
 | Raw accelerometer trace | On request | No | No | Only with a support ticket she opens | No (summarised only) |
 | **Raw room-by-room location trace** | **Yes — her own, in full, on her own device** | **No. Never. Not aggregated *and* not raw** | **Yes (B2B only), access logged** | **No** | **No — stays on the home hub / facility box** |
@@ -486,7 +486,7 @@ Consent is taken as **three independent grants**, not one checkbox: **(a) fall d
 
 **Exact on-screen / read-aloud copy — fall detection:**
 
-> **Porchlight watches for falls.**
+> **Dhyaan watches for falls.**
 > The band on your arm feels sudden impacts. If it thinks you've had a hard fall, it will buzz and give you **30 seconds to cancel**. If you don't cancel, we'll **call you and ask if you're alright** — a real conversation, not an alarm. If you say you're fine, that's the end of it and nobody else is called.
 > If you don't answer, or you tell us you need help, we'll call **Dan** and tell him what happened.
 > **We will never call an ambulance without asking you or Dan first.**
@@ -494,7 +494,7 @@ Consent is taken as **three independent grants**, not one checkbox: **(a) fall d
 
 **Exact on-screen / read-aloud copy — indoor location (this is its own screen and its own spoken consent, deliberately separated):**
 
-> **Porchlight can also tell which room you're in.**
+> **Dhyaan can also tell which room you're in.**
 > Small stickers in your kitchen, bathroom, bedroom, living room and front door let the band work out roughly which room you're in. We use it for three things: to know **if you've been out of the house today**, to count **how many times you get up at night**, and to tell the paramedics **which room you're in** if you ever need them.
 > **Here is what Dan can and cannot see.** He **cannot** see where you are. There is no map in his app, no dot, no floor plan, and no way for him to turn one on — not even by calling us. He will only ever see **how many times you went out** and, if your nights change a lot for **more than one night in a row**, one sentence the next morning saying so.
 > **You can turn the bathroom off right now** and we'll never count it. You can pause location for a couple of hours whenever you want, or switch it off for good with the slider on the band — **and your fall detection keeps working exactly the same either way.**
@@ -503,7 +503,7 @@ Consent is taken as **three independent grants**, not one checkbox: **(a) fall d
 
 **Exact call preamble — spoken as the first sentence of every outbound call, before any question is asked:**
 
-> *"Hi Margaret, this is Porchlight. Your band felt a hard fall about forty seconds ago. **I'm recording this call so it goes in your log — say 'stop recording' any time and I'll stop.** Are you hurt?"*
+> *"Hi Margaret, this is Dhyaan. Your band felt a hard fall about forty seconds ago. **I'm recording this call so it goes in your log — say 'stop recording' any time and I'll stop.** Are you hurt?"*
 
 ### 8.5 The two-party consent problem — real, and not solvable by a checkbox
 
@@ -530,7 +530,7 @@ An AI voice agent that records a phone call sits inside two bodies of law at onc
 | Issue | Our position |
 |---|---|
 | Is this a robocall? | **No — it is an outbound call placed to a subscriber who gave prior express consent, about their own account, triggered by their own device.** That is the standard TCPA consent posture, and it is why consent is captured at enrolment on a recorded call and re-confirmed annually (§8.4). |
-| Does the artificial voice need disclosure? | **We disclose in the first sentence regardless** — *"this is Porchlight"* — and the agent never claims to be, or imitates, a person. **It never uses a cloned voice of a family member**, which is the abuse the ruling targets and which is also the single fastest way to destroy trust with a confused 79-year-old. |
+| Does the artificial voice need disclosure? | **We disclose in the first sentence regardless** — *"this is Dhyaan"* — and the agent never claims to be, or imitates, a person. **It never uses a cloned voice of a family member**, which is the abuse the ruling targets and which is also the single fastest way to destroy trust with a confused 79-year-old. |
 | Escalation call to Dan | Dan is an **enrolled user who consented**, not a cold-called third party. A bridged 911 call is an emergency call placed at the user's direction. |
 | **The provision that actually threatens the B2B product** | **[47 CFR 64.1200(a)(1)(ii)](https://www.law.cornell.edu/cfr/text/47/64.1200) prohibits an artificial or prerecorded voice call — absent emergency purpose or prior express consent — "to the telephone line of any guest room or patient room of a hospital, health care facility, *elderly home*, or similar establishment."** An AI agent dialling a resident's room line in an assisted-living community lands on this squarely. **Two consequences, both already in the design:** (a) §4.2 already routes memory care to staff rather than calling the resident, which was a dignity decision and turns out to be a compliance one; (b) where we *do* call an AL resident, it runs on **written prior express consent captured at enrolment** plus the **"emergency purposes"** exemption at 64.1200(f)(4) — *"calls made necessary in any situation affecting the health and safety of consumers"* — which covers a fall alert and pointedly **does not** cover a routine check-in call. **We will not ship a non-emergency voice feature into facility room lines.** |
 | Healthcare-provider exemptions | We do **not** rely on them. 64.1200(a)(9)(iv) is available only to a health care provider or a covered entity/BA, caps calls at **1/day and 3/week**, requires the number to have been provided by the patient, and requires HIPAA compliance. Claiming it would also undercut the §8.7 non-provider posture. |
@@ -559,7 +559,7 @@ FDA reissued **[*General Wellness: Policy for Low Risk Devices*](https://www.fda
 |---|---|---|
 | Category 1 claims are a **closed list** — weight, fitness, relaxation, mental acuity, self-esteem, sleep, sexual function | Fall detection is not on it | We cannot claim Category 1 |
 | The **new 2026 disqualifier** | A product is not general wellness if it includes *"alerts, alarms, or prompts that recommend or require specific clinical action or medical management,"* or is intended for *"screening, diagnosis, **monitoring, alerting**, or management of a disease or condition"* | This sentence was written about products like ours |
-| The **MDDS guidance** | *"Software functions intended to generate alarms or alerts … are considered device software functions"*, with the worked example being *"a device that receives and/or displays information, alarms, or alerts from a monitoring device **in a home setting** and is intended to alert a caregiver to take an immediate clinical action"* ([FDA](https://www.fda.gov/media/88572/download)) | That is a description of Porchlight |
+| The **MDDS guidance** | *"Software functions intended to generate alarms or alerts … are considered device software functions"*, with the worked example being *"a device that receives and/or displays information, alarms, or alerts from a monitoring device **in a home setting** and is intended to alert a caregiver to take an immediate clinical action"* ([FDA](https://www.fda.gov/media/88572/download)) | That is a description of Dhyaan |
 
 **The non-device CDS pathway is also unavailable.** The reissued [Clinical Decision Support guidance](https://www.fda.gov/regulatory-information/search-fda-guidance-documents/clinical-decision-support-software) (29 Jan 2026) requires all four §520(o)(1)(E) criteria, and we fail three: recommendations go to **caregivers, not health care professionals** (*"Software functions that support or provide recommendations to patients or caregivers – not HCPs – meet the definition of a device"*); a time-critical alarm defeats the "independently review the basis" criterion; and sensor fusion analyses *"a pattern or signal from a signal acquisition system."*
 
@@ -622,8 +622,8 @@ Every other number in the business is an input to this one. It is the number tha
 | **0:50–1:00** | **Presenter B drops the band onto the table from ~1 m** | Dashboard flips to `FALL DETECTED — 30s to cancel` with a visible countdown | *"So — that's a fall."* |
 | **1:00–1:20** | — | Countdown runs 30 → 0. Silence in the room. | *"Thirty seconds to cancel. Nothing has left the room yet. No ambulance, no phone call to anyone's son."* |
 | **1:20** | **MARGARET's phone rings, loudly, on the table** | Dashboard: `CALLING RESIDENT` | — |
-| **1:20–1:50** | **A judge is invited to pick it up.** Agent: *"Hi, this is Porchlight. Your band felt a hard fall about forty seconds ago. I'm recording this call so it goes in your log — say 'stop recording' any time. Are you hurt?"* Judge: *"I'm fine, I just sat down hard."* Agent: *"Glad to hear it. Can you get up on your own?"* Judge: *"Yes."* Agent: *"Alright, I've logged it. Take care."* | Live transcript streams. Dashboard flips **red → green: `RESOLVED BY VOICE · no escalation`**. A single line appears in the son's timeline. **DAN's phone stays silent.** | — |
-| **1:50–2:05** | **← THE 10-SECOND MOMENT.** Presenter B drops the band again. Phone rings. Judge picks up. Agent asks. Judge says: ***"I can't get up. My hip hurts."*** | Dashboard: **`ESCALATING`** — and **DAN's phone rings on the table within 5 seconds**, agent already speaking: *"This is Porchlight. There's been a hard fall at 2:07. She says she can't get up. Do you want me to call 911?"* | *(say nothing — let the second phone ring)* |
+| **1:20–1:50** | **A judge is invited to pick it up.** Agent: *"Hi, this is Dhyaan. Your band felt a hard fall about forty seconds ago. I'm recording this call so it goes in your log — say 'stop recording' any time. Are you hurt?"* Judge: *"I'm fine, I just sat down hard."* Agent: *"Glad to hear it. Can you get up on your own?"* Judge: *"Yes."* Agent: *"Alright, I've logged it. Take care."* | Live transcript streams. Dashboard flips **red → green: `RESOLVED BY VOICE · no escalation`**. A single line appears in the son's timeline. **DAN's phone stays silent.** | — |
+| **1:50–2:05** | **← THE 10-SECOND MOMENT.** Presenter B drops the band again. Phone rings. Judge picks up. Agent asks. Judge says: ***"I can't get up. My hip hurts."*** | Dashboard: **`ESCALATING`** — and **DAN's phone rings on the table within 5 seconds**, agent already speaking: *"This is Dhyaan. There's been a hard fall at 2:07. She says she can't get up. Do you want me to call 911?"* | *(say nothing — let the second phone ring)* |
 | **2:05–2:25** | Presenter A | Facility dashboard: 32 residents, 2 pages all night. Then the beacon trace of §5.6 replays: `219 → west hall → west exit` and a page at **31 seconds** | *"Same band, same event store, at a memory-care facility. One awake nurse, 32 residents — which is all 17 states require. Six in ten people with dementia wander. The old system tells you after the door opens. We page 31 seconds before it." * |
 | **2:25–2:40** | Presenter B | Camera view with a **LOCAL — never leaves the building** badge; then the family chat: *"How was Mum's week?"* → the §5.3 answer | *"The camera inference runs on a box in the building. No video leaves. And what the family gets isn't a feed — it's an answer."* |
 | **2:40–3:00** | Presenter A | Final slide: `$149 + $29/mo · $16/bed/mo` and **"the product shows deviations, not surveillance"** | *"Eleven cents a call. Ninety-four percent margin. But the reason it works isn't the price — it's that we ask her first, and we never show him where she is. That's what gets it worn."* |

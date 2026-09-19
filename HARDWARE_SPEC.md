@@ -1,5 +1,5 @@
-# HARDWARE SPEC — Elder-Care Fall Sensing, Behavior & Indoor Location
-**HackMIT 2026 · 24 h · team of 4 · rev B**
+# HARDWARE SPEC — Dhyaan
+**Elder-care fall sensing, behavior & indoor location.** **HackMIT 2026 · 24 h · team of 4 · rev B**
 
 Three sensing jobs, one band:
 

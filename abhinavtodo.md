@@ -118,28 +118,28 @@ Also flagged, lower stakes: REST auths with `Authorization: Bearer <JWT>` while 
     asyncio.run(main())
     ```
 - [ ] **B0.7** ⛔ BLOCKER PRD flags this `[UNVERIFIED]`: confirm the Python Twilio SDK call shape — read the code tabs on the Call resource docs page and check `client.calls.create(to=, from_=, twiml=, timeout=, machine_detection=, async_amd=, ...)` actually matches current SDK version installed — 10 min — _done when:_ `pip show twilio` version matches docs tab you read, and a throwaway script successfully creates a call object (see B0.8).
-- [ ] **B0.8** ⛔ BLOCKER "Hello world" outbound call, no bridge, no Deepgram — just prove Twilio + your account can ring a verified phone with static TwiML (`<Say>`) — 10 min — _done when:_ a verified team phone actually rings and plays "hello from kestrel."
+- [ ] **B0.8** ⛔ BLOCKER "Hello world" outbound call, no bridge, no Deepgram — just prove Twilio + your account can ring a verified phone with static TwiML (`<Say>`) — 10 min — _done when:_ a verified team phone actually rings and plays "hello from dhyaan."
     ```python
     from twilio.rest import Client
     c = Client(SID, TOKEN)
-    c.calls.create(to="+1...", from_=FROM_E164, twiml="<Response><Say>Hello from Kestrel.</Say></Response>")
+    c.calls.create(to="+1...", from_=FROM_E164, twiml="<Response><Say>Hello from Dhyaan.</Say></Response>")
     ```
 - [ ] **B0.9** Set up `cloudflared tunnel --url http://localhost:8000` and PIN the hostname (write it to `.env` as `PUBLIC_WSS`/`PUBLIC_HTTPS`) — 5 min — _done when:_ hitting the tunneled HTTPS URL from a phone browser (off wifi) returns a response. **Do not restart the tunnel after this point** — a new tunnel run gets a new hostname and silently breaks every call made after that.
 
 ### B1. Backend contract with the FSM (what this engineer calls, doesn't own)
 
-- [ ] **B1.1** Confirm/import the FSM entry points you depend on, do not reimplement: `events.emit(...)` (kestrel/events.py) for writing `fall_suspected`, `call_answered`, `escalate_acknowledged` etc., and `FSM.handle_voice_tool(alert_id, role, fn_name, args)` which the bridge calls on every `FunctionCallRequest` — 10 min — _done when:_ you can import both and call `FSM.handle_voice_tool` against a fake alert_id in a REPL without exception.
+- [ ] **B1.1** Confirm/import the FSM entry points you depend on, do not reimplement: `events.emit(...)` (dhyaan/events.py) for writing `fall_suspected`, `call_answered`, `escalate_acknowledged` etc., and `FSM.handle_voice_tool(alert_id, role, fn_name, args)` which the bridge calls on every `FunctionCallRequest` — 10 min — _done when:_ you can import both and call `FSM.handle_voice_tool` against a fake alert_id in a REPL without exception.
 - [ ] **B1.2** Confirm the alert-row helper functions your bridge needs but does not own: `db_bind_call(call_id, call_sid, stream_sid)` and `append_transcript(call_id, role, content)` — 5 min — _done when:_ both are importable and you've seen their signature (backend/DB engineer owns implementation).
 - [ ] **B1.3** 🔁 PARALLEL-OK Agree with the FSM owner on the exact JSON shape `handle_voice_tool` returns (goes back to Deepgram as `FunctionCallResponse.content`) — 10 min — _done when:_ a written example dict exists in a shared doc/slack, e.g. `{"ok": true}`.
 
-### B2. Outbound call placement (`kestrel/voice/outbound.py`)
+### B2. Outbound call placement (`dhyaan/voice/outbound.py`)
 
 - [ ] **B2.1** Implement `place_call(to_e164, alert_id, role, call_id, attempt=1)` exactly per §5.3: inline TwiML with `<Connect><Stream>` (bidirectional — NOT `<Start><Stream>`, which is receive-only) carrying `<Parameter>` for `alert_id`, `call_id`, `role` — 20 min — _done when:_ calling `place_call` rings a verified phone and the TwiML XML validates (no escaping bugs — use `xml.sax.saxutils.escape` on all interpolated values).
 - [ ] **B2.2** Wire `timeout=25`, `machine_detection="Enable"`, `async_amd="true"`, `async_amd_status_callback`, `status_callback` + `status_callback_event=["initiated","ringing","answered","completed"]` — 10 min — _done when:_ a test call's Twilio console log shows all 4 status callback events hit your `/twilio/status` endpoint.
 - [ ] **B2.3** Implement `/twilio/status` and `/twilio/amd` receiver stubs that just log the payload for now (real AMD handling comes in B6) — 10 min — _done when:_ curl-replaying a sample Twilio AMD POST body against the endpoint returns 200 and logs `AnsweredBy`.
 - [ ] **B2.4** 🔁 PARALLEL-OK Implement the retry-once-then-escalate caller: attempt 2 fifteen seconds after attempt 1 ends on `no-answer`/`busy`/`failed`, then hand off to contact ladder — 15 min — _done when:_ a unit test with a mocked Twilio client shows exactly one retry and no third attempt.
 
-### B3. Media Streams bridge (`kestrel/voice/bridge.py`) — the core of this slice
+### B3. Media Streams bridge (`dhyaan/voice/bridge.py`) — the core of this slice
 
 - [ ] **B3.1** ⛔ BLOCKER Stand up the FastAPI websocket route `/twilio/stream`, accept the connection, and on Twilio's `start` event capture `streamSid`, `callSid`, and `customParameters` (`alert_id`, `call_id`, `role`) — 20 min — _done when:_ logging the `start` message from a real test call shows all three custom params present.
 - [ ] **B3.2** ⛔ BLOCKER Open the Deepgram socket, send the `Settings` message (§5.2, built via `build_settings(ctx)` keyed on `role`), and **wait for `SettingsApplied` before relaying any audio** — 20 min — _done when:_ logs show `SettingsApplied` received before the first `media` frame is forwarded.
@@ -223,12 +223,12 @@ Also flagged, lower stakes: REST auths with `Authorization: Bearer <JWT>` while 
 
 | hour | what must work | one-command proof |
 |---|---|---|
-| 0 | Twilio account upgraded, 4+ phones verified, Deepgram key works, static-TwiML call rings a real phone | `python -c "from kestrel.voice.outbound import hello_world_call; hello_world_call('+1...')"` and phone rings with `<Say>` audio |
+| 0 | Twilio account upgraded, 4+ phones verified, Deepgram key works, static-TwiML call rings a real phone | `python -c "from dhyaan.voice.outbound import hello_world_call; hello_world_call('+1...')"` and phone rings with `<Say>` audio |
 | 1 | DG websocket auth confirmed, Twilio SDK call shape confirmed, cloudflared tunnel pinned | `python scripts/dg_connect_test.py` prints `Welcome`; `curl -s $PUBLIC_HTTPS/health` returns 200 |
 | 3-4 | Full bridge live: place_call → Media Stream → DG Settings → agent speaks greeting → barge-in works | Call a verified phone via `place_call(...)`, interrupt the greeting out loud, confirm audio stops within ~200ms |
 | 6-8 | All 4 tool calls fire correctly end-to-end on real calls; voicemail path classifies as `no_answer` | Run `scripts/replay_to_agent.py` against all 5 `test_audio/` clips — 5/5 correct tool calls, zero live calls |
-| 10-12 | Escalation ladder executes against real FSM: resident no-answer → retry → contact 1 → contact 2 → final | `curl -X POST localhost:8000/debug/simulate_fall` and watch `alerts` row walk every state within ~4 min via `sqlite3 kestrel.db "select state from alerts order by state_changed_at"` |
-| 20-22 | Fallback ladder rehearsed; transcripts/logging complete for any real call made in testing | Open the WebRTC fallback page, speak "help", confirm same escalate event as a phone call; `sqlite3 kestrel.db "select * from calls where call_id=?"` shows full transcript |
+| 10-12 | Escalation ladder executes against real FSM: resident no-answer → retry → contact 1 → contact 2 → final | `curl -X POST localhost:8000/debug/simulate_fall` and watch `alerts` row walk every state within ~4 min via `sqlite3 dhyaan.db "select state from alerts order by state_changed_at"` |
+| 20-22 | Fallback ladder rehearsed; transcripts/logging complete for any real call made in testing | Open the WebRTC fallback page, speak "help", confirm same escalate event as a phone call; `sqlite3 dhyaan.db "select * from calls where call_id=?"` shows full transcript |
 
 ## D. Frontend (React Native)
 
@@ -259,10 +259,10 @@ in the client.
       import mock or live directly.
       🔁 Nobody else's work is blocked by whether the flag is true or false — that is the point.
 
-- [ ] **D1.2** ⛔ BLOCKER `npx create-expo-app kestrel-app --template default@sdk-57` (Expo SDK 57 / RN 0.86, NOT 58) — 15 min — _done when:_ `npx expo start` boots the default app in Expo Go.
+- [ ] **D1.2** ⛔ BLOCKER `npx create-expo-app dhyaan-app --template default@sdk-57` (Expo SDK 57 / RN 0.86, NOT 58) — 15 min — _done when:_ `npx expo start` boots the default app in Expo Go.
       ```
-      npx create-expo-app@latest kestrel-app -e with-router
-      cd kestrel-app
+      npx create-expo-app@latest dhyaan-app -e with-router
+      cd dhyaan-app
       npx expo install expo-router expo-notifications expo-audio expo-linear-gradient expo-font expo-haptics
       npm install zustand @tanstack/react-query
       ```
@@ -312,7 +312,7 @@ in the client.
       app/(staff)/resident/[id].tsx
       app/alert/[id].tsx              # presentation: 'fullScreenModal'
       ```
-- [ ] **D2.2** Wire `alert/[id]` as a root-level `fullScreenModal`, reachable from any state — 15 min — _done when:_ navigating to `/alert/test123` from Home, from Chat, and via a cold deep link (`npx uri-scheme open kestrel://alert/test123 --ios`) all land on the same full-screen route.
+- [ ] **D2.2** Wire `alert/[id]` as a root-level `fullScreenModal`, reachable from any state — 15 min — _done when:_ navigating to `/alert/test123` from Home, from Chat, and via a cold deep link (`npx uri-scheme open dhyaan://alert/test123 --ios`) all land on the same full-screen route.
 - [ ] **D2.3** 🔁 PARALLEL-OK Role-based root switch: decode `role` from the (mocked) JWT and route to `(family)` vs `(staff)` layout group — 20 min — _done when:_ toggling a mock `role` value in dev tools flips the whole app's tab bar.
 
 ### D3. State layer & API client (mock/live switch)
@@ -417,7 +417,7 @@ in the client.
       assumes it. Ship `interruptionLevel: "timeSensitive"` + a loud custom sound + the full-screen
       in-app takeover from D6, and treat the actual phone call as the real escalation channel — that's
       the PRD's explicit fallback, not a compromise to revisit.
-- [ ] **D10.2** Notification handler + category actions — 25 min — _done when:_ receiving a mocked "fall" push in foreground shows a banner per the handler logic below, and tapping it (or its `kestrel_alert` category actions) opens `/alert/[id]` with the right id from `data.alert_id`.
+- [ ] **D10.2** Notification handler + category actions — 25 min — _done when:_ receiving a mocked "fall" push in foreground shows a banner per the handler logic below, and tapping it (or its `dhyaan_alert` category actions) opens `/alert/[id]` with the right id from `data.alert_id`.
       ```ts
       Notifications.setNotificationHandler({
         handleNotification: async (n) => ({

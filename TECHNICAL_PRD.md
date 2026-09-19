@@ -1,4 +1,4 @@
-# TECHNICAL PRD — Kestrel
+# TECHNICAL PRD — Dhyaan
 
 **Elder-care sensing platform. One codebase, two products.**
 HackMIT 2026 · team of 4 · 24 hours · local-first on a MacBook Pro M5 Pro (48 GB unified memory)
@@ -24,7 +24,7 @@ covers 40 rooms and the only record is a paper chart.
 Both failures are the same engineering problem: **nobody is continuously observing, and nothing knows
 what "normal" looks like for this specific person.**
 
-Kestrel is one sensing-and-reasoning backend with two front doors.
+Dhyaan is one sensing-and-reasoning backend with two front doors.
 
 ### Personas
 
@@ -37,7 +37,7 @@ Kestrel is one sensing-and-reasoning backend with two front doors.
 
 ### Two product surfaces, one backend
 
-| | **B2C — "Kestrel Home"** | **B2B — "Kestrel Facility"** |
+| | **B2C — "Dhyaan Home"** | **B2B — "Dhyaan Facility"** |
 |---|---|---|
 | Sensing | 1 Arduino UNO Q arm band per resident | N bands + M fixed CCTV cameras |
 | Primary job | Fall → phone call → escalation to family | ADL tracking → deviation alerts → staff triage |
@@ -53,7 +53,7 @@ that *both* Priya and Marcus ask the same natural-language question of the same 
 
 And the baseline learner is per-person, not global: Eleanor gets up at 06:40 ± 25 min and walks once at
 10:15; Harold in 214 sleeps until 09:30 and never leaves the room. A global rule ("alert if not up by
-8 a.m.") is useless for both. **Kestrel alerts on deviation from that person's own learned pattern.**
+8 a.m.") is useless for both. **Dhyaan alerts on deviation from that person's own learned pattern.**
 
 ### Explicitly OUT of scope for 24 hours
 
@@ -92,7 +92,7 @@ graph TB
     end
 
     subgraph MAC["MacBook Pro M5 Pro · 48 GB — one machine"]
-        API["kestrel-api · FastAPI/uvicorn<br/>REST + WS + event bus + FSM"]
+        API["dhyaan-api · FastAPI/uvicorn<br/>REST + WS + event bus + FSM"]
         BRIDGE["voice-bridge<br/>(same process, /twilio/stream)"]
         VISION["vision-worker<br/>OpenCV + YOLO11n (MPS)"]
         VLMQ["vlm-worker<br/>single queue, backpressure"]
@@ -100,7 +100,7 @@ graph TB
         LEARN["baseline-learner<br/>rollup + live rules"]
         RAG["rag-service<br/>plan / retrieve / answer"]
         OLL["Ollama :11434<br/>qwen3-vl:8b · nomic-embed-text"]
-        DB[("kestrel.db — SQLite WAL<br/>events · alerts · calls · baselines<br/>+ sqlite-vec vec0 + FTS5")]
+        DB[("dhyaan.db — SQLite WAL<br/>events · alerts · calls · baselines<br/>+ sqlite-vec vec0 + FTS5")]
         TUN["cloudflared tunnel<br/>public https:// + wss://"]
     end
 
@@ -145,19 +145,19 @@ graph TB
 | Service | Language / runtime | Responsibility | Talks to |
 |---|---|---|---|
 | `band-mcu` | C, Arduino/Zephyr on STM32U585 | 104 Hz IMU read, 4-condition fall cascade (§4.1), GPIO interrupt, button | `band-agent` over GPIO/UART |
-| `band-agent` | Python 3.11 on QRB2210 Debian | 30 s cancel window, buzzer/LED, BLE `bleak` scan (3 s/20 s), Wi-Fi `iw` scan (60 s), HTTPS POST, 60 s heartbeat | `kestrel-api` over HTTPS |
-| `kestrel-api` | Python 3.12, FastAPI + uvicorn | REST, client websocket, in-process event bus, **alert FSM**, escalation timers, push fanout, Twilio call placement | SQLite, Twilio, Expo, all workers |
+| `band-agent` | Python 3.11 on QRB2210 Debian | 30 s cancel window, buzzer/LED, BLE `bleak` scan (3 s/20 s), Wi-Fi `iw` scan (60 s), HTTPS POST, 60 s heartbeat | `dhyaan-api` over HTTPS |
+| `dhyaan-api` | Python 3.12, FastAPI + uvicorn | REST, client websocket, in-process event bus, **alert FSM**, escalation timers, push fanout, Twilio call placement | SQLite, Twilio, Expo, all workers |
 | `voice-bridge` | Python, same process, `/twilio/stream` | Twilio ⇄ Deepgram audio relay, barge-in `clear`, `FunctionCallRequest` → FSM | Twilio Media Streams, Deepgram Voice Agent |
-| `vision-worker` | Python, one process **per camera** | RTSP/UVC ingest, MOG2 motion, YOLO11n person detect (MPS), ByteTrack, keyframe selection | `vlm-worker` queue, `kestrel-api` |
-| `vlm-worker` | Python, **exactly one** | Serialised VLM inference, ADL JSON, observation→event dedup (§6.5) | Ollama, `kestrel-api` |
-| `localizer` | Python, in-process asyncio task | k-NN over RSSI fingerprints, HMM over room adjacency, commit hysteresis, camera fusion (§7) | SQLite, `kestrel-api` |
+| `vision-worker` | Python, one process **per camera** | RTSP/UVC ingest, MOG2 motion, YOLO11n person detect (MPS), ByteTrack, keyframe selection | `vlm-worker` queue, `dhyaan-api` |
+| `vlm-worker` | Python, **exactly one** | Serialised VLM inference, ADL JSON, observation→event dedup (§6.5) | Ollama, `dhyaan-api` |
+| `localizer` | Python, in-process asyncio task | k-NN over RSSI fingerprints, HMM over room adjacency, commit hysteresis, camera fusion (§7) | SQLite, `dhyaan-api` |
 | `baseline-learner` | Python, APScheduler + live rules | Nightly 03:30 rollup, robust-z / Poisson scoring, live inactivity + bathroom rules, feedback weighting | SQLite, Anthropic (daily narratives) |
 | `rag-service` | Python, in-process | Query planning, hybrid retrieval (sqlite-vec + FTS5 + RRF), answer generation, citation check | SQLite, Ollama, Anthropic |
 | `ollama` | Go binary, `:11434` | Serves `qwen3-vl:8b` (vision) and `nomic-embed-text` (embeddings), both resident | `vlm-worker`, `rag-service` |
-| `kestrel.db` | SQLite 3.45 WAL + `sqlite-vec` 0.1.9 + FTS5 | **The only persistent state.** Events, alerts, calls, baselines, fingerprints, vectors | everything |
+| `dhyaan.db` | SQLite 3.45 WAL + `sqlite-vec` 0.1.9 + FTS5 | **The only persistent state.** Events, alerts, calls, baselines, fingerprints, vectors | everything |
 | `cloudflared` | Go binary | Public `https://` + `wss://` for Twilio callbacks, media streams, and the phone | Twilio, RN app |
-| `kestrel-app` | TypeScript, Expo SDK 57 / RN 0.86 | Family + staff app: pairing, status, live alert, timeline, chat | `kestrel-api` REST + WS, Expo Push |
-| `kestrel-dash` | TypeScript, React + Vite | B2B staff dashboard: triage list, resident grid, zone map, ADL trends | `kestrel-api` REST + WS |
+| `dhyaan-app` | TypeScript, Expo SDK 57 / RN 0.86 | Family + staff app: pairing, status, live alert, timeline, chat | `dhyaan-api` REST + WS, Expo Push |
+| `dhyaan-dash` | TypeScript, React + Vite | B2B staff dashboard: triage list, resident grid, zone map, ADL trends | `dhyaan-api` REST + WS |
 
 ### Three architectural decisions worth the paragraph
 
@@ -288,7 +288,7 @@ a camera, or both.
 | `bathroom_prolonged` | `"On {day} at {time}, {name} had been in the bathroom for {mins} minutes, longer than her usual maximum of {p95_mins}."` |
 | `left_home` | `"On {day} at {time}, {name} left home. The band lost contact with every beacon and home Wi-Fi network."` |
 | `returned_home` | `"On {day} at {time}, {name} came back home after {away_mins} minutes out, entering through the {first_zone}."` |
-| `location_unknown` | `"On {day} at {time}, Kestrel could not tell which room {name} was in for {mins} minutes ({reason})."` |
+| `location_unknown` | `"On {day} at {time}, Dhyaan could not tell which room {name} was in for {mins} minutes ({reason})."` |
 | `beacon_offline` | `"On {day} at {time}, the {zone} beacon stopped responding — room detection there is degraded."` |
 
 `location_unknown` having an `embedding_text` is deliberate: §9.6 rule 3 says absence is an answer, and
@@ -338,7 +338,7 @@ the RAG layer can only say *"I don't know where she was between 2 and 3 PM"* if 
 
 ### 3.3 SQL DDL
 
-SQLite 3.45+, WAL mode. One file: `kestrel.db`.
+SQLite 3.45+, WAL mode. One file: `dhyaan.db`.
 
 ```sql
 PRAGMA journal_mode = WAL;
@@ -549,7 +549,7 @@ CREATE VIRTUAL TABLE chunks_fts USING fts5(
 ### 3.4 The one API every producer uses
 
 ```python
-# kestrel/events.py
+# dhyaan/events.py
 import json, sqlite3, ulid
 from datetime import datetime, timezone
 
@@ -687,7 +687,7 @@ stateDiagram-v2
     EXHAUSTED --> [*]
 ```
 
-Implemented as an explicit table-driven FSM in `kestrel/alerts/fsm.py` — a dict of
+Implemented as an explicit table-driven FSM in `dhyaan/alerts/fsm.py` — a dict of
 `{(state, trigger): (next_state, action_fn)}` plus an `asyncio` timer wheel. **Not** a pile of `if`
 statements across three files, because at hour 19 someone will need to change one timing constant.
 Every transition writes an event; the state machine is replayable from `events`.
@@ -709,7 +709,7 @@ tool call, the classification defaults to `incoherent` and we escalate — **sil
 
 **Resident call, attempt 1 — greeting (Aura-2 TTS, spoken immediately on `SettingsApplied`):**
 
-> "Hi Eleanor, this is Kestrel calling because your band thought you might have fallen. Are you okay?"
+> "Hi Eleanor, this is Dhyaan calling because your band thought you might have fallen. Are you okay?"
 
 Then, by branch:
 
@@ -724,7 +724,7 @@ Then, by branch:
 
 **Contact call (Priya):**
 
-> "Hi, this is Kestrel calling about Eleanor. Her band detected a possible fall at 3:42 PM, and she
+> "Hi, this is Dhyaan calling about Eleanor. Her band detected a possible fall at 3:42 PM, and she
 > didn't answer when we called her. Can you check on her? Press any key or just say yes to confirm
 > you're on it."
 
@@ -738,9 +738,9 @@ application-to-person SMS over a long code and takes days, not hours
 unaffected. The ladder is voice-only end to end, and the same text is spoken by Aura-2 and mirrored
 into the app as a push + a persistent alert card:
 
-> "This is Kestrel calling about Eleanor. She may have fallen at 3:42 PM, and nobody has been able to
+> "This is Dhyaan calling about Eleanor. She may have fallen at 3:42 PM, and nobody has been able to
 > reach her or acknowledge the alert. If you cannot reach her, call 911. Her address is 14 Elm Street,
-> apartment 3B, Cambridge, Massachusetts. Kestrel does not call emergency services."
+> apartment 3B, Cambridge, Massachusetts. Dhyaan does not call emergency services."
 
 The address is spoken twice, slowly, and the call does not hang up until it has been said the second
 time — a person writing down an address under stress needs the repeat.
@@ -838,7 +838,7 @@ audio ([Voice Agent getting started](https://developers.deepgram.com/docs/voice-
     "output": { "encoding": "mulaw", "sample_rate": 8000, "container": "none" }
   },
   "agent": {
-    "greeting": "Hi Eleanor, this is Kestrel calling because your band thought you might have fallen. Are you okay?",
+    "greeting": "Hi Eleanor, this is Dhyaan calling because your band thought you might have fallen. Are you okay?",
     "listen": {
       "provider": { "type": "deepgram", "model": "flux-general-en" }
     },
@@ -881,13 +881,13 @@ known at call-creation time ([Call resource](https://www.twilio.com/docs/voice/a
 One less public endpoint to get wrong at 3 a.m.
 
 ```python
-# kestrel/voice/outbound.py
+# dhyaan/voice/outbound.py
 import os
 from twilio.rest import Client
 from xml.sax.saxutils import escape
 
 twilio = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
-PUBLIC_WSS = os.environ["PUBLIC_WSS"]   # wss://kestrel.<you>.trycloudflare.com/twilio/stream
+PUBLIC_WSS = os.environ["PUBLIC_WSS"]   # wss://dhyaan.<you>.trycloudflare.com/twilio/stream
 
 def place_call(*, to_e164: str, alert_id: str, role: str, call_id: str, attempt: int = 1) -> str:
     twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -938,7 +938,7 @@ Key facts behind those params:
 One FastAPI websocket route. Full loop, both directions, barge-in handled.
 
 ```python
-# kestrel/voice/bridge.py
+# dhyaan/voice/bridge.py
 import asyncio, base64, json, os, websockets
 from fastapi import APIRouter, WebSocket
 
@@ -1037,7 +1037,7 @@ Three things in there that people get wrong:
 Role-dependent, selected by `customParameters.role`. The resident prompt:
 
 ```text
-You are Kestrel, an automated safety check-in. You are on a phone call with Eleanor Hayes, 81,
+You are Dhyaan, an automated safety check-in. You are on a phone call with Eleanor Hayes, 81,
 because her wearable band detected a possible fall at 3:42 PM. Her daughter Priya is contact #1.
 
 Your only job is to find out if she is okay and then call a tool. You are not a doctor, a
@@ -1066,8 +1066,8 @@ The contact prompt swaps the goal: confirm a human is going to physically check 
 
 1. Write `call_answered` with `answered_by`, set `calls.classification = "voicemail"`.
 2. Send Deepgram an `InjectAgentMessage` with the 12-second voicemail script, so Aura speaks it:
-   `{"type": "InjectAgentMessage", "message": "This is Kestrel calling about Eleanor Hayes. Her fall
-   sensor went off at 3:42 PM and we could not reach her. Please check on her and open the Kestrel app."}`
+   `{"type": "InjectAgentMessage", "message": "This is Dhyaan calling about Eleanor Hayes. Her fall
+   sensor went off at 3:42 PM and we could not reach her. Please check on her and open the Dhyaan app."}`
 3. On `AgentAudioDone`, hang up the Twilio call.
 4. Advance the FSM exactly as if it were `no_answer`. **A voicemail is not an answer.** This is the
    single most important behavioural rule in the voice layer and it is one `if`.
@@ -1101,7 +1101,7 @@ that follows is detail.
 RTSP for fixed cameras, UVC for the webcam we will actually demo with.
 
 ```python
-# kestrel/vision/ingest.py
+# dhyaan/vision/ingest.py
 import cv2, threading, time
 
 class Camera:
@@ -1274,7 +1274,7 @@ what may be done with it: it produces an advisory `unsteady_gait` event visible 
 to family, and never worded as a medical finding.
 
 ```python
-# kestrel/vision/vlm.py
+# dhyaan/vision/vlm.py
 import base64, httpx
 from typing import Sequence
 
@@ -1300,7 +1300,7 @@ observations. **Writing 15 `meal_observed` events would destroy the baseline lea
 meals. Dedup is a per-`(resident, zone, activity)` interval accumulator, not an LLM job:
 
 ```python
-# kestrel/vision/dedup.py
+# dhyaan/vision/dedup.py
 GAP_S = {"eating": 600, "walking": 120, "sleeping": 1800, "_default": 300}
 MIN_DURATION_S = {"eating": 240, "walking": 20, "_default": 0}
 MIN_OBS        = {"eating": 3,   "walking": 2,  "_default": 1}
@@ -1706,7 +1706,7 @@ posterior ≥ 0.6. Below 0.45 for 3 consecutive ticks → `location_unknown`, wh
 guess.
 
 ```python
-# kestrel/location/hmm.py
+# dhyaan/location/hmm.py
 ZETA, BETA, ETA = 1e-4, 1.5, 0.02
 COMMIT_TICKS, COMMIT_P, UNKNOWN_P, UNKNOWN_TICKS = 2, 0.60, 0.45, 3
 
@@ -1824,7 +1824,7 @@ def fuse(rf: LocState, cam: CameraObservation) -> Location:
 
 > Every camera-only ADL system has the same unsolved problem — it can see that *a* person ate lunch, but
 > not *which* person, so it needs face recognition, which is exactly the thing a facility's residents
-> and their families will not consent to. Kestrel already knows which resident is in the dining room,
+> and their families will not consent to. Dhyaan already knows which resident is in the dining room,
 > because the band she is wearing told us. **We solve re-identification with a radio instead of a face.**
 
 So the B2B attribution rule is: the VLM produces an *unattributed* observation bound to a camera zone and
@@ -1856,7 +1856,7 @@ dwell_s > threshold_s AND a fall_suspected in the last 10 min
 ```
 
 The voice-agent greeting for this path differs and it matters:
-*"Hi Eleanor, it's Kestrel. Just checking in — are you doing alright in there?"* — not
+*"Hi Eleanor, it's Dhyaan. Just checking in — are you doing alright in there?"* — not
 *"we think you fell in the bathroom."*
 
 Same shape, different thresholds, for `zone_dwell` in any zone: `expected_p95_s` is carried in the
@@ -1878,7 +1878,7 @@ RF fingerprints rot. Named failure modes and what each one does:
 
 `location_unknown_frac` (§8.1) is our own data-quality alarm: if a resident spends > 25% of the day
 unlocalised, the **ops** dashboard flags the install, and the family's daily narrative says
-*"Kestrel couldn't determine Eleanor's room for about three hours today"* — because the alternative
+*"Dhyaan couldn't determine Eleanor's room for about three hours today"* — because the alternative
 (silently reporting less activity) would make a broken install look like a declining resident, which is
 the worst failure this product can have.
 
@@ -2019,7 +2019,7 @@ anchor at 06:00 for wake and 22:00 for sleep.
 ### 8.3 Pseudocode
 
 ```python
-# kestrel/baseline/learner.py
+# dhyaan/baseline/learner.py
 GAMMA, ALPHA, WINDOW_DAYS = 0.97, 0.15, 60
 
 def weighted_median(values, weights):
@@ -2256,7 +2256,7 @@ and one `ollama pull nomic-embed-text` (274 MB) instead of a Python model-loadin
 [Ollama library](https://ollama.com/library/nomic-embed-text)).
 
 ```python
-# kestrel/rag/embed.py
+# dhyaan/rag/embed.py
 import httpx
 OLLAMA = "http://localhost:11434"
 
@@ -2278,7 +2278,7 @@ found; treat that as an order-of-magnitude argument, not a spec.
 
 The primary store is already SQLite. `sqlite-vec` loads as an extension **into the same connection and
 the same file** — no second engine, no sync problem between "the app DB" and "the vector DB", no
-`.lance` directory that is three commits out of date with `kestrel.db`.
+`.lance` directory that is three commits out of date with `dhyaan.db`.
 
 The decisive feature is that our query shape is natively supported. `vec0` has three column classes
 ([metadata release post](https://alexgarcia.xyz/blog/2024/sqlite-vec-metadata-release/index.html)):
@@ -2326,7 +2326,7 @@ resolving a relative date against the resident's timezone, and a regex will get 
 **Stage 1 — plan.** One Opus 5 call with structured output turns the question into a retrieval plan:
 
 ```python
-# kestrel/rag/plan.py
+# dhyaan/rag/plan.py
 from pydantic import BaseModel
 from typing import Literal
 import anthropic, datetime as dt
@@ -2447,7 +2447,7 @@ Rules, in order of priority:
    to her doctor or the care team." and then, if relevant, give the raw observations.
 6. Two to five sentences. No preamble, no bullet lists unless asked.
 7. If asked what someone looked like, what they were wearing, or for video or images, refuse:
-   "Kestrel doesn't share video or images. I can tell you what activity was recorded."
+   "Dhyaan doesn't share video or images. I can tell you what activity was recorded."
 ```
 
 Sample output, with the citations the UI turns into tappable chips that deep-link to the timeline:
@@ -2596,14 +2596,14 @@ up to 100 messages per request, 4096-byte APNs payload cap.
   "to": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
   "title": "Possible fall — Eleanor",
   "body": "Her band detected a fall at 3:42 PM. We're calling her now.",
-  "sound": "kestrel-urgent.wav",
+  "sound": "dhyaan-urgent.wav",
   "priority": "high",
   "interruptionLevel": "timeSensitive",      // "critical" needs an Apple entitlement we can't get
-  "categoryId": "kestrel_alert",             // -> "I've got her" / "Call her" action buttons
+  "categoryId": "dhyaan_alert",             // -> "I've got her" / "Call her" action buttons
   "channelId": "alerts",
   "badge": 1,
   "data": { "v": 1, "kind": "alert", "alert_id": "alr_01JB…", "resident_id": "res_eleanor",
-            "severity": "critical", "deeplink": "kestrel://alert/alr_01JB…",
+            "severity": "critical", "deeplink": "dhyaan://alert/alr_01JB…",
             "opened_at": "2026-09-19T15:42:10-04:00" }
 }
 ```
@@ -2614,7 +2614,7 @@ up to 100 messages per request, 4096-byte APNs payload cap.
   "body": "She normally walks about 3 times a day. Tap to see her timeline.",
   "sound": "default", "priority": "normal", "interruptionLevel": "active",
   "data": { "v": 1, "kind": "deviation", "event_id": "evt_…", "feature": "walk_count",
-            "deeplink": "kestrel://timeline/evt_…" } }
+            "deeplink": "dhyaan://timeline/evt_…" } }
 
 // LADDER PROGRESS — silent, updates an already-open screen
 { "to": "…", "_contentAvailable": true,
@@ -2778,13 +2778,13 @@ negotiable and several parts of it are deliberately expensive.
 
 ### 12.1 The statement that goes in the app, the README, and the pitch
 
-> **Kestrel is not a medical device.** It does not diagnose, treat, monitor or prevent any disease or
+> **Dhyaan is not a medical device.** It does not diagnose, treat, monitor or prevent any disease or
 > condition. It has not been evaluated or cleared by the FDA or any regulator. Nothing it says is
 > medical advice.
 >
-> **Kestrel does not call emergency services.** If someone needs help, **call 911**. Kestrel calls
+> **Dhyaan does not call emergency services.** If someone needs help, **call 911**. Dhyaan calls
 > people you have chosen and tells them what it observed. It can fail: the band's battery dies, Wi-Fi
-> drops, a phone is on silent, a camera is offline, a fall is not detected. **Do not rely on Kestrel as
+> drops, a phone is on silent, a camera is offline, a fall is not detected. **Do not rely on Dhyaan as
 > anyone's only safety net.**
 
 This is on `/onboard/welcome`, in the settings footer, on the staff dashboard header, and it is spoken
@@ -2800,7 +2800,7 @@ consent_voice  INTEGER NOT NULL DEFAULT 0,
 ```
 
 ```python
-# kestrel/vision/worker.py — top of the keyframe handler, no exceptions
+# dhyaan/vision/worker.py — top of the keyframe handler, no exceptions
 if not resident.consent_camera:
     return          # the frame is dropped. No event. No VLM call. No log line containing pixels.
 ```
@@ -2811,7 +2811,7 @@ if not resident.consent_camera:
 | Consent is per-modality | Cameras, voice calls, and RF location are three separate flags. **A resident can accept the band and refuse cameras** — that is the entire B2C product and it works |
 | Consent is revocable in one tap | `/settings` → Revoke. Takes effect on the next frame, not the next deploy |
 | Cameras are never in bedrooms or bathrooms | Enforced in `zones`: `kind ∈ {bedroom, bathroom}` may only hold a **doorway** polygon (§6.6). The staff dashboard shows every camera's zone kind so a resident's family can audit it |
-| Capability, not surveillance | The `/onboard/consent` screen lists **what Kestrel can tell you** ("that she ate lunch") and **what it cannot** ("what she ate, who she talked to, what she looks like") |
+| Capability, not surveillance | The `/onboard/consent` screen lists **what Dhyaan can tell you** ("that she ate lunch") and **what it cannot** ("what she ate, who she talked to, what she looks like") |
 
 ### 12.3 Video never leaves the Mac. Structurally.
 
@@ -2823,7 +2823,7 @@ This is the claim the product lives or dies on, so it is enforced in four indepe
 2. **No frame crosses a process boundary except to `localhost:11434`.** The VLM worker talks to Ollama
    over loopback. That is the only socket a frame touches.
 3. **No image content block is ever constructed for the Anthropic API.** There is exactly one Anthropic
-   client wrapper (`kestrel/llm.py`) and it asserts no `{"type": "image"}` block is present. `[The
+   client wrapper (`dhyaan/llm.py`) and it asserts no `{"type": "image"}` block is present. `[The
    assert is 3 lines. Write it in hour 2, not hour 20.]`
 4. **Events carry sentences, never pixels.** `evidence` is capped at 180 chars of text (§6.4) and the
    VLM prompt forbids describing appearance, clothing, race or age.
@@ -2868,7 +2868,7 @@ cannot inspect is a surveillance product.
 | Never state a cause | §8.1, §9.6 | "Night bathroom trips went from 1 to 4" — never "this may indicate a UTI" |
 | Never guess a room | §7.7 | `location_unknown` over a confident wrong answer |
 | Never attribute an observation to the wrong resident | §7.5 | `res_unknown` over a wrong `resident_id`; a wrong one poisons a baseline |
-| Alert fatigue is a safety issue | §8.5 | Max 2 baseline alerts/resident/day. A nurse who ignores Kestrel is worse than no Kestrel |
+| Alert fatigue is a safety issue | §8.5 | Max 2 baseline alerts/resident/day. A nurse who ignores Dhyaan is worse than no Dhyaan |
 | Degradation is visible, not silent | §7.7 | `location_unknown_frac`, `beacon_offline`, `camera_offline`, `band_offline` all surface. A broken install must never look like a declining resident |
 
 ### 12.6 What we are NOT claiming in the pitch
@@ -2897,7 +2897,7 @@ The only three hours where serialisation kills you, so the long-lead items go **
 | **All, first 20 min** | Whiteboard the event taxonomy. Agree on §3.2. Write `taxonomy.yaml` | One file everyone imports |
 | **B — do this before anything else** | Twilio: sign up, **upgrade with $20**, buy a number, **verify all 4 team phones as caller IDs**. Deepgram key. Anthropic key. `cloudflared tunnel --url http://localhost:8000`, pin the hostname | A real outbound call rings a real phone with a hardcoded `<Say>` |
 | **D — in parallel, because it takes 25 min of waiting** | `npx create-expo-app`, expo-router, **kick off the EAS dev build immediately** (push does not work in Expo Go), Apple dev account, APNs key | A dev build installs on a real iPhone and logs an Expo push token |
-| **A** | `kestrel.db` + full DDL (§3.3). `events.emit()` (§3.4). FastAPI skeleton, JWT, `/admin/health`. `seed_history.py` | `POST /ingest/band` writes an event; `GET /events` returns it |
+| **A** | `dhyaan.db` + full DDL (§3.3). `events.emit()` (§3.4). FastAPI skeleton, JWT, `/admin/health`. `seed_history.py` | `POST /ingest/band` writes an event; `GET /events` returns it |
 | **C** | `ollama pull qwen3-vl:8b` + `nomic-embed-text` (**several GB — start the download now**). `pip install ultralytics mlx-vlm sqlite-vec bleak`. **Benchmark YOLO11n on MPS and one VLM batch. Write the numbers on the whiteboard.** | Real tok/s and ms/frame replace §6.7's estimates |
 
 **Hardware triage, T+0:30, all four in the room:** does the UNO Q have an IMU? (No — §4.1.) Do we have
@@ -2983,7 +2983,7 @@ test the whole demo on it** — venue Wi-Fi will be a 1000-person disaster at ju
 | 0:20–0:35 | D | Phone on the table, app open, **"Eleanor is OK · in the Kitchen · 12 minutes"** — live, from the band's radio |
 | 0:35–0:55 | C | **RF beat (§7.8).** Walk the band bedroom → hallway → bathroom. Split screen: raw k-NN flapping, HMM clean. *"That's why there's a filter."* |
 | 0:55–1:15 | B | **THE FALL.** B drops the band hard onto the table. Buzzer. The app goes red: *"Possible fall — calling Eleanor."* Countdown on screen |
-| **1:15–1:35** | **— nobody speaks —** | **THE TEN SECONDS.** A phone on the table rings — a real inbound PSTN call on speaker. The judges hear a warm voice: *"Hi Eleanor, this is Kestrel calling because your band thought you might have fallen. Are you okay?"* **B says nothing.** Dead air. Two seconds. The app updates itself: *"No answer."* Then **a second phone rings**, and the agent says: *"Hi, this is Kestrel calling about Eleanor. Her band detected a possible fall and she didn't answer. Can you check on her?"* |
+| **1:15–1:35** | **— nobody speaks —** | **THE TEN SECONDS.** A phone on the table rings — a real inbound PSTN call on speaker. The judges hear a warm voice: *"Hi Eleanor, this is Dhyaan calling because your band thought you might have fallen. Are you okay?"* **B says nothing.** Dead air. Two seconds. The app updates itself: *"No answer."* Then **a second phone rings**, and the agent says: *"Hi, this is Dhyaan calling about Eleanor. Her band detected a possible fall and she didn't answer. Can you check on her?"* |
 | 1:35–1:45 | D | Taps **"I've got her."** The ladder halts on screen, mid-timer. *"Thirty-one seconds from the floor to a human being told."* |
 | 1:45–2:10 | C | B2B: dashboard, 3 residents ranked. *"Room 214 — Harold hasn't walked today; he normally walks three times. And the camera saw someone eat lunch — the band told us it was Harold. **We solved re-identification with a radio instead of a face.**"* |
 | 2:10–2:35 | A | Chat: *"has mum been eating this week?"* → cited answer naming the days she **didn't** eat. Tap a citation → the timeline. *"That comes from a daily narrative Claude writes from the events — because you can't retrieve an absence from rows that don't exist."* |

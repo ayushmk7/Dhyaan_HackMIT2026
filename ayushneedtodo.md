@@ -104,41 +104,41 @@ owned elsewhere — this slice only stubs the surfaces those teams plug into.
 
 ### A1. Repo scaffold + Python env — ⛔ BLOCKER (gates literally everyone)
 
-- [ ] **A1.1** Create repo skeleton and venv — 15 min — _done when:_ `python -c "import kestrel"` exits 0
+- [ ] **A1.1** Create repo skeleton and venv — 15 min — _done when:_ `python -c "import dhyaan"` exits 0
   ```bash
-  mkdir -p kestrel/{api/routers,alerts,tests} 
-  cd kestrel && uv venv --python 3.12 && source .venv/bin/activate
+  mkdir -p dhyaan/{api/routers,alerts,tests} 
+  cd dhyaan && uv venv --python 3.12 && source .venv/bin/activate
   uv pip install fastapi "uvicorn[standard]" pydantic python-ulid pyjwt sqlite-vec \
       apscheduler httpx pytest pytest-asyncio python-multipart pyyaml
-  touch kestrel/__init__.py kestrel/api/__init__.py kestrel/alerts/__init__.py
+  touch dhyaan/__init__.py dhyaan/api/__init__.py dhyaan/alerts/__init__.py
   git init && git add -A && git commit -m "scaffold"
   ```
-- [ ] **A1.2** Write `taxonomy.yaml` from §3.2 (all event types, one list, grouped by producer comment) — 20 min — _done when:_ `yaml.safe_load(open("kestrel/taxonomy.yaml"))` returns a flat list/dict with every type in §3.2 (fall_suspected, fall_confirmed, fall_cancelled, band_motion_high, band_still, prolonged_inactivity, band_offline, band_low_battery, button_pressed, zone_entered, zone_exited, zone_dwell, bathroom_prolonged, left_home, returned_home, location_unknown, beacon_offline, rf_scan, person_present, meal_observed, meal_skipped, walk_started, walk_completed, bed_exit, room_exit, room_entry, night_activity, unsteady_gait, visitor_present, medication_taken, assistance_given, call_placed, call_answered, call_no_answer, voice_response_classified, escalation_started, escalation_acknowledged, escalation_exhausted, baseline_deviation, daily_summary, baseline_updated, staff_note, family_note, feedback_given)
+- [ ] **A1.2** Write `taxonomy.yaml` from §3.2 (all event types, one list, grouped by producer comment) — 20 min — _done when:_ `yaml.safe_load(open("dhyaan/taxonomy.yaml"))` returns a flat list/dict with every type in §3.2 (fall_suspected, fall_confirmed, fall_cancelled, band_motion_high, band_still, prolonged_inactivity, band_offline, band_low_battery, button_pressed, zone_entered, zone_exited, zone_dwell, bathroom_prolonged, left_home, returned_home, location_unknown, beacon_offline, rf_scan, person_present, meal_observed, meal_skipped, walk_started, walk_completed, bed_exit, room_exit, room_entry, night_activity, unsteady_gait, visitor_present, medication_taken, assistance_given, call_placed, call_answered, call_no_answer, voice_response_classified, escalation_started, escalation_acknowledged, escalation_exhausted, baseline_deviation, daily_summary, baseline_updated, staff_note, family_note, feedback_given)
   - 🔁 PARALLEL-OK once whiteboarded with the other three at T+0:20 — this file is the contract everyone imports; announce in team chat the moment it's committed.
-- [ ] **A1.3** `.env` / config module for secrets (Twilio SID/token, Deepgram key, Anthropic key, JWT secret, `BAND_HMAC_SECRET`) — 10 min — _done when:_ `kestrel/config.py` exports a `Settings` (pydantic `BaseSettings`) object and `.env.example` exists with every key name (values blank), `.env` is gitignored.
+- [ ] **A1.3** `.env` / config module for secrets (Twilio SID/token, Deepgram key, Anthropic key, JWT secret, `BAND_HMAC_SECRET`) — 10 min — _done when:_ `dhyaan/config.py` exports a `Settings` (pydantic `BaseSettings`) object and `.env.example` exists with every key name (values blank), `.env` is gitignored.
 
 ### A2. SQLite schema + migrations — ⛔ BLOCKER
 
-- [ ] **A2.1** Write `kestrel/schema.sql` verbatim from PRD §3.3 (residents, contacts, events, alerts, calls, baselines, baseline_observations, zones, beacons, fingerprints, location_state, chunk_meta) plus indexes — 20 min — _done when:_ `sqlite3 kestrel.db < kestrel/schema.sql` runs with no errors and `.tables` lists all 11 tables.
-- [ ] **A2.2** Add `sqlite-vec` load + `chunks_vec` / `chunks_fts` virtual tables to a `kestrel/db.py::get_conn()` that every process calls (WAL, foreign_keys, busy_timeout, extension load) — 20 min — _done when:_
+- [ ] **A2.1** Write `dhyaan/schema.sql` verbatim from PRD §3.3 (residents, contacts, events, alerts, calls, baselines, baseline_observations, zones, beacons, fingerprints, location_state, chunk_meta) plus indexes — 20 min — _done when:_ `sqlite3 dhyaan.db < dhyaan/schema.sql` runs with no errors and `.tables` lists all 11 tables.
+- [ ] **A2.2** Add `sqlite-vec` load + `chunks_vec` / `chunks_fts` virtual tables to a `dhyaan/db.py::get_conn()` that every process calls (WAL, foreign_keys, busy_timeout, extension load) — 20 min — _done when:_
   ```python
   import sqlite3, sqlite_vec
-  def get_conn(path="kestrel.db"):
+  def get_conn(path="dhyaan.db"):
       db = sqlite3.connect(path, check_same_thread=False)
       db.enable_load_extension(True); sqlite_vec.load(db); db.enable_load_extension(False)
       db.execute("PRAGMA journal_mode=WAL"); db.execute("PRAGMA foreign_keys=ON")
       db.execute("PRAGMA busy_timeout=5000")
       return db
   ```
-  `python -c "from kestrel.db import get_conn; get_conn()"` prints no error and `PRAGMA journal_mode` reports `wal`.
+  `python -c "from dhyaan.db import get_conn; get_conn()"` prints no error and `PRAGMA journal_mode` reports `wal`.
 - [ ] **A2.3** One-shot `init_db.py` that applies `schema.sql` if tables are missing (idempotent, no real migration framework — 24hr project) — 10 min — _done when:_ running it twice in a row does not error (`CREATE TABLE IF NOT EXISTS` or a `PRAGMA user_version` gate).
 - [ ] **A2.4** Insert 1-2 fixture residents + contacts by hand for dev (`res_eleanor`, `res_harold`, a `contacts` row with `ladder_order=1`) — 10 min — _done when:_ `SELECT * FROM residents;` returns rows and `/v1/residents` (once built, A7) shows them.
 
 ### A3. `events.emit()` + in-process bus — ⛔ BLOCKER (everything downstream is a producer/consumer of this)
 
-- [ ] **A3.1** Port §3.4 `emit()` into `kestrel/events.py`, loading `VALID_TYPES` from `taxonomy.yaml` (not a hardcoded `_TAXONOMY`) — 25 min — _done when:_
+- [ ] **A3.1** Port §3.4 `emit()` into `dhyaan/events.py`, loading `VALID_TYPES` from `taxonomy.yaml` (not a hardcoded `_TAXONOMY`) — 25 min — _done when:_
   ```python
-  # kestrel/events.py
+  # dhyaan/events.py
   import json, yaml, sqlite3
   from datetime import datetime, timezone
   from ulid import ULID
@@ -164,9 +164,9 @@ owned elsewhere — this slice only stubs the surfaces those teams plug into.
       return eid
   ```
   Calling `emit(..., type="not_a_real_type", ...)` raises `AssertionError` immediately (R11's "fails loudly at write time").
-- [ ] **A3.2** `kestrel/bus.py`: `asyncio.Queue`-based fan-out, one `Bus` singleton with `subscribe()`/`publish()` — 20 min — _done when:_
+- [ ] **A3.2** `dhyaan/bus.py`: `asyncio.Queue`-based fan-out, one `Bus` singleton with `subscribe()`/`publish()` — 20 min — _done when:_
   ```python
-  # kestrel/bus.py
+  # dhyaan/bus.py
   import asyncio
   class Bus:
       def __init__(self): self._subs: list[asyncio.Queue] = []
@@ -177,14 +177,14 @@ owned elsewhere — this slice only stubs the surfaces those teams plug into.
   BUS = Bus()
   ```
   Two `asyncio` tasks that both `subscribe()` and one `publish()` both receive the message (write a 10-line `pytest-asyncio` test).
-- [ ] **A3.3** Unit test: `emit()` writes a row AND fans out on `BUS` — 15 min — _done when:_ `pytest kestrel/tests/test_events.py -q` passes, asserting both the DB row exists and a subscribed queue received the message.
+- [ ] **A3.3** Unit test: `emit()` writes a row AND fans out on `BUS` — 15 min — _done when:_ `pytest dhyaan/tests/test_events.py -q` passes, asserting both the DB row exists and a subscribed queue received the message.
 
 ### A4. FastAPI app skeleton + auth stub — 🔁 PARALLEL-OK with A5/A6 once A1-A3 land
 
-- [ ] **A4.1** `kestrel/api/main.py`: FastAPI app, CORS open (`*`, it's a hackathon), lifespan opens the shared `db` connection + starts the FSM timer loop, mounts routers — 20 min — _done when:_ `uvicorn kestrel.api.main:app --reload` serves `GET /v1/admin/health` → `200`.
-- [ ] **A4.2** JWT auth stub: `kestrel/auth.py` issues + verifies HS256 JWTs with claims `{sub, role, resident_ids}`; a `/v1/dev/token` endpoint (dev-only, not in PRD contract but needed to test) mints one for a given resident/role; a `require_auth` FastAPI dependency extracts `resident_id` **only from the JWT claims, never from the request body** (§9.7 / R15) — 30 min — _done when:_
+- [ ] **A4.1** `dhyaan/api/main.py`: FastAPI app, CORS open (`*`, it's a hackathon), lifespan opens the shared `db` connection + starts the FSM timer loop, mounts routers — 20 min — _done when:_ `uvicorn dhyaan.api.main:app --reload` serves `GET /v1/admin/health` → `200`.
+- [ ] **A4.2** JWT auth stub: `dhyaan/auth.py` issues + verifies HS256 JWTs with claims `{sub, role, resident_ids}`; a `/v1/dev/token` endpoint (dev-only, not in PRD contract but needed to test) mints one for a given resident/role; a `require_auth` FastAPI dependency extracts `resident_id` **only from the JWT claims, never from the request body** (§9.7 / R15) — 30 min — _done when:_
   ```python
-  # kestrel/auth.py
+  # dhyaan/auth.py
   import jwt, time
   from fastapi import Header, HTTPException
   SECRET = settings.jwt_secret
@@ -214,13 +214,13 @@ owned elsewhere — this slice only stubs the surfaces those teams plug into.
 
 ### A6. Alert FSM + timer wheel + escalation ladder — ⛔ BLOCKER for voice team (B)
 
-- [ ] **A6.1** Define the FSM states/transitions table in `kestrel/alerts/fsm.py` per §4.3: `IDLE, SUSPECTED, LOCAL_CANCEL, CANCELLED, CALLING_RESIDENT, RETRY_RESIDENT, VOICEMAIL, CLASSIFYING, RESOLVED_OK, FELL_BUT_FINE, SCHEDULED_CALLBACK, CALLING_CONTACT_1, CALLING_CONTACT_2, ESCALATED_FINAL, ACKNOWLEDGED, EXHAUSTED` as a dict `{(state, trigger): (next_state, action_fn)}` — 35 min — _done when:_ a pure-python unit test drives the table through `SUSPECTED → LOCAL_CANCEL → CANCELLED` and separately `SUSPECTED → ... → CALLING_CONTACT_1 → CALLING_CONTACT_2 → ESCALATED_FINAL` without touching Twilio/DB, asserting the resulting state at each step.
-- [ ] **A6.2** Timer wheel: `kestrel/alerts/timers.py`, one `asyncio.create_task(asyncio.sleep(...))` per pending timeout, cancellable when a real trigger arrives first — 30 min — _done when:_ starting a 2-second test timer and then firing the real trigger before it elapses proves the timer task is cancelled (no double transition); a timer left to expire fires the fallback transition exactly once.
-- [ ] **A6.3** Wire exact timings from §4.2 as constants in one place (`kestrel/alerts/constants.py`): `CANCEL_WINDOW_S=30`, `RESIDENT_RETRY_DELAY_S=15`, `CONTACT_STEP_S=60`, `EXHAUSTED_TIMEOUT_S=300`, `TWILIO_TIMEOUT_S=25` — 10 min — _done when:_ `fsm.py` imports these, no magic numbers inline (this is the "someone changes one constant at hour 19" requirement).
+- [ ] **A6.1** Define the FSM states/transitions table in `dhyaan/alerts/fsm.py` per §4.3: `IDLE, SUSPECTED, LOCAL_CANCEL, CANCELLED, CALLING_RESIDENT, RETRY_RESIDENT, VOICEMAIL, CLASSIFYING, RESOLVED_OK, FELL_BUT_FINE, SCHEDULED_CALLBACK, CALLING_CONTACT_1, CALLING_CONTACT_2, ESCALATED_FINAL, ACKNOWLEDGED, EXHAUSTED` as a dict `{(state, trigger): (next_state, action_fn)}` — 35 min — _done when:_ a pure-python unit test drives the table through `SUSPECTED → LOCAL_CANCEL → CANCELLED` and separately `SUSPECTED → ... → CALLING_CONTACT_1 → CALLING_CONTACT_2 → ESCALATED_FINAL` without touching Twilio/DB, asserting the resulting state at each step.
+- [ ] **A6.2** Timer wheel: `dhyaan/alerts/timers.py`, one `asyncio.create_task(asyncio.sleep(...))` per pending timeout, cancellable when a real trigger arrives first — 30 min — _done when:_ starting a 2-second test timer and then firing the real trigger before it elapses proves the timer task is cancelled (no double transition); a timer left to expire fires the fallback transition exactly once.
+- [ ] **A6.3** Wire exact timings from §4.2 as constants in one place (`dhyaan/alerts/constants.py`): `CANCEL_WINDOW_S=30`, `RESIDENT_RETRY_DELAY_S=15`, `CONTACT_STEP_S=60`, `EXHAUSTED_TIMEOUT_S=300`, `TWILIO_TIMEOUT_S=25` — 10 min — _done when:_ `fsm.py` imports these, no magic numbers inline (this is the "someone changes one constant at hour 19" requirement).
 - [ ] **A6.4** Every FSM transition calls `events.emit()` for the corresponding event type (`escalation_started`, `escalation_acknowledged`, `escalation_exhausted`, etc.) and updates `alerts.state` / `state_changed_at` / `ladder_step` — 30 min — _done when:_ replaying `SELECT type FROM events WHERE resident_id=... ORDER BY ts_epoch` after a full simulated ladder shows every step as a row (the "state machine is replayable from events" requirement).
 - [ ] **A6.5** Stub the actual call-placement side effect as an injectable callback (`fsm.place_call: Callable[[role, resident_id], None]`) that defaults to a no-op logger — this is the seam voice-bridge team (B) implements against — 15 min — _done when:_ running the FSM with the default stub logs `"[stub] would call resident +1..."` instead of erroring, and B can monkeypatch `fsm.place_call` in their own tests without touching this file.
   - 🔁 PARALLEL-OK: hand this seam to B as soon as A6.1 compiles — they don't need A6.2-A6.4 finished to start their side.
-- [ ] **A6.6** `mark_ok` / `escalate` / `request_callback` trigger handlers exposed as plain functions the voice-bridge will call on `FunctionCallRequest` (§4.6) — `kestrel/alerts/tools.py` — 25 min — _done when:_ calling `tools.mark_ok(alert_id, status="fine")` transitions the FSM to `RESOLVED_OK` and emits `voice_response_classified`.
+- [ ] **A6.6** `mark_ok` / `escalate` / `request_callback` trigger handlers exposed as plain functions the voice-bridge will call on `FunctionCallRequest` (§4.6) — `dhyaan/alerts/tools.py` — 25 min — _done when:_ calling `tools.mark_ok(alert_id, status="fine")` transitions the FSM to `RESOLVED_OK` and emits `voice_response_classified`.
 
 ### A7. REST API — residents / alerts / admin (per §10.5 contract) — 🔁 PARALLEL-OK against A6 (different files)
 
@@ -244,11 +244,11 @@ owned elsewhere — this slice only stubs the surfaces those teams plug into.
   ```bash
   brew install cloudflared
   cloudflared tunnel login
-  cloudflared tunnel create kestrel-demo
-  cloudflared tunnel route dns kestrel-demo kestrel-demo.<your-domain>
-  cloudflared tunnel run kestrel-demo --url http://localhost:8000
+  cloudflared tunnel create dhyaan-demo
+  cloudflared tunnel route dns dhyaan-demo dhyaan-demo.<your-domain>
+  cloudflared tunnel run dhyaan-demo --url http://localhost:8000
   ```
-  `curl https://kestrel-demo.<domain>/v1/admin/health` returns `200` from an outside network (phone hotspot, not venue Wi-Fi per R1).
+  `curl https://dhyaan-demo.<domain>/v1/admin/health` returns `200` from an outside network (phone hotspot, not venue Wi-Fi per R1).
 - [ ] **A9.2** Bake the pinned public URL into `/v1/admin/health`'s self-check (R12: silent tunnel-hostname drift) — 10 min — _done when:_ restarting `cloudflared` with a different hostname makes `/admin/health` report a mismatch instead of silently breaking Twilio callbacks.
 
 ### A10. Seed / synthetic-data scripts — 🔁 PARALLEL-OK (start at T+0, needed by hour 12 for baseline/RAG teams, but useful for A's own testing immediately)
@@ -266,11 +266,11 @@ owned elsewhere — this slice only stubs the surfaces those teams plug into.
 
 | Hour | What must be working | How to prove it in one command |
 |---|---|---|
-| 0.5 | Tunnel is up, public URL reachable | `curl https://kestrel-demo.<domain>/v1/admin/health` from a phone hotspot → `200` |
-| 1 | DB schema applied, `events.emit()` writes + fans out | `pytest kestrel/tests/test_events.py -q` green |
+| 0.5 | Tunnel is up, public URL reachable | `curl https://dhyaan-demo.<domain>/v1/admin/health` from a phone hotspot → `200` |
+| 1 | DB schema applied, `events.emit()` writes + fans out | `pytest dhyaan/tests/test_events.py -q` green |
 | 2 | Ingest band endpoint creates event + alert; taxonomy frozen | `curl -XPOST .../v1/ingest/band -d '{...fall_suspected...}'` → `201` with `event_id`+`alert_id`; `taxonomy.yaml` committed and untouched since |
 | 3 | Auth stub + `/v1/residents` real data; **T+3:00 hard checkpoint from PRD** | `curl -H "Authorization: Bearer $(token)" .../v1/residents` returns seeded residents |
-| 4 | Full FSM transition table + timer wheel pass unit tests standalone | `pytest kestrel/tests/test_fsm.py -q` green, covering cancel path and full ladder-to-exhausted path |
+| 4 | Full FSM transition table + timer wheel pass unit tests standalone | `pytest dhyaan/tests/test_fsm.py -q` green, covering cancel path and full ladder-to-exhausted path |
 | 6 | `/admin/simulate fall` drives the FSM through the whole ladder and closes on `ack`, WS broadcasts every step; **T+6:00 spine checkpoint** | `curl -XPOST .../admin/simulate -d '{"kind":"fall","resident_id":"res_eleanor"}'` then watch `wss://.../v1/ws` print `alert.opened`→`alert.ladder`(×N) and `POST /alerts/{id}/ack` prints `alert.closed` |
 | 12 | Ingest idempotency, all §10.5 REST routes return contract-shaped JSON, seed data (14 days) present | `docs/api_smoketest.http` run produces zero `5xx`; `SELECT count(*) FROM events` > 1000 |
 | 20 | `reset_demo.py` restores clean state in <5s, `/admin/health` catches tunnel drift | `time python reset_demo.py` < 5s; killing/restarting cloudflared with wrong hostname flips `/admin/health` to unhealthy |
@@ -318,7 +318,7 @@ _🔁 PARALLEL-OK with C4/C5/C6 once C1 finishes; feeds C4._
 
 - [ ] **C3.1** Implement `Camera` ingest with grab-always thread (never serve stale RTSP frames) — 20 min — _done when:_ `latest()` timestamp is always <200 ms old while streaming from the webcam, and a `camera_offline` event fires within 10 s of unplugging it
   ```python
-  # kestrel/vision/ingest.py — CAP_AVFOUNDATION for the demo webcam, daemon _pump thread, watchdog: now-ts>10s -> events.emit(type="camera_offline")
+  # dhyaan/vision/ingest.py — CAP_AVFOUNDATION for the demo webcam, daemon _pump thread, watchdog: now-ts>10s -> events.emit(type="camera_offline")
   ```
 - [ ] **C3.2** Motion stage: MOG2 background subtraction at 640×360 grey, foreground-pixel ratio > 0.8% — 15 min — _done when:_ single-threaded throughput is measured and logged (PRD flags this as unmeasured; must be >300 fps or "something is wrong with your build")
 - [ ] **C3.3** Person detect on motion-positive frames: `yolo11n.pt`, `device="mps"`, `classes=[0]`, `conf=0.4`, `imgsz=640` — 20 min — _done when:_ end-to-end stage latency <40 ms/frame on this Mac (measured, not assumed)
@@ -358,7 +358,7 @@ _🔁 PARALLEL-OK with C3/C4. Server consumes `POST /v1/ingest/rf` payloads `{wi
 - [ ] **C5.3** BLE path-loss sanity channel + nearest-beacon hysteresis (Layer 2), `n=3.0`, ≥6 dB to switch incumbent — 20 min — _done when:_ a beacon estimated >8 m away is correctly flagged out-of-room, and a debug string like "≈2 m from kitchen beacon" renders
 - [ ] **C5.4** ⛔ BLOCKER (gates demo split-screen) Discrete Bayes filter / HMM over the zone adjacency graph (Layer 3) — 45 min
   ```python
-  # kestrel/location/hmm.py — ZETA=1e-4, BETA=1.5, ETA=0.02
+  # dhyaan/location/hmm.py — ZETA=1e-4, BETA=1.5, ETA=0.02
   # per-zone-kind p_stay: bedroom .95, living .90, bathroom .85, hallway .50
   # commit: challenger holds argmax 2 ticks AND posterior>=0.6; unknown: <0.45 for 3 ticks
   ```
@@ -387,12 +387,12 @@ _🔁 PARALLEL-OK with C3/C4. Server consumes `POST /v1/ingest/rf` payloads `{wi
 - [ ] **C7.1** 🔁 PARALLEL-OK Load the `claude-api` skill and confirm current model IDs before writing any Claude call — do not hardcode `claude-opus-5`/`claude-sonnet-5` from memory, the PRD's names may drift — 5 min — _done when:_ the model ID(s) used in C7.2/C7.5/C7.7 are copy-pasted from the skill's current reference, not typed from recall
 - [ ] **C7.2** ⛔ BLOCKER (nothing to embed without narratives) Daily narrative generation job — explicit: one Claude call per resident per local day, reading **all** that day's events + baseline state, writing a 120–200 word narrative that states both what happened and what did not (absences) — 30 min
   ```python
-  # kestrel/rag/daily_summary.py — system prompt enforces absence-reporting per §9.1's worked example
+  # dhyaan/rag/daily_summary.py — system prompt enforces absence-reporting per §9.1's worked example
   # store as chunk_meta(kind="daily_summary") + push through embed() -> chunks_vec
   ```
   _done when:_ running it on C6.1's seeded 14 days produces 14 narratives per resident, at least one of which explicitly names a missing meal/activity rather than staying silent about it
 - [ ] **C7.3** 🔁 PARALLEL-OK `embed.py` via Ollama `/api/embed`, batch the whole backlog — 15 min — _done when:_ embedding all seeded narratives + indexed event `embedding_text` rows returns 768-dim vectors in one batched call, no per-text round trip
-- [ ] **C7.4** ⛔ BLOCKER sqlite-vec setup: load extension into the same `kestrel.db` connection, pin `0.1.9`, `distance_metric=cosine`, `resident_id` as partition key — 20 min — _done when:_ `chunks_vec` and `chunks_fts` (fts5, `porter unicode61`) both populate from C7.2/C7.3's output and a manual `MATCH` query with a literal `k=12` (never a bound `?`, per the sqlite-vec landmine) returns results
+- [ ] **C7.4** ⛔ BLOCKER sqlite-vec setup: load extension into the same `dhyaan.db` connection, pin `0.1.9`, `distance_metric=cosine`, `resident_id` as partition key — 20 min — _done when:_ `chunks_vec` and `chunks_fts` (fts5, `porter unicode61`) both populate from C7.2/C7.3's output and a manual `MATCH` query with a literal `k=12` (never a bound `?`, per the sqlite-vec landmine) returns results
 - [ ] **C7.5** Hybrid retrieval: `plan()` (Claude structured output → `RetrievalPlan`) + vector KNN ∪ FTS5 BM25 merged by RRF (`k=60`) — 35 min — _done when:_ the query "has she been eating this week" returns a plan with a resolved absolute date window and a merged, deduplicated top-12 chunk list combining both retrieval paths
   - **Watch for this exact bug class:** keep the `RetrievalPlan` field names and the SQL param names consistent (the PRD's own snippet defines `t0_iso`/`t1_iso` on the plan but reads `p.t0`/`p.t1` in `retrieve()`) — pick one naming and use it everywhere
 - [ ] **C7.6** Deterministic aggregate channel: run plain SQL `GROUP BY` for any `needs_aggregate` question instead of letting the LLM count chunks — 15 min — _done when:_ "how many times did she walk last week" produces a number sourced from `COUNT(*)`, verifiable against raw `events`, never from vector search
@@ -403,14 +403,14 @@ _🔁 PARALLEL-OK with C3/C4. Server consumes `POST /v1/ingest/rf` payloads `{wi
 | Hour | What must work | One-command proof |
 |---|---|---|
 | 0 | Model downloads running in background; env installed | `ollama list \| grep -E "qwen3-vl|nomic-embed"` |
-| 3 | RF k-NN + HMM pass unit tests on synthetic scan sequences (no hardware needed yet) | `pytest kestrel/location/test_hmm.py -q` |
+| 3 | RF k-NN + HMM pass unit tests on synthetic scan sequences (no hardware needed yet) | `pytest dhyaan/location/test_hmm.py -q` |
 | 6 | VLM benchmark numbers written; decision gate applied; MOG2 fps measured | `cat bench_vlm.md` shows real ms/batch, not "UNVERIFIED" |
-| 8 | Full CV cascade runs end-to-end on the demo webcam and produces a keyframe batch | `python -m kestrel.vision.run_demo --camera 0` logs a 4-frame batch dispatched to the VLM queue |
-| 10 | VLM dedup produces exactly one `meal_observed` event from a synthetic 25-min observation stream | `pytest kestrel/vision/test_dedup.py -q` |
-| 12 | Baseline learner scores the seeded synthetic history and flags the injected anomaly | `python -m kestrel.baseline.rollup --resident res_eleanor --backfill` then check `alerts` table for the injected day |
-| 14 | RF fusion correctly reassigns/drops a mismatched camera track in a synthetic disagreement case | `pytest kestrel/location/test_fusion.py -q` |
-| 16 | Daily narratives generated for all seeded days and embedded into sqlite-vec/FTS5 | `sqlite3 kestrel.db "select count(*) from chunk_meta where kind='daily_summary'"` |
-| 18 | Hybrid RAG answers "has she been eating this week" with citations and correct absence-reporting | `python -m kestrel.rag.ask --resident res_eleanor --q "has she been eating this week"` |
+| 8 | Full CV cascade runs end-to-end on the demo webcam and produces a keyframe batch | `python -m dhyaan.vision.run_demo --camera 0` logs a 4-frame batch dispatched to the VLM queue |
+| 10 | VLM dedup produces exactly one `meal_observed` event from a synthetic 25-min observation stream | `pytest dhyaan/vision/test_dedup.py -q` |
+| 12 | Baseline learner scores the seeded synthetic history and flags the injected anomaly | `python -m dhyaan.baseline.rollup --resident res_eleanor --backfill` then check `alerts` table for the injected day |
+| 14 | RF fusion correctly reassigns/drops a mismatched camera track in a synthetic disagreement case | `pytest dhyaan/location/test_fusion.py -q` |
+| 16 | Daily narratives generated for all seeded days and embedded into sqlite-vec/FTS5 | `sqlite3 dhyaan.db "select count(*) from chunk_meta where kind='daily_summary'"` |
+| 18 | Hybrid RAG answers "has she been eating this week" with citations and correct absence-reporting | `python -m dhyaan.rag.ask --resident res_eleanor --q "has she been eating this week"` |
 | 20 | Full stack demo dry run: RF split-screen flap-vs-HMM beat + a RAG question in the same session | manual dry run per §7.8's demo beat script |
 
 ---
