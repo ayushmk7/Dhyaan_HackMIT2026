@@ -8,7 +8,11 @@ import os
 import pytest
 import pytest_asyncio
 
-os.environ.setdefault("MONGO_DB", "dhyaan_test")
+# Per-process test database. A fixed name collides the moment two people (or
+# two agents, or pytest-xdist) run the suite at once — DuplicateKeyError on the
+# seeded resident, which looks like a code bug and is not.
+TEST_DB = f"dhyaan_test_{os.getpid()}"
+os.environ.setdefault("MONGO_DB", TEST_DB)
 os.environ.setdefault("API_KEY", "test-key")
 os.environ.setdefault("BAND_KEY", "test-band-key")
 
@@ -22,10 +26,11 @@ BAND_HEADERS = {"X-Band-Key": BAND_KEY}
 @pytest_asyncio.fixture
 async def db():
     """Clean dhyaan_test database, connected. Dropped after each test."""
-    d = await dbmod.connect(name="dhyaan_test")
+    d = await dbmod.connect(name=TEST_DB)
     for c in await d.list_collection_names():
         await d[c].delete_many({})
     yield d
+    await d.client.drop_database(TEST_DB)
     await dbmod.close()
 
 

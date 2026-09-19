@@ -8,7 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, Vibration, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Btn, LadderTimeline, Txt } from '@/components';
+import { Btn, ErrorState, LadderTimeline, Txt } from '@/components';
 import { CancelCountdownRing, ElapsedStat, RingingPulse } from '@/components/alert-extras';
 import { Entrance } from '@/components/entrance';
 import { api } from '@/lib/api';
@@ -76,7 +76,7 @@ function OutlineBtn({ label, onPress }: { label: string; onPress: () => void }) 
 export default function AlertTakeover() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const { data: alert, isLoading, refetch } = useAlert(id ?? '');
+  const { data: alert, isLoading, isError, refetch } = useAlert(id ?? '');
   const { data: contacts } = useContacts();
   const live = useLive();
   const { role, residentName } = useSession();
@@ -86,8 +86,12 @@ export default function AlertTakeover() {
 
   const isActive = live.activeAlert?.id === id;
   const ladder = isActive ? live.ladder : alert?.ladder ?? [];
-  const transcript = isActive ? live.transcript : alert?.calls.flatMap((c) => c.transcript) ?? [];
-  const closed = !!alert?.closed_at || !!closedNote || (!isActive && !isLoading && !alert);
+  // Real GET /alerts/{id} reconstructs `calls` from raw voice Events, not the
+  // richer CallRow shape the mock uses — only CallRow carries a transcript.
+  const transcript = isActive
+    ? live.transcript
+    : (alert?.calls ?? []).flatMap((c) => ('transcript' in c ? c.transcript : []));
+  const closed = !!alert?.closed_at || !!closedNote || (!isActive && !isLoading && !isError && !alert);
 
   const lastStep = ladder[ladder.length - 1];
   const phase = phaseOf(lastStep?.step, closed);
@@ -117,13 +121,32 @@ export default function AlertTakeover() {
     return undefined;
   }, [closed, hasAlert, player]);
 
+  const [actionError, setActionError] = useState<string | null>(null);
   const act = async (fn: () => Promise<void>, note: string) => {
-    await fn();
-    Vibration.cancel();
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    setClosedNote(note);
-    refetch();
+    setActionError(null);
+    try {
+      await fn();
+      Vibration.cancel();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      setClosedNote(note);
+      refetch();
+    } catch {
+      // ponytail: someone else may have already closed this alert — a refetch
+      // picks that up (poll below) instead of leaving the button silently dead.
+      setActionError('That didn’t go through — someone else may already be on it.');
+      refetch();
+    }
   };
+
+  // A flaky LAN hop, not "nobody needs help any more" — never conflate the two.
+  if (isError && !alert) {
+    return (
+      <View style={[styles.paperFill, { padding: sp(6) }]}>
+        <ErrorState message="Couldn’t reach Dhyaan to load this alert." onRetry={refetch} />
+        <Btn label="Back to home" kind="quiet" onPress={() => router.replace('/')} style={{ marginTop: sp(3) }} />
+      </View>
+    );
+  }
 
   if (!alert && !isLoading) {
     return (
@@ -252,6 +275,11 @@ export default function AlertTakeover() {
           paddingTop: sp(3),
           gap: sp(2.5),
         }}>
+          {actionError && (
+            <Text style={[type.caption, { color: WHITE, textAlign: 'center', fontWeight: '600' }]}>
+              {actionError}
+            </Text>
+          )}
           {role === 'staff' ? (
             <>
               <BigWhiteBtn label="Assign to me" onPress={() => act(() => api.ack(id!, 'Marcus'), 'Assigned to you. The ladder has stopped.')} />

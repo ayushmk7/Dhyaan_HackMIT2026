@@ -62,7 +62,20 @@ export const useLive = create<LiveState>((set, get) => ({
   applyEvent(m) {
     switch (m.t) {
       case 'alert.opened':
-        set({ activeAlert: m.alert, ladder: [...m.alert.ladder], transcript: [] });
+        set({ activeAlert: m.alert, ladder: [...(m.alert.ladder ?? [])], transcript: [] });
+        break;
+      // Real backend (backend/app/routers/live.py) only ever sends this one —
+      // the whole current alert doc, on open/ack/resolve alike — never the
+      // mock's separate opened/ladder/voice/closed messages. Treat it as
+      // "this is the current truth" so a live alert on a real backend still
+      // opens the takeover and still closes it.
+      case 'alert.update':
+        set((s) => ({
+          activeAlert: m.alert.closed_at
+            ? (s.activeAlert?.id === m.alert.id ? null : s.activeAlert)
+            : m.alert,
+          ladder: m.alert.closed_at ? s.ladder : [...(m.alert.ladder ?? [])],
+        }));
         break;
       case 'alert.ladder':
         set((s) => ({ ladder: [...s.ladder, m.step] }));
@@ -91,6 +104,8 @@ export const useLive = create<LiveState>((set, get) => ({
         break;
       case 'event.new':
         break; // timeline refetches on foreground; mock demo doesn't need live insert
+      case 'ping':
+        break; // real backend's 25s keepalive — nothing to apply
     }
   },
 

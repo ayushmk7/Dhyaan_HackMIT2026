@@ -87,10 +87,23 @@ async def handle_voice_tool(alert_id: str, role: str, fn_name: str, args: dict) 
     return result
 
 
-async def db_bind_call(call_id: str, call_sid: str, stream_sid: str) -> None:
+async def db_bind_call(call_id: str, call_sid: str, stream_sid: str | None = None, **extra) -> None:
+    """Create/refresh one `calls` row. Abhinav's bridge calls this with just the
+    three positionals once Twilio's media stream connects; app/voice.py's stub
+    calls it with those same three plus the richer fields (`alert_id`, `role`,
+    `status`, `started_at`, `simulated`, ...) that `get_alert` will read straight
+    off `db().calls` once it stops reconstructing calls from events (see the
+    ponytail note in app/routers/residents.py::get_alert). `stream_sid` stays
+    optional and `**extra` is additive, so this is still the one write path —
+    not a second one bolted on beside it.
+    """
+    update = {"twilio_call_sid": call_sid, "call_sid": call_sid}
+    if stream_sid is not None:
+        update["stream_sid"] = stream_sid
+    update.update(extra)
     await db().calls.update_one(
         {"_id": call_id},
-        {"$set": {"twilio_call_sid": call_sid, "stream_sid": stream_sid}},
+        {"$set": update},
         upsert=True,
     )
 

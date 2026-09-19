@@ -2,10 +2,11 @@
 import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card, Chip, Row, Txt } from '@/components';
+import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
 import type { ChatMessage } from '@/lib/types';
 import { useSession } from '@/store/session';
@@ -24,17 +25,26 @@ export default function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [thinking, setThinking] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [lastQuestion, setLastQuestion] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
   const send = async (question: string) => {
     const q = question.trim();
     if (!q || thinking) return;
     setDraft('');
+    setSendError(null);
+    setLastQuestion(q);
     setMessages((m) => [...m, { id: `u_${Date.now()}`, role: 'user', text: q }]);
     setThinking(true);
-    const answer = await api.chat(q);
-    setMessages((m) => [...m, answer]);
-    setThinking(false);
+    try {
+      const answer = await api.chat(q);
+      setMessages((m) => [...m, answer]);
+    } catch (e) {
+      setSendError(e instanceof Error ? e.message : 'Couldn’t reach Dhyaan — try again.');
+    } finally {
+      setThinking(false);
+    }
   };
 
   return (
@@ -80,14 +90,17 @@ export default function Chat() {
                 <Txt kind="body">{m.text}</Txt>
               </View>
             ) : (
-              // TODO D8.1: a refusal must read differently from an answer.
-              <Card
-                key={m.id}
-                style={{
-                  alignSelf: 'stretch',
-                  ...(m.refused ? { borderLeftWidth: 4, borderLeftColor: palette.ochre } : {}),
-                }}
-              >
+              // A refusal reads as "outside scope", not a warning — no red/amber,
+              // just a quiet label so it's distinct without feeling alarming.
+              <Card key={m.id} style={{ alignSelf: 'stretch' }}>
+                {m.refused && (
+                  <Row gap={1.5} style={{ marginBottom: sp(2) }}>
+                    <Icon name="questionmark.circle" size={14} color={palette.slate} />
+                    <Txt kind="caption" tone="slate" style={{ fontWeight: '600' }}>
+                      Outside what Dhyaan has observed
+                    </Txt>
+                  </Row>
+                )}
                 <Text
                   style={{
                     fontFamily: font.serif, fontSize: 17, lineHeight: 25,
@@ -117,7 +130,18 @@ export default function Chat() {
             ),
           )}
           {thinking && (
-            <Txt kind="caption" tone="muted">Dhyaan is reading her week…</Txt>
+            <Row gap={2}>
+              <ActivityIndicator size="small" color={palette.inkMuted} />
+              <Txt kind="caption" tone="muted">Dhyaan is reading her week…</Txt>
+            </Row>
+          )}
+          {sendError && !thinking && (
+            <Row gap={2} style={{ justifyContent: 'space-between' }}>
+              <Txt kind="caption" tone="alert" style={{ flex: 1 }}>{sendError}</Txt>
+              <Pressable accessibilityRole="button" onPress={() => send(lastQuestion)}>
+                <Txt kind="label" tone="slate">Retry</Txt>
+              </Pressable>
+            </Row>
           )}
         </View>
       </ScrollView>

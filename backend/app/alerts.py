@@ -13,6 +13,7 @@ the same thing (see RESOLUTION_FOR_STATE below).
 """
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 
 from ulid import ULID
@@ -44,6 +45,8 @@ RETRY_WAIT_S = 15
 # AMD / 20s-silence signals from the bridge; until then, if nobody calls
 # classify() before this fires, we escalate exactly like a bad answer.
 RESIDENT_RESPONSE_TIMEOUT_S = 90
+
+log = logging.getLogger("dhyaan.alerts")
 
 
 async def _get(alert_id: str) -> dict | None:
@@ -273,6 +276,19 @@ async def _apply(alert_id: str, trigger: str, detail=None) -> dict:
             "trigger": trigger, "detail": detail,
         },
     )
+
+    # Push the state change to any connected app. Without this the websocket only
+    # ever fired on ack/resolve, so a phone watching a live fall saw nothing —
+    # not the alert opening, not "calling Eleanor", not the escalation. Lazy
+    # import: routers import alerts at startup, so a module-level import here
+    # would be circular.
+    try:
+        from .routers import live
+
+        await live.broadcast_alert(alert)
+    except Exception as e:  # noqa: BLE001
+        # A dead socket must never stall the escalation ladder.
+        log.warning("alert broadcast failed for %s: %s", alert_id, e)
 
     await ACTIONS[action_name](alert, detail=detail)
     # Re-fetch: some actions (e.g. fell_but_fine -> notify_family_warn) chain

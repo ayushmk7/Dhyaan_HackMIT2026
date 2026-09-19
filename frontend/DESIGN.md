@@ -6,8 +6,10 @@ Read this before writing any screen. Deviations from this doc are bugs.
 
 Dhyaan watches over someone's mother. The app must read like a calm, competent
 human — never like a hospital monitor, never like a SaaS dashboard. Big statements
-are full sentences in a serif ("Eleanor is OK", "She's in the kitchen"). Labels are
+are full sentences in a serif ("Eleanor is OK", "She's at home"). Labels are
 sentence case. No ALL-CAPS eyebrows, no middle-dot metadata rows, no icon soup.
+**Family screens never name a room** — "She's at home", "She went out at 10:15", never
+"She's in the kitchen". Room names belong on staff screens only (`DECISIONS.md` D-001).
 
 ## Tokens — import from `@/theme/tokens`
 

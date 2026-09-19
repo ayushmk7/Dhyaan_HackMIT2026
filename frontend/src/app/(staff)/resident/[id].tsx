@@ -4,7 +4,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { TextInput, View } from 'react-native';
 import {
-  Btn, Card, Chip, EventRow, Hairline, Row, Screen, SectionTitle, Sparkline, StateChip, Txt,
+  Btn, Card, Chip, ErrorState, EventRow, Hairline, LoadingState, Row, Screen, SectionTitle,
+  Sparkline, StateChip, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { ago, dayOf, timeOf } from '@/lib/format';
@@ -15,7 +16,7 @@ import { palette, radius, sp, type } from '@/theme/tokens';
 
 export default function ResidentDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data: resident } = useResident(id);
+  const { data: resident, isLoading, isError, refetch } = useResident(id);
   const { data: baselines } = useBaselines(id);
   const { data: events } = useTimeline(id);
   const liveStates = useLive((s) => s.states);
@@ -28,13 +29,16 @@ export default function ResidentDetail() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [notes, setNotes] = useState<{ text: string; at: string }[]>([]);
+  const [askError, setAskError] = useState<string | null>(null);
 
   if (!resident) {
-    return (
-      <Screen>
-        <Txt kind="body" tone="muted">Loading…</Txt>
-      </Screen>
-    );
+    if (isError) {
+      return <Screen><ErrorState message="Couldn’t load this resident." onRetry={refetch} /></Screen>;
+    }
+    if (isLoading) {
+      return <Screen><LoadingState label="Loading…" /></Screen>;
+    }
+    return <Screen><Txt kind="body" tone="muted">Resident not found.</Txt></Screen>;
   }
 
   const state = liveStates[resident.id] ?? resident.state;
@@ -47,8 +51,11 @@ export default function ResidentDetail() {
     const q = question.trim();
     if (!q || asking) return;
     setAsking(true);
+    setAskError(null);
     try {
       setAnswer(await api.chat(q));
+    } catch (e) {
+      setAskError(e instanceof Error ? e.message : 'Couldn’t reach Dhyaan — try again.');
     } finally {
       setAsking(false);
     }
@@ -64,7 +71,7 @@ export default function ResidentDetail() {
       <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
         {location
           ? `In the ${location.label.toLowerCase()} since ${timeOf(location.since)}`
-          : `No location signal — last seen ${ago(resident.last_seen)}`}
+          : `No location signal — last seen ${resident.last_seen ? ago(resident.last_seen) : 'never'}`}
       </Txt>
 
       {alertHere && (
@@ -164,6 +171,9 @@ export default function ResidentDetail() {
         />
         <Btn label="Ask" onPress={ask} busy={asking} style={{ minHeight: 44, paddingHorizontal: sp(4) }} />
       </Row>
+      {askError && (
+        <Txt kind="caption" tone="alert" style={{ marginTop: sp(2) }}>{askError}</Txt>
+      )}
       {answer && (
         <Card style={{ marginTop: sp(3) }}>
           <Txt kind="body" style={{ fontFamily: 'Fraunces_400Regular' }}>{answer.text}</Txt>

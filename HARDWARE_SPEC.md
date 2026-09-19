@@ -23,7 +23,7 @@ Verified against vendor docs as of **2026-09-19**. Anything unconfirmed is tagge
 | Part | What it does here | Source | Price |
 |---|---|---|---|
 | MacBook Pro, M5 Pro, 48 GB unified | Hub + local VLM + Deepgram/Twilio/Claude egress. 48 GB unified fits a 7–13 B VLM at 4-bit with room for the video pipeline. | own | — |
-| iPhone (iOS 16+) | Fallback accel source **and** fallback beacon scanner (§12). Also the "adult child" phone Twilio rings. | own | — |
+| iPhone (iOS 16+) | Fallback accel source (§12.1). Also the "adult child" phone Twilio rings. **Not** a beacon scanner: iOS hides iBeacon adverts from ordinary Bluetooth scanning and Safari has no Web Bluetooth (§12.3, `DECISIONS.md` D-013). | own | — |
 | Wi-Fi hotspot (phone) | Band → hub transport. **Bring one. See §11 gate H2.** | own | — |
 
 ### 1.2 NEED — core path
@@ -108,7 +108,7 @@ flowchart TB
             BUZ["Modulino Buzzer<br/>lib 0x3C · bus 0x1E"]
             IMU --- BTN --- BUZ
         end
-        MCU["STM32U585 · Cortex-M33 @160 MHz · Zephyr<br/>512-sample ring · FALL STATE MACHINE"]
+        MCU["STM32U585 · Cortex-M33 @160 MHz · Zephyr<br/>1024-sample ring · FALL STATE MACHINE · step detector"]
         RADIO["WCBN3536A (Qualcomm WCN3980)<br/>Wi-Fi 5 a/b/g/n/ac 2.4+5 GHz · BT 5.1 / BLE<br/>shared PCB antenna · owned by the MPU"]
         MPU["QRB2210 · 4×A53 @2.0 GHz · Debian<br/>App Lab App · python/main.py<br/>BLE scan 3 s/20 s · Wi-Fi scan /60 s<br/>RSSI median → feature vector<br/>JSON + HTTP + store-and-forward"]
         QW -->|"I²C4 SDA/SCL"| MCU
@@ -122,28 +122,32 @@ flowchart TB
 
     subgraph MAC["MacBook Pro M5 Pro / 48 GB — HUB"]
         direction TB
-        API["FastAPI :8000<br/>/v1/events · /v1/telemetry · /v1/location"]
+        API["FastAPI :8000<br/>/v1/ingest/band · heartbeat · rf"]
         LOC["LOCALIZER (see TECHNICAL_PRD.md)<br/>fingerprint k-NN → HMM room smoothing"]
         FSM["Escalation engine<br/>30 s grace → call → 60 s → escalate"]
-        VLM["Local VLM · frame sampler 0.2 Hz<br/>ate? walked? inactive?"]
-        DB["SQLite · events + room timeline"]
+        GAIT["Walking-profile learner<br/>(TECHNICAL_PRD.md §8.7)"]
+        VLM["Camera pipeline (TECHNICAL_PRD.md §6)<br/>stretch — not built"]
+        DB["MongoDB · events + room timeline"]
         API --> LOC --> DB
         API --> FSM --> DB
+        API --> GAIT --> DB
         VLM --> DB
     end
 
-    MPU -->|"Wi-Fi · HTTP POST JSON<br/>fall_event / telemetry / rf_scan"| API
+    MPU -->|"Wi-Fi · HTTP POST JSON<br/>band / heartbeat / rf"| API
+    GAIT -->|"profile in heartbeat reply"| MPU
     CAM["Logitech Brio 100<br/>1080p UVC"] -->|"USB · AVFoundation"| VLM
 
     subgraph CLOUD["CLOUD"]
-        DG["Deepgram Voice Agent<br/>'Did you fall? Are you okay?'"]
-        TW["Twilio Voice + SMS"]
-        CL["Claude API<br/>transcript → okay / not-okay / unclear"]
+        TW["Twilio Voice<br/>(no SMS)"]
+        DG["Deepgram Voice Agent<br/>Claude Haiku as think provider"]
     end
 
-    FSM -->|"1· call grandparent<br/>(with room context from LOC)"| DG
-    DG -->|transcript| CL --> FSM
-    FSM -->|"2· if not-okay or unclear"| TW --> FAM["Adult children"]
+    FSM -->|"1· call the resident"| TW
+    TW <-->|"media stream"| DG
+    DG -->|"tool call: mark_ok / escalate"| FSM
+    FSM -->|"2· escalate: call family<br/>(room named only on this call)"| TW
+    TW --> FAM["Adult children"]
 ```
 
 ---
@@ -425,13 +429,13 @@ The UNO Q is two computers in one outline. Real-time work on the MCU, everything
 | **STM32U585** (Zephyr, `sketch/sketch.ino`) | **QRB2210** (Debian, `python/main.py`) |
 |---|---|
 | I²C at 208 Hz to the LSM6DSOX via `Wire1` | **BLE scan (`bleak`) 3 s every 20 s — all localization** |
-| 512-sample ring buffer of raw accel | **Wi-Fi scan (`iw dev wlan0 scan`) every 60 s** |
+| 1024-sample ring buffer of raw accel (§6.4) | **Wi-Fi scan (`iw dev wlan0 scan`) every 60 s** |
 | The fall state machine (§6) | RSSI median → feature vector → POST |
 | 30 s grace timer, buzzer, button scan | HTTP POST to the hub (`requests`) |
 | Buttons + Buzzer + Pixels on the same I²C chain | JSON serialisation + schema versioning |
 | `Bridge.notify("fall_event", ...)` upward | Store-and-forward spool when Wi-Fi drops |
-| — | Wi-Fi via NetworkManager / `nmcli` |
-| `Bridge.provide_safe("set_thresholds", ...)` | Config (`config.json`), threshold push-down |
+| Step detector + walking summary per heartbeat window (§6.9) | Wi-Fi via NetworkManager / `nmcli` |
+| `Bridge.provide_safe("set_thresholds", ...)` | Config (`config.json`), threshold push-down — including the per-wearer walking profile the hub returns on each heartbeat (§6.9) |
 
 **This split is not optional.** The radio hangs off the *microprocessor* (§3.1). The sketch physically cannot open a socket or see a BLE advert. There is a `BridgeTCPClient<>` that tunnels TCP through Bridge, but pushing JSON up to Python and letting Python own both the HTTP client and the BLE scanner is simpler and far easier to debug.
 
@@ -487,13 +491,20 @@ As of Zephyr core 0.55.0 `Arduino_RouterBridge` ships by default and `Serial` ro
 
 For one to three bands on a hotspot with a judge watching, debuggability beats scalability. Write it behind a single `publish(payload)` so the MQTT swap is a 20-line diff, and say exactly this when asked about scale.
 
-| Method | Path | Body | Purpose |
+> **Superseded — the band posts to the backend's contract, not the paths below** (`DECISIONS.md`
+> D-011; resolved at the H1 standup in the todo files). Endpoints are `POST /v1/ingest/band`,
+> `/v1/ingest/band/cancel`, `/v1/ingest/heartbeat` and `/v1/ingest/rf`, each with an `X-Band-Key`
+> header. **The exact JSON is `backend/fixtures/*.json`** — fixtures beat the prose payloads in
+> §5.5–5.7, which remain here as the full field list to draw from. The heartbeat carries the walking
+> summary and its reply carries the walking profile (§6.9, `TECHNICAL_PRD.md` §8.7).
+
+| Method | Path (original design) | Body | Purpose |
 |---|---|---|---|
-| POST | `/v1/events` | fall event (§5.5) | triggers the escalation FSM |
-| POST | `/v1/telemetry` | heartbeat (§5.7) | liveness, health, drift |
-| POST | `/v1/location` | RF scan (§5.6) | feeds the localizer (**`TECHNICAL_PRD.md §7`**) |
-| POST | `/v1/events/{id}/cancel` | `{"reason":"button"}` | late cancel after upload |
-| GET | `/v1/config/{device_id}` | — | band pulls tuned thresholds + beacon map on boot |
+| POST | `/v1/events` → **`/v1/ingest/band`** | fall event (§5.5) | triggers the escalation FSM |
+| POST | `/v1/telemetry` → **`/v1/ingest/heartbeat`** | heartbeat (§5.7) | liveness, health, drift, walking summary |
+| POST | `/v1/location` → **`/v1/ingest/rf`** | RF scan (§5.6) | feeds the localizer (**`TECHNICAL_PRD.md §7`**) |
+| POST | `/v1/events/{id}/cancel` → **`/v1/ingest/band/cancel`** | `{"reason":"button"}` | late cancel after upload |
+| GET | `/v1/config/{device_id}` | — | band pulls tuned thresholds + beacon map on boot (not in the backend yet; use the local `config.json`) |
 
 Retry: 3 attempts at 0.5 / 2 / 5 s, then spool to `/home/arduino/spool/*.json` and drain on the next successful heartbeat. **`/v1/location` posts are cheap and idempotent — drop them under pressure. A fall event is never dropped.**
 
@@ -531,8 +542,8 @@ Retry: 3 attempts at 0.5 / 2 / 5 s, then spool to `/home/arduino/spool/*.json` a
     ]
   },
   "window": {
-    "pre_ms": 1000, "post_ms": 3000, "rate_hz": 208, "unit": "g",
-    "ax": [0.02, -0.01, "...832 floats..."], "ay": ["..."], "az": ["..."]
+    "pre_ms": 1000, "post_ms": 2200, "rate_hz": 208, "unit": "g",
+    "ax": [0.02, -0.01, "...666 floats..."], "ay": ["..."], "az": ["..."]
   },
   "grace": { "seconds": 30, "cancelled": false, "cancel_source": null },
   "battery": { "source": "usb_powerbank", "level_pct": null },
@@ -542,7 +553,7 @@ Retry: 3 attempts at 0.5 / 2 / 5 s, then spool to `/home/arduino/spool/*.json` a
 
 **The `location` block is why this feature exists.** "Nancy fell" is an alert. **"Nancy fell in the bathroom, 4 seconds ago"** is a dispatch instruction — it changes what the responder brings and which door they go to first, and bathrooms are where the serious falls happen. `age_ms` is mandatory: a 4 s-old fix is actionable, a 90 s-old fix is a guess and the hub must present it as one.
 
-`confidence` is the §6.5 weighted score, **not** a model probability — do not call it one. `window` is the ±4 s raw trace (~40 kB); drop it on retry under bad Wi-Fi and keep `detector`. `ts_monotonic_ms` is authoritative for ordering because the wall clock may be unset until NTP lands.
+`confidence` is the §6.5 weighted score, **not** a model probability — do not call it one. `window` is the raw trace from 1 s before the impact to the end of the 2 s stillness check (~3.2 s, ~15 kB as JSON); drop it on retry under bad Wi-Fi and keep `detector`. It is taken from the ring at the moment of confirmation, which is why the ring is 1024 samples (4.9 s): an earlier draft asked for ±4 s from a 512-sample (2.46 s) ring, and for 3 s of post-impact data in an event that is sent 2.2 s after the impact (`DECISIONS.md` D-008). The hub treats this payload as the full field list; the built backend's contract is `backend/fixtures/band_fall.json` (§5.4), and neither carries a battery level — a USB power bank reports none (D-013). `ts_monotonic_ms` is authoritative for ordering because the wall clock may be unset until NTP lands.
 
 `event` ∈ `fall_suspected` · `fall_confirmed` · `fall_cancelled` · `impact_only` · `inactivity_alert` · `beacon_offline`.
 
@@ -584,7 +595,8 @@ Design notes that matter:
 
 ### 5.7 Telemetry payload
 
-`POST /v1/telemetry` every **30 s**. Three misses (90 s) = band marked offline.
+`POST /v1/telemetry` (built: `POST /v1/ingest/heartbeat`, §5.4) every **30 s** — every **5 s** in
+calibration mode (§6.9). Three misses (90 s) = band marked offline.
 
 ```json
 {
@@ -592,8 +604,12 @@ Design notes that matter:
   "device_id": "band-001", "user_id": "grandparent-nancy",
   "ts": "2026-09-19T21:04:00.000Z", "uptime_s": 8412,
   "state": "IDLE", "worn": true,
-  "activity": { "window_s": 30, "accel_std_g": 0.14, "step_count": 22,
+  "activity": { "mode": "normal", "window_s": 30, "accel_std_g": 0.14,
+                "steps": 22, "step_rate_hz": 1.85,
+                "step_peak_g_p50": 1.21, "step_peak_g_p95": 1.58, "step_peak_g_max": 1.92,
+                "jerk_p95_g_per_s": 24.0, "swing_dps_p95": 142.0, "impacts_only": 0,
                 "upright_fraction": 0.91, "mean_gravity_vec": [0.03, 0.97, 0.19] },
+  "profile_rev": 3,
   "location": { "room": "kitchen", "room_confidence": 0.79, "age_ms": 8000,
                 "source": "ble_fingerprint" },
   "health": { "imu_ok": true, "imu_addr": "0x6A", "i2c_errors": 0,
@@ -607,7 +623,9 @@ Design notes that matter:
 }
 ```
 
-`worn` comes from the LSM6DSOX activity/inactivity detector — a band on a table has `accel_std_g < 0.01` and a rock-steady gravity vector. **An unworn band must never generate a fall alert or a room fix.** `beacons_seen < beacons_expected` for 10 consecutive scans is what raises `beacon_offline`.
+`worn` comes from the LSM6DSOX activity/inactivity detector — a band on a table has `accel_std_g < 0.01` and a rock-steady gravity vector. **An unworn band must never generate a fall alert or a room fix — and "unworn" is judged on the 10 s *before* an event, never on the stillness after it** (`DECISIONS.md` D-008). A band that was moving before an impact counts as worn even though it lies perfectly still afterwards; otherwise the stillness check that confirms a fall would also veto it (a band still on a cushion reads exactly like a band set on a table, test case 4 vs 8 in §10.2). `beacons_seen < beacons_expected` for 10 consecutive scans is what raises `beacon_offline`.
+
+The `activity` fields come from the step detector (§6.9): `steps` and `step_rate_hz` for the window, the distribution of per-step peak |a|, the 95th-percentile jerk and arm-swing rate, and a count of `impact_only` events. The hub's walking-profile learner consumes them (`TECHNICAL_PRD.md` §8.7) and sends the profile back in the reply; `profile_rev` tells the hub which profile the band is running.
 
 ---
 
@@ -662,12 +680,14 @@ Bit fields verified against ST's own driver: https://github.com/STMicroelectroni
 | Constant | Start | Unit | Rationale |
 |---|---|---|---|
 | `SAMPLE_HZ` | 208 | Hz | §6.2 |
-| `RING_SAMPLES` | 512 | — | 2.46 s @208 Hz; power of 2 so the index mask is `& 511`. 512 × 6 B = 3 kB vs 786 kB SRAM. |
-| `FF_THRESHOLD_G` | 0.40 | g | Forearm falls bottom out near 0.3–0.6 g, not 0.1 g |
+| `RING_SAMPLES` | 1024 | — | 4.92 s @208 Hz; power of 2 so the index mask is `& 1023`. 1024 × 6 B = 6 kB vs 786 kB SRAM. Must hold 1 s before the impact **plus** the 2.2 s settle-and-stillness check, because the fall trace is read out at confirmation (§5.5). Was 512 (2.46 s), which could not |
+| `FF_THRESHOLD_G` | 0.40 | g | Forearm falls bottom out near 0.3–0.6 g, not 0.1 g. **Physics value — never fitted from band drops** (§7.2, D-008) |
 | `FF_MIN_MS` | 80 | ms | ≈17 samples; shorter is arm swing |
-| `FF_MAX_MS` | 400 | ms | Longer means the band was dropped, not worn |
-| `IMPACT_G_AFTER_FF` | 2.8 | g | Lower bar once free fall corroborates |
-| `IMPACT_G_SOFT` | 3.5 | g | Higher bar with no free fall |
+| `FF_MAX_MS` | 400 | ms | Longer means the band was dropped, not worn. **This is why stage and test drops are 0.5 m** (≈320 ms of free fall): a 1 m drop falls ≈450 ms and is sent back to IDLE by design (§10.1) |
+| `IMPACT_G_AFTER_FF` | 2.8 | g | Lower bar once free fall corroborates. Always `IMPACT_G_SOFT − 0.7` once a walking profile is active |
+| `IMPACT_G_SOFT` | 3.5 | g | Higher bar with no free fall. **Default until the hub sends a per-wearer value** within [`IMPACT_G_FLOOR`, `F_min − IMPACT_G_CEIL_MARGIN`] (§6.9) |
+| `IMPACT_G_FLOOR` | 2.5 | g | Lowest the walking profile may set `IMPACT_G_SOFT` — just above the 1.5–2.5 g sit-down-hard band (§10.2 case 1) |
+| `IMPACT_G_CEIL_MARGIN` | 0.3 | g | The profile's ceiling is `F_min − 0.3 g`, where `F_min` is the softest calibration drop (§7.2) — so every calibrated fall still fires |
 | `IMPACT_WINDOW_MS` | 400 | ms | Max gap from free-fall end to impact |
 | `JERK_MIN_G_PER_S` | 30 | g/s | Separates an impact edge from a slow press |
 | `ORIENT_CHANGE_DEG` | 45 | ° | Angle between pre- and post-fall gravity vectors |
@@ -677,6 +697,11 @@ Bit fields verified against ST's own driver: https://github.com/STMicroelectroni
 | `GRACE_SECONDS` | 30 | s | Cancel window before the hub dials |
 | `ORIENT_BASELINE_MS` | 1000 | ms | Pre-fall gravity averaging |
 | `REARM_MS` | 10000 | ms | Dead time after any terminal state |
+| `WORN_LOOKBACK_MS` | 10000 | ms | `worn` is judged over the 10 s before an event, not after it (§5.7) |
+| `STEP_MIN_INTERVAL_MS` | 300 | ms | Step detector (§6.9): minimum spacing between step peaks |
+| `STEP_RATE_HZ` | 1.2–2.5 | Hz | Step detector counts steps only while the cadence stays in this band for ≥ 4 steps |
+| `CAL_MODE_S` | 180 | s | Calibration mode (onboarding walk, expo demo): 5 s summaries; exits after 180 s or 150 steps |
+| `DEMO_CHIRP_IMPACT_ONLY` | false | — | Expo demo only: short chirp on every `impact_only`. **Never on in production** |
 
 ### 6.5 State machine
 
@@ -730,7 +755,7 @@ Bit fields verified against ST's own driver: https://github.com/STMicroelectroni
                               ▼  IDLE
 ```
 
-`confidence` = `0.35·min(peak_g/6,1) + 0.25·min(orient_deg/90,1) + 0.20·(1−min(std_g/0.3,1)) + 0.20·ff_seen`. A weighted heuristic for the hub's routing and dashboard sort order. **Not a probability.**
+`confidence` = `0.30·min(peak_g/6,1) + 0.25·min(orient_deg/90,1) + 0.20·(1−min(std_g/0.3,1)) + 0.15·ff_seen + 0.10·(1−gait_match)`. A weighted heuristic for the hub's routing and dashboard sort order. **Not a probability, and it never blocks or cancels an alert.** `gait_match` ∈ [0, 1] is the share of the 3 s before the event that looked like this wearer's normal walking (cadence inside her profile's interquartile range, step peaks ≤ her p95); it is 0 until a walking profile exists (§6.9). Earlier weights were 0.35 / 0.25 / 0.20 / 0.20 with no gait term (`DECISIONS.md` D-009).
 
 ### 6.6 Hardware interrupt vs software
 
@@ -845,7 +870,7 @@ struct Cfg {
 enum State { IDLE, FREEFALL, IMPACT, POST_IMPACT_STILL, CONFIRMED, REARM };
 State state = IDLE;
 
-static const uint16_t RING = 512;
+static const uint16_t RING = 1024;   // 4.92 s — must hold 1 s pre-impact + 2.2 s settle/stillness (§6.4)
 int16_t rax[RING], ray[RING], raz[RING];
 uint16_t ridx = 0;
 
@@ -994,7 +1019,58 @@ void setThresholds(float ffG, float impFf, float impSoft, uint16_t rev) {
 }
 ```
 
-Omitted for brevity: `magnitudeStdOverWindow()` (Welford over the ring), the ±4 s window serialiser, and the 30 s telemetry timer in `serviceSlow()`. Mechanical; the state machine is the part that must be right.
+Omitted for brevity: `magnitudeStdOverWindow()` (Welford over the ring), the window serialiser (1 s before impact → end of stillness, §5.5), and the 30 s telemetry timer in `serviceSlow()`. Mechanical; the state machine is the part that must be right.
+
+### 6.9 Per-wearer walking profile — band side (stretch goal, `DECISIONS.md` D-009)
+
+The learner runs on the hub (`TECHNICAL_PRD.md` §8.7). The band does three things: **detect steps**,
+**apply the profile the hub returns**, and **enforce the bounds itself**, so a bad value from the hub
+can never lower protection below the calibrated floor or above the calibrated ceiling.
+
+**1 · Step detection — MCU detects, Python aggregates.** The MCU finds step peaks in IDLE, alongside the
+cascade, and sends each one up with `Bridge.notify("step", peak_g, jerk, gyro_dps)` — about 2 per
+second, trivial for the Bridge. Python keeps the window and computes the summary, which is far easier
+to debug than doing percentiles in C.
+
+```
+MCU, every sample (208 Hz), IDLE only:
+    m = ema(mag, tau = 30 ms)                              # light smoothing, ~5 Hz low-pass
+    if m is a local maximum and m > 1.10 g and now − t_last_step ≥ STEP_MIN_INTERVAL_MS:
+        rate = 1000 / (now − t_last_step);  t_last_step = now
+        run  = run + 1 if rate in STEP_RATE_HZ else 1
+        if run ≥ 4:                                         # sustained walking only
+            Bridge.notify("step", peak_mag_since_last, jerk_peak, gyro_peak)
+
+Python, per heartbeat window (30 s; 5 s in calibration mode):
+    activity = {steps, step_rate_hz, step_peak_g_p50/p95/max, jerk_p95_g_per_s,
+                swing_dps_p95, impacts_only, mode, window_s}     # attached to the heartbeat, §5.7
+```
+
+**2 · Applying the profile — Linux side.**
+
+```
+on heartbeat reply 200 {"profile_rev", "profile": {"impact_g_soft", ...}}:
+    ceiling = config.calibration.f_min − IMPACT_G_CEIL_MARGIN     # written by §7.2 step 4
+    soft    = clamp(profile.impact_g_soft, IMPACT_G_FLOOR, ceiling)   # enforce locally too
+    Bridge.call("set_thresholds", config.ff_threshold_g, soft − 0.7, soft, profile_rev)
+    save profile + rev into config.json                            # survives a reboot
+on 204, or no network: keep the current profile
+```
+
+`set_thresholds` always passes the **config** free-fall threshold — the profile never changes it, nor
+the orientation or stillness checks, nor the cancel button.
+
+**3 · Calibration mode.** Hold **button B for 3 s** (or trigger it from onboarding): LED B blinks, the
+heartbeat window drops to 5 s, and the hub learns without its daily cap until `CAL_MODE_S` (180 s) or
+150 steps. Used for the onboarding 20-step walk (`PRODUCT_SPEC.md` §5.2) and the expo demo. Button A
+stays "cancel"; button C stays the manual zone tag (§12.3).
+
+**Demo chirp.** With `DEMO_CHIRP_IMPACT_ONLY = true`, every `impact_only` plays `buzzer.tone(1500, 60)`
+so the room hears heavy steps register before learning and stop after. Off in production.
+
+**Cost.** A few hundred bytes of RAM and a comparison per sample on the MCU; the aggregation is
+milliseconds of Python every 30 s. If this slips past the H18 integration freeze, the band simply runs
+the §6.4 defaults.
 
 ---
 
@@ -1023,19 +1099,24 @@ Write these to `config.json` as `accel_bias` / `accel_gain`. **Sanity check: res
 
 **Step 2 — 10 negatives (8 min).** With logging on, 10× each: sit down hard into a chair · slam the forearm onto a table · clap hard 5× · set the band on a table and walk away · 20 steps of normal walking · stand up quickly.
 
-**Step 3 — 10 simulated falls (10 min). Drop the *band*, never a person.** Hold at 1.0 m above a mattress or two stacked cushions, release, let it land and stay still 5 s. Vary the landing: flat, edge-on, face-down. A mattress gives 2.5–4 g; a folded towel over hard floor gives harder impacts if you need them. **Nobody falls. Nobody gets dropped. Non-negotiable, and a judge *will* ask.**
+**Step 3 — 10 simulated falls (10 min). Drop the *band*, never a person.** Hold at **0.5 m** above a **firm** cushion stack or a folded duffel — something that stops the band within roughly 5–10 cm — release, let it land and stay still 5 s. Vary the landing: flat, edge-on, face-down. **Why 0.5 m:** it gives ≈320 ms of free fall, safely inside `FF_MAX_MS = 400`; a 1.0 m drop falls ≈450 ms and the detector rejects it by design as "dropped, not worn" (§6.4). **Why firm:** from 0.5 m a soft mattress can land under the 2.8 g after-free-fall bar; a firm cushion gives roughly 5–10 g. Check every logged `peak_g` is ≥ 3 g. **Nobody falls. Nobody gets dropped. Non-negotiable, and a judge *will* ask.**
 
 **Step 4 — fit (4 min).** Pull logged `peak_g` for both sets.
 ```
 N_max = hardest negative peak
-F_min = softest fall peak
+F_min = softest fall peak                              # also written to config.calibration.f_min —
+                                                       # it sets the walking profile's ceiling (§6.9)
 IMPACT_G_SOFT     = N_max + 0.45 * (F_min - N_max)    # separating hyperplane, biased low
 IMPACT_G_AFTER_FF = IMPACT_G_SOFT - 0.7
-FF_THRESHOLD_G    = p90(freefall minima from Step 3), rounded up to 0.05 g
+FF_THRESHOLD_G    = 0.40 g — NOT fitted from drops
 ```
+**Do not fit `FF_THRESHOLD_G` from the drops** (`DECISIONS.md` D-008). A dropped band is in true free fall and reads ≈0–0.1 g, so a fitted threshold lands near 0.1 g — below the 0.3–0.6 g a real forearm fall reaches (§6.1), which would silently disable the free-fall path for real falls. Band drops validate the pipeline and the impact thresholds; they cannot reproduce a forearm fall's partial free fall, and nothing safe can.
+
 If `F_min <= N_max` the classes overlap on peak alone — **do not widen the threshold.** Lean on `ORIENT_CHANGE_DEG` and `STILL_STD_G`, which is exactly why those features exist.
 
 **Step 5 — verify (2 min).** Re-run 5 negatives and 5 drops. Target **5/5 detected, 0/5 false.** Anything less, re-fit once and stop; a threshold tuned to noise is worse than a conservative one.
+
+**Step 6 — seed the walking profile (2 min, only if §6.9 is built).** Wear the band in the marked position, hold button B for 3 s to enter calibration mode, and walk normally for at least 20 steps, then heavily for 20. Confirm the hub replies with a profile whose `impact_g_soft` sits between 2.5 g and `F_min − 0.3 g`.
 
 ### 7.3 Which way to bias
 
@@ -1204,7 +1285,28 @@ One file, `/home/arduino/ArduinoApps/fallband/config.json`. Read at boot, hot-re
     "still_std_g": 0.12,
     "still_gyro_dps": 25.0,
     "grace_seconds": 30,
-    "rearm_ms": 10000
+    "rearm_ms": 10000,
+    "ring_samples": 1024,
+    "worn_lookback_ms": 10000,
+    "impact_g_floor": 2.5,
+    "impact_g_ceil_margin": 0.3,
+    "step_min_interval_ms": 300,
+    "step_rate_hz": [1.2, 2.5],
+    "cal_mode_s": 180,
+    "demo_chirp_impact_only": false
+  },
+
+  "calibration": {
+    "f_min": 3.9,
+    "drop_height_m": 0.5,
+    "drop_surface": "two firm sofa cushions"
+  },
+
+  "profile": {
+    "rev": 0,
+    "impact_g_soft": null,
+    "impact_g_after_ff": null,
+    "updated_at": null
   },
 
   "rf": {
@@ -1231,7 +1333,9 @@ One file, `/home/arduino/ArduinoApps/fallband/config.json`. Read at boot, hot-re
 }
 ```
 
-Per-user tuning in production is the same file keyed by `user_id`, with a 48 h supervised learning-in period where the band uploads `impact_only` events and a human labels them. Out of scope for 24 h — say so.
+`profile` is written by the band when the hub returns a new walking profile (§6.9); `null` means "run the `imu` defaults". `calibration.f_min` comes from §7.2 step 4 and caps what any profile may set.
+
+**Per-user tuning** is now the walking profile (§6.9, `TECHNICAL_PRD.md` §8.7, `DECISIONS.md` D-009): learned on the hub from walking summaries, cancels, "fine" calls and `impact_only` events, applied here within fixed bounds. It is a stretch goal for the 24 h build. What stays out of scope is the **production** version — a supervised 48 h learning-in period with a human labelling every `impact_only` event — say so if asked.
 
 ---
 
@@ -1242,11 +1346,11 @@ Per-user tuning in production is the same file keyed by `user_id`, with a 48 h s
 | Rule | Detail |
 |---|---|
 | **Never drop a person.** | Not a teammate, not a judge, not "just onto the beanbag". |
-| Drop the **band** | 1.0 m onto a mattress, cushion stack, or a duffel of clothes |
+| Drop the **band** | **0.5 m** onto a **firm** cushion stack or a duffel of clothes — not a soft mattress (§7.2 step 3). 1.0 m is rejected by `FF_MAX_MS` by design (§6.4, `DECISIONS.md` D-008) |
 | Keep the power bank attached | Same mass and strap dynamics as worn; a bare board bounces differently |
 | Catch nothing | Let it land and lie still 5 s — the stillness window needs it |
-| Demo script | Strap on arm → talk over it → unstrap → drop onto cushion → buzzer → *don't* cancel → hub dials the judge's phone, **announcing the room**. **Rehearse the unstrap.** |
-| Stage backup | Keep the §12 iPhone fallback warm on the same endpoint. If the drop doesn't fire on stage, flick the phone and keep talking. |
+| Demo script | Strap on arm → talk over it → unstrap → drop onto cushion → buzzer → *don't* cancel → hub dials the judge's phone; the **escalation** call names the room. **Rehearse the unstrap.** The canonical stage script is `PRODUCT_SPEC.md` §10 |
+| Stage backup | Keep the §12 iPhone fallback warm on the same endpoint. If the drop doesn't fire on stage, flick the phone and keep talking — and say so. That run no longer counts as live UNO Q input for the Arduino track. |
 
 ### 10.2 False-positive cases
 
@@ -1259,11 +1363,23 @@ Per-user tuning in production is the same file keyed by `user_id`, with a 48 h s
 | 5 | **Normal walking, 20 steps** | 0.7–1.4 g periodic at 1.8–2.2 Hz, σ ≈ 0.15 g | IDLE | must not CONFIRM |
 | 6 | **Stand up quickly** | brief 0.8 g dip, 1.3 g rise, orientation < 25° | IDLE | must not CONFIRM |
 | 7 | **Arm swing / reach overhead** | 0.4–1.8 g, gyro > 150 °/s, no stillness after | IDLE | must not CONFIRM |
-| 8 | **Drop band 1 m onto a cushion** *(positive)* | free fall **0.25–0.45 g for 120–180 ms**, impact **2.5–4.5 g**, orientation **60–120°**, σ after < 0.05 g | **CONFIRMED** | must not miss |
-| 9 | **Drop band 1 m onto carpet over hardwood** | free fall same, impact **5–9 g**, orientation 60–120° | **CONFIRMED** | must not clip — proves the ±16 g fix (§6.3) |
+| 8 | **Drop band 0.5 m onto a firm cushion** *(positive)* | **true free fall: \|a\| ≈ 0–0.1 g for ≈300–330 ms** (a dropped band, not a forearm fall), impact **≥ 3 g** (≈5–10 g typical), orientation any (the free-fall path does not require it), σ after < 0.05 g | **CONFIRMED** via `FREEFALL_IMPACT` | must not miss |
+| 9 | **Drop band 0.5 m onto carpet over hardwood** | free fall same, impact well above 4 g — a hard landing may reach the ±16 g ceiling, which is fine | **CONFIRMED** | must not pin at 4.0 g — proves the ±16 g fix (§6.3) |
 | 10 | **Confirmed fall, press A at t+5 s** | — | CANCELLED → POST cancel | hub must not dial |
 | 11 | **Confirmed fall, no press** | — | grace expires → Deepgram → Twilio | end-to-end |
 | 12 | **Unplug the power bank mid-grace** | — | hub's independent 30 s timer still fires | proves §6.7's design choice |
+
+Earlier versions of cases 8–9 used a 1 m drop and expected "0.25–0.45 g for 120–180 ms" — that is the signature of a *worn forearm* fall. A dropped band reads ≈0 g for the whole drop, and at 1 m the drop outlasts `FF_MAX_MS` (`DECISIONS.md` D-008).
+
+**Walking-profile cases (only if §6.9 is built):**
+
+| # | Action | Expected | Must not |
+|---|---|---|---|
+| 13 | Profile reset to the floor (2.5 g), then 20 heavy steps | `impact_only` events if forearm step peaks exceed 2.5 g; step summaries on every heartbeat | must not CONFIRM |
+| 14 | Calibration mode, 60 s of heavy walking, then the same 20 heavy steps | `impact_g_soft` rises above her step peaks (never above `F_min − 0.3`); no `impact_only` | must not exceed the ceiling |
+| 15 | After case 14, drop 0.5 m onto the firm cushion | **CONFIRMED** | must not miss — proves the ceiling guarantee |
+| 16 | Walk, then drop hard onto a sofa (walk-then-stop), press A to cancel, 3× | `cancel_bar` counts 3 negatives; the threshold moves up at most to the ceiling | must not change the free-fall, orientation or stillness settings |
+| 17 | Kill Wi-Fi, reboot the band | the band keeps its last profile from `config.json` | must not fall back to a lower threshold than the saved profile |
 
 Log every run as a row: `case, peak_g, ff_min_g, ff_dur_ms, orient_deg, std_g, gyro_max, room, state`. That table is the most persuasive artifact you can show — it is evidence, not a claim.
 
@@ -1307,13 +1423,17 @@ Log every run as a row: `case, peak_g, ff_min_g, ff_dur_ms, orient_deg, std_g, g
 | Sustained soak | 60 min continuous: **0 dropped samples**, `loop_jitter_ms_p95 < 5 ms`, 0 false positives at a desk, **≥ 95 % of BLE scans return ≥ 3 beacons** |
 | Wi-Fi drop | kill AP 60 s → fall events spool and drain, 0 lost; location posts may be dropped |
 | Battery | 4 h continuous, no reset, with BLE + Wi-Fi scanning running |
-| B2B VLM | webcam → "person ate" / "person walked" within 30 s of the action |
+| B2B VLM *(stretch — not built as of H6)* | webcam → a keyframe-batch observation ("eating", "walking") within 30 s of the action. The **`meal_observed` event** closes only after the meal ends plus a 10 min gap, by design (`TECHNICAL_PRD.md` §6.5) — don't test for it in 30 s |
 
 ---
 
 ## 11. Build Plan — 24 Hours, Hour by Hour
 
-Team of 4: **A** = firmware (sketch) · **B** = band Linux, BLE scan + uplink · **C** = hub, Deepgram/Twilio/Claude · **D** = beacons, VLM/CCTV, demo/deck. A and B pair on the board until it enumerates; nobody else touches it.
+> **Superseded for staffing (`DECISIONS.md` D-011).** The team is three people. Utsav owns everything
+> in this spec (A, B and the beacon half of D); `utsavtodo.md` is the live plan. The hour gates below
+> still apply.
+
+Team of 4 (original plan): **A** = firmware (sketch) · **B** = band Linux, BLE scan + uplink · **C** = hub, Deepgram/Twilio/Claude · **D** = beacons, VLM/CCTV, demo/deck. A and B pair on the board until it enumerates; nobody else touches it.
 
 ### H0–H1 · Unbox, power, and the radio check
 
@@ -1401,13 +1521,13 @@ Team of 4: **A** = firmware (sketch) · **B** = band Linux, BLE scan + uplink ·
 
 > **🚦 HARD GATE — H6 · BLE.** If BLE scanning on the UNO Q is not working — no `hci0`, `btmgmt find` empty, or `bleak` throwing — **stop and pick a tier from §12.3 right now:**
 > - **Tier 2:** Wi-Fi-RSSI-only room classification. Works, but see §10.4 — it will be unstable in the venue, so say so honestly.
-> - **Tier 1b (better):** an **iPhone running a beacon-scanner app** (or the §12.1 web page extended with Web Bluetooth) posting **the same `fallband.rfscan.v1` schema to the same endpoint**. The hub, the localizer and the demo are untouched.
+> - **Tier 1b (better):** a **spare ESP32-S3 in BLE-scanner mode**, strapped next to the band, posting **the same RF scan payload to the same endpoint** over Wi-Fi (~45 min of firmware), or a Mac running `rssi_monitor.py`'s `bleak` scanner for bench tests. The hub, the localizer and the demo are untouched. **Not an iPhone:** iOS hides iBeacon adverts from ordinary Bluetooth scanning and Safari has no Web Bluetooth (`DECISIONS.md` D-013).
 > Either way: **decide at hour 6 and move on.** Do not let RF localization eat the fall detector's time — falls are the core product.
 
 ### H6–H10 · Detector (A) — the core hours
 
 21. Reconfigure the IMU to **208 Hz / ±16 g** (§6.3). Verify: resting magnitude 1.00 g, and a hard table slap now reads **> 4 g** instead of pinning at 4.0.
-22. 512-sample ring buffer + fixed-period 208 Hz loop (`micros()` deadline, not `delay()`).
+22. 1024-sample ring buffer + fixed-period 208 Hz loop (`micros()` deadline, not `delay()`).
 23. `IDLE → FREEFALL → IMPACT`, just `Serial.println` the transitions. Drop the board onto a cushion **from 30 cm** and watch it fire.
 24. Add `POST_IMPACT_STILL` with orientation + σ.
 25. Add `CONFIRMED`, buzzer pattern, button cancel, `REARM`.
@@ -1416,7 +1536,8 @@ Team of 4: **A** = firmware (sketch) · **B** = band Linux, BLE scan + uplink ·
 ### H6–H10 · Uplink and hub (B + C, parallel)
 
 27. `python/main.py`: `Bridge.provide()` handlers for `fall_event` / `impact_only` / `fall_cancelled`; JSON per §5.5 **with the latest room fix and its `age_ms` attached**; `requests.post` with 3-retry + spool; the 20 s BLE scan timer; the 60 s Wi-Fi scan; the 30 s telemetry timer.
-28. C builds the hub: FastAPI `:8000`, the five §5.4 endpoints, SQLite, the localizer (**`TECHNICAL_PRD.md §7`**), and the escalation FSM (30 s hold → Deepgram outbound **with room context in the prompt** → Claude classifies the transcript → Twilio if `not_okay` or `unclear`).
+28. C builds the hub: FastAPI `:8000`, the §5.4 endpoints, the localizer (**`TECHNICAL_PRD.md §7`**), and the escalation FSM (30 s hold → Twilio + Deepgram outbound → the agent classifies the answer **by tool call** (`mark_ok` / `escalate`, `TECHNICAL_PRD.md` §4.4–4.6) → escalation calls to family, where the room is named). *(Built: FastAPI + MongoDB — see `backend/README.md`.)*
+28a. *(Stretch, §6.9.)* Step detector on the MCU (`Bridge.notify("step", …)`), walking summary on the heartbeat, and applying the profile from the heartbeat reply. ~45 min.
 29. **Integrate with `curl` before the band is ready** — this decouples C from A entirely:
     ```bash
     curl -X POST http://192.168.1.42:8000/v1/events    -H 'Content-Type: application/json' -d @fixtures/fall_event.json
@@ -1441,11 +1562,11 @@ Team of 4: **A** = firmware (sketch) · **B** = band Linux, BLE scan + uplink ·
 
 33. Run **§7.2** (IMU) in full. Log everything to CSV.
 34. Run **§8.4** (RF site survey) in full: measure `tx_power_1m` ×4, 30 s fingerprint walk per room, hallways labelled `transit`, verify walk-through.
-35. Run §10.2 (12 fall cases) and §10.3 (8 RF cases). **Fix by tuning `config.json` only — no sketch edits after hour 18 unless something is genuinely broken.**
+35. Run §10.2 (12 fall cases, plus 13–17 if the walking profile is built) and §10.3 (8 RF cases). **Fix by tuning `config.json` only — no sketch edits after hour 18 unless something is genuinely broken.**
 
 ### H18–H21 · B2B side (D + C)
 
-36. Webcam → 0.2 Hz frame sampler → local VLM → `{ate, walked, inactive_minutes}` → `/v1/events` as `inactivity_alert`.
+36. *(Stretch — not built as of H6, second on the team's cut list.)* Webcam → the camera pipeline in `TECHNICAL_PRD.md` §6 (motion → person detect → keyframes → local VLM → events). An earlier draft here described a separate 0.2 Hz sampler; the PRD's design is the one to build (`DECISIONS.md` D-012).
 37. Staff dashboard: bands, **room timeline per resident**, and the camera events on one page. The room timeline is the most visually convincing artifact you have — it is a whole day of a person's life in one strip.
 
 ### H21–H23 · Harden and re-survey in the demo space
@@ -1577,7 +1698,7 @@ Bind it to a hotkey. **If you use this on stage, say so out loud.** "This is a r
 | Tier | Source | Trigger to drop to it | Accuracy | What the hub reports | What the call says |
 |---|---|---|---|---|---|
 | **1** | **BLE beacons + Wi-Fi** | *(normal)* | room-level, `conf` 0.7–0.95 | `room`, `source: "ble_fingerprint"` | "Nancy fell **in the bathroom**" |
-| **1b** | **iPhone beacon scanner** posting the same `fallband.rfscan.v1` | UNO Q BLE dead at **H6 gate** | same as tier 1 | `source: "ble_fingerprint_phone"` | same |
+| **1b** | **Spare ESP32-S3 scanner** (or a Mac running `bleak` on the bench) posting the same RF scan payload — **not an iPhone** (iOS hides iBeacon adverts; no Web Bluetooth in Safari) | UNO Q BLE dead at **H6 gate** | same as tier 1 | `source: "ble_fingerprint_esp32"` | same |
 | **2** | **Wi-Fi RSSI only** | ≥ 3 beacons missing, or no BLE adapter | **coarse, unstable in a crowded venue (§10.4)** | `room` **only if `conf ≥ 0.55`**, else `location_unknown`; `source: "wifi_fingerprint"`, `degraded: true` | "Nancy fell — **probably** the kitchen" or no room at all |
 | **3** | **Manual zone button** | no usable RF at all | exact, but stale | `source: "manual"` + `age_ms`; **expires after 30 min** | "Nancy fell — last known zone **bedroom**, tagged 12 minutes ago" |
 | **4** | **`location_unknown`** | everything above failed or `conf < 0.55` | none | `room: null`, `source: "none"` | "Nancy fell — **location unknown**" |
@@ -1620,6 +1741,8 @@ Nothing here is confirmed by vendor documentation. Do not treat any of it as fac
 | 18 | **MIT / eduroam client isolation.** Whether the campus network passes band→Mac HTTP is unknown and policy-dependent. **Bring a phone hotspot and force it to 5 GHz. This is the single most likely cause of a dead demo.** | **`[UNVERIFIED]` — bring hotspot** |
 | 19 | **Wi-Fi fingerprint stability in the venue.** §10.4 argues it will be poor with ~1000 phones and hundreds of transient hotspot BSSIDs. That's reasoning from first principles, not measurement. **Measure it on arrival** — `iw dev wlan0 scan | grep -c SSID` twice, 5 minutes apart, and compare. Either way, demo on beacons. | **`[UNVERIFIED]` — measure on site** |
 | 20 | **Prices and stock move.** Every figure carries a URL and the date 2026-09-19. Re-check before ordering. | **verify live** |
+| 21 | **Forearm step detection accuracy** (§6.9). Step peaks at the forearm mix heel strike with arm swing; the 1.10 g peak gate, 300 ms spacing and 1.2–2.5 Hz band are starting values. Count 50 real steps against the detector at hour 15 and adjust. Heavy steps may not reach the 2.5 g floor at the forearm at all — that changes how the expo demo looks (`TECHNICAL_PRD.md` §8.7), not whether the profile works. | **`[UNVERIFIED]` — measure** |
+| 22 | **Can the App Lab app's Python reach Bluetooth and the Wi-Fi scanner?** §8.2's radio check runs over SSH on the host. If App Lab runs `python/main.py` in a container (it appears to), BlueZ over D-Bus and `iw` scans may need extra access. Run `bleak` and `iw dev wlan0 scan` **from inside the app** at hour 1, not just from SSH. | **`[UNVERIFIED]` — test at H1** |
 
 ### Primary sources
 

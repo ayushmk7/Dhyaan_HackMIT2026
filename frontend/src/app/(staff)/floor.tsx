@@ -2,15 +2,32 @@
 import { router } from 'expo-router';
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import { Screen, Txt } from '@/components';
+import { ErrorState, LoadingState, Screen, Txt } from '@/components';
 import { useResidents } from '@/lib/hooks';
 import { useLive } from '@/store/live';
 import { palette, radius, sp, stateColor } from '@/theme/tokens';
 
 export default function Floor() {
-  const { data } = useResidents();
+  const { data, isLoading, isError, refetch } = useResidents();
   const liveStates = useLive((s) => s.states);
   const liveLocations = useLive((s) => s.locations);
+
+  if (isLoading && !data) {
+    return (
+      <Screen>
+        <Txt kind="display">Floor 2</Txt>
+        <LoadingState label="Loading rooms…" />
+      </Screen>
+    );
+  }
+  if (isError && !data) {
+    return (
+      <Screen>
+        <Txt kind="display">Floor 2</Txt>
+        <ErrorState message="Couldn’t reach the floor list." onRetry={refetch} />
+      </Screen>
+    );
+  }
 
   const rooms = (data ?? [])
     .filter((r) => r.id !== 'res_eleanor')

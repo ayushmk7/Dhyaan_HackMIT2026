@@ -10,7 +10,7 @@ per screen — see TECHNICAL_PRD §10.1 (screens) and §10.5 (API contract).
 # this file back to a contract the rest of the backend doesn't implement.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 
 from . import live
+from ..baseline import COUNT, FEATURE_META
 from ..db import db
 from ..deps import require_app_key
 from ..events import EVENT_TYPES, emit, recent
@@ -228,6 +229,175 @@ async def day_rollup(resident_id: str, date: str | None = Query(None, descriptio
 
 
 # ---------------------------------------------------------------------------
+# Baselines / summaries / location history / raw event lookup
+# ---------------------------------------------------------------------------
+
+# ponytail: app/baseline.py's FEATURE_META has no unit column, but every
+# feature name it defines already carries its own unit as a suffix (_min,
+# _s/_h for duration, _frac for a fraction) and every COUNT-kind feature is a
+# plain "count" per day — that's the existing convention, not a second table
+# to keep in sync. Upgrade: a real `unit` field on FEATURE_META the day a
+# feature ever breaks this naming pattern.
+def _unit_for(feature: str, kind: str | None) -> str:
+    if kind == COUNT:
+        return "count"
+    if feature.endswith("_min"):
+        return "min"
+    if feature.endswith("_h"):
+        return "h"
+    if feature.endswith("_frac"):
+        return "fraction"
+    if feature.endswith("_s"):
+        return "s"
+    return "value"
+
+
+@router.get("/residents/{resident_id}/baselines")
+async def resident_baselines(resident_id: str):
+    d = db()
+    if not await d.residents.find_one({"_id": resident_id}, {"_id": 1}):
+        raise HTTPException(404, "resident not found")
+
+    rows = await d.baselines.find({"resident_id": resident_id}).sort("feature", 1).to_list(None)
+    out = []
+    for r in rows:
+        meta = FEATURE_META.get(r["feature"])
+        kind, direction = (meta[0], meta[1]) if meta else (None, None)
+        out.append({
+            "feature": r["feature"],
+            "mu": r.get("mu"),
+            "mad": r.get("mad"),
+            "lam": r.get("lam"),
+            "n_obs": r.get("n_obs"),
+            # Cold-start rows are flagged, never hidden — a family screen that
+            # silently drops them looks like "no data" instead of "not enough
+            # history yet".
+            "cold_start": bool(r.get("cold_start")),
+            "last_value": r.get("last_value"),
+            "updated_at": r.get("updated_at"),
+            "unit": _unit_for(r["feature"], kind),
+            "direction": direction,
+        })
+    return out
+
+
+@router.get("/residents/{resident_id}/summaries")
+async def resident_summaries(resident_id: str, days: int = Query(7, ge=1, le=90)):
+    d = db()
+    if not await d.residents.find_one({"_id": resident_id}, {"_id": 1}):
+        raise HTTPException(404, "resident not found")
+
+    summaries = await d.events.find(
+        {"resident_id": resident_id, "type": "daily_summary"}
+    ).sort("ts_epoch", -1).limit(days).to_list(None)
+
+    out = []
+    for s in summaries:
+        payload = s.get("payload") or {}
+        date_local = payload.get("date_local") or s["ts"][:10]
+        deviations = await d.events.find({
+            "resident_id": resident_id, "type": "baseline_deviation",
+            "payload.date_local": date_local,
+        }).sort("ts_epoch", 1).to_list(None)
+        out.append({
+            "date": date_local,
+            "narrative": payload.get("narrative") or s.get("embedding_text"),
+            "deviations": [
+                {
+                    "feature": (dv.get("payload") or {}).get("feature"),
+                    "severity": (dv.get("payload") or {}).get("severity"),
+                    "text": dv.get("embedding_text"),
+                }
+                for dv in deviations
+            ],
+        })
+    return out
+
+
+@router.get("/residents/{resident_id}/location/history")
+async def location_history(resident_id: str, date: str = Query(..., description="YYYY-MM-DD")):
+    d = db()
+    r = await d.residents.find_one({"_id": resident_id}, {"timezone": 1})
+    if not r:
+        raise HTTPException(404, "resident not found")
+    tz = ZoneInfo(r.get("timezone") or "UTC")
+
+    try:
+        day = datetime.strptime(date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(422, "date must be YYYY-MM-DD")
+
+    start = datetime(day.year, day.month, day.day, tzinfo=tz)
+    end = start + timedelta(days=1)
+    start_epoch, end_epoch = int(start.timestamp()), int(end.timestamp())
+
+    zevents = await d.events.find({
+        "resident_id": resident_id,
+        "type": {"$in": ["zone_entered", "zone_exited"]},
+        "ts_epoch": {"$gte": start_epoch, "$lt": end_epoch},
+    }).sort("ts_epoch", 1).to_list(None)
+
+    # ponytail: segments come only from zone_entered/zone_exited transition
+    # boundaries. zone_dwell is a same-zone "still here" ping with no boundary
+    # of its own, so it's not queried at all here. A day that starts mid-visit
+    # (the resident was already in a zone before local midnight) has no
+    # zone_entered inside the window, so that first stretch is silently
+    # dropped rather than back-filled from the prior day's last event —
+    # that's the gap-attribution rule this endpoint picks. Upgrade: look back
+    # across midnight for the nearest zone_entered before `start_epoch`.
+    segments = []
+    cur = None
+    for e in zevents:
+        if e["type"] == "zone_entered":
+            if cur:
+                cur["to_epoch"] = e["ts_epoch"]
+                segments.append(cur)
+            cur = {
+                "zone": e["zone"],
+                "from_epoch": e["ts_epoch"],
+                "method": (e.get("payload") or {}).get("method"),
+                "confidence": e.get("confidence"),
+            }
+        elif e["type"] == "zone_exited" and cur and cur["zone"] == e["zone"]:
+            cur["to_epoch"] = e["ts_epoch"]
+            segments.append(cur)
+            cur = None
+
+    if cur:
+        # An open final segment (resident still there, no exit recorded yet)
+        # runs to now — capped at the end of the requested day so a past date
+        # doesn't report a multi-day-long "open" segment.
+        now_epoch = int(datetime.now(timezone.utc).timestamp())
+        cur["to_epoch"] = min(now_epoch, end_epoch)
+        segments.append(cur)
+
+    def _iso(epoch: int) -> str:
+        return datetime.fromtimestamp(epoch, tz=timezone.utc).astimezone(tz).isoformat()
+
+    return [
+        {
+            "zone": s["zone"],
+            "from": _iso(s["from_epoch"]),
+            "to": _iso(s["to_epoch"]),
+            "seconds": max(0, s["to_epoch"] - s["from_epoch"]),
+            "method": s["method"],
+            "confidence": s["confidence"],
+        }
+        for s in segments
+    ]
+
+
+@router.get("/events/{event_id}")
+async def get_event(event_id: str):
+    """Trivial single-event lookup — saves the app a full-timeline scan for a
+    detail it already knows the id of (e.g. a notification deep link)."""
+    ev = await db().events.find_one({"_id": event_id})
+    if not ev:
+        raise HTTPException(404, "event not found")
+    return _ser(ev)
+
+
+# ---------------------------------------------------------------------------
 # Alerts / triage
 # ---------------------------------------------------------------------------
 
@@ -268,17 +438,42 @@ async def get_alert(alert_id: str):
 
     trigger = await d.events.find_one({"_id": a["trigger_event_id"]}) if a.get("trigger_event_id") else None
 
-    # ponytail: there's no populated `calls` collection yet (app/voice.py's stub
-    # only emits Events, it doesn't write a row anywhere else), so the call log
-    # is reconstructed from voice-source events tagged with this alert. Upgrade:
-    # read `db().calls` directly once something writes to it.
-    call_events = await d.events.find({
-        "resident_id": a["resident_id"], "source": "voice", "payload.alert_id": alert_id,
+    # `db().calls` is now populated by app/voice.py's stub and by the Twilio
+    # adapter, and carries what the alert screen actually renders: who was dialled,
+    # in what role, the transcript and whether the call was simulated. Fall back to
+    # reconstructing from voice events for alerts raised before that existed.
+    call_rows = await d.calls.find({"alert_id": alert_id}).sort("started_at", 1).to_list(None)
+    if not call_rows:
+        call_rows = await d.events.find({
+            "resident_id": a["resident_id"], "source": "voice",
+            "payload.alert_id": alert_id,
+        }).sort("ts_epoch", 1).to_list(None)
+    call_events = call_rows
+
+    # The alert takeover screen replays the escalation as it happened. Every FSM
+    # transition already writes an event (app/alerts.py::_apply), so the ladder is
+    # reconstructable rather than needing its own table.
+    ladder_events = await d.events.find({
+        "source": "derived", "payload.alert_id": alert_id,
     }).sort("ts_epoch", 1).to_list(None)
+    ladder = [
+        {
+            "at": e["ts"],
+            "from_state": (e.get("payload") or {}).get("from_state"),
+            "state": (e.get("payload") or {}).get("to_state"),
+            "trigger": (e.get("payload") or {}).get("trigger"),
+            "detail": (e.get("payload") or {}).get("detail"),
+        }
+        for e in ladder_events
+        # The alert-open event carries an alert_id but no transition, so it would
+        # render as a blank "None -> None" row at the top of the replay.
+        if (e.get("payload") or {}).get("to_state")
+    ]
 
     out = _ser(a)
     out["trigger_event"] = _ser(trigger) if trigger else None
     out["calls"] = [_ser(c) for c in call_events]
+    out["ladder"] = ladder
     return out
 
 
@@ -360,7 +555,26 @@ async def alert_feedback(alert_id: str, body: FeedbackBody):
     d = db()
     a = await d.alerts.find_one({"_id": alert_id})
     if not a:
-        raise HTTPException(404, "alert not found")
+        # The family gives feedback from the TIMELINE, where the thing on screen
+        # is an event, not an alert ("that was fine, she was at her sister's").
+        # Accept either id: look for an alert triggered by this event, and if the
+        # event stands alone (a baseline deviation has no alert) still record the
+        # verdict against the event, because that is what the learner consumes.
+        a = await d.alerts.find_one({"trigger_event_id": alert_id})
+        if not a:
+            ev = await d.events.find_one({"_id": alert_id})
+            if not ev:
+                raise HTTPException(404, "no alert or event with that id")
+            fb = await emit(
+                resident_id=ev["resident_id"], source="manual", type="feedback_given",
+                embedding_text=f"Feedback on {ev['type']}: {body.verdict}"[:400],
+                payload={"event_id": alert_id, "verdict": body.verdict,
+                         "reason": body.reason, "scope": body.scope},
+            )
+            await d.events.update_one({"_id": alert_id},
+                                      {"$set": {"review_state": body.verdict}})
+            return {"ok": True, "feedback_event_id": fb["_id"]}
+        alert_id = a["_id"]
 
     trigger_id = a.get("trigger_event_id")
     text = f"Feedback on alert {alert_id}: {body.verdict}"

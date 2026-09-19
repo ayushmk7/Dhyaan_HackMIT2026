@@ -173,7 +173,7 @@ export function generateEleanor(now: number) {
           location: { state: 'ok', detail: 'Home all day' },
         },
         deviations: dinnerSkipped
-          ? [{ feature: 'meal_count', text: 'Dinner not observed — usually eats at about 6:20 PM' }]
+          ? [{ feature: 'meal_count', severity: 'warn', text: 'Dinner not observed — usually eats at about 6:20 PM' }]
           : [],
       });
     }
@@ -245,11 +245,40 @@ export const eleanorContacts: Contact[] = [
   { id: 'con_dev', name: 'Dev Sharma', phone_e164: '+16175550178', relationship: 'Son', ladder_order: 2 },
 ];
 
+// ponytail: lam/cold_start/last_value/updated_at/direction are real
+// contract fields with no mock-meaningful behavior behind them (no live
+// anomaly model here) — filled with plausible constants per row rather than
+// left off, so this array satisfies BaselineFeature the same way the real
+// backend's response would.
+const withMockRealFields = (series: number[], direction: string) => ({
+  lam: 0.1,
+  cold_start: false,
+  last_value: series[series.length - 1],
+  updated_at: iso(Date.now()),
+  direction,
+});
+
 export const eleanorBaselines: BaselineFeature[] = [
-  { feature: 'wake_time_min', label: 'Wake time', mu: 6.7, mad: 0.4, n_obs: 21, unit: 'AM', series: [6.6, 6.8, 6.5, 6.7, 6.9, 6.6, 6.7, 6.8, 6.5, 6.6, 6.7, 6.9, 6.7, 6.6] },
-  { feature: 'meal_count', label: 'Meals per day', mu: 3, mad: 0.3, n_obs: 21, unit: 'meals', series: [3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 2, 2, 2] },
-  { feature: 'walk_count', label: 'Walks per day', mu: 2, mad: 0.4, n_obs: 21, unit: 'walks', series: [2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1] },
-  { feature: 'night_exits', label: 'Nights with activity', mu: 0.2, mad: 0.2, n_obs: 21, unit: 'times up', series: [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0] },
+  {
+    feature: 'wake_time_min', label: 'Wake time', mu: 6.7, mad: 0.4, n_obs: 21, unit: 'AM',
+    series: [6.6, 6.8, 6.5, 6.7, 6.9, 6.6, 6.7, 6.8, 6.5, 6.6, 6.7, 6.9, 6.7, 6.6],
+    ...withMockRealFields([6.6, 6.8, 6.5, 6.7, 6.9, 6.6, 6.7, 6.8, 6.5, 6.6, 6.7, 6.9, 6.7, 6.6], 'either'),
+  },
+  {
+    feature: 'meal_count', label: 'Meals per day', mu: 3, mad: 0.3, n_obs: 21, unit: 'meals',
+    series: [3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 2, 2, 2],
+    ...withMockRealFields([3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 2, 2, 2], 'low'),
+  },
+  {
+    feature: 'walk_count', label: 'Walks per day', mu: 2, mad: 0.4, n_obs: 21, unit: 'walks',
+    series: [2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1],
+    ...withMockRealFields([2, 2, 3, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1], 'low'),
+  },
+  {
+    feature: 'night_exits', label: 'Nights with activity', mu: 0.2, mad: 0.2, n_obs: 21, unit: 'times up',
+    series: [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+    ...withMockRealFields([0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], 'high'),
+  },
 ];
 
 export const homeZones = [
