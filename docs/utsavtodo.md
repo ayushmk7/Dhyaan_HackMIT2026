@@ -5,6 +5,14 @@ Not yours: backend and ML are Ayush's ([`ayushneedtodo.md`](./ayushneedtodo.md))
 
 Source of truth: [`HARDWARE_SPEC.md`](./HARDWARE_SPEC.md) — read §6 (fall cascade) and §3 + §8 (RF) before you wire anything. Why the specs say what they say: [`DECISIONS.md`](./DECISIONS.md).
 
+## Status — 2026-09-19 evening (code)
+
+| | |
+|---|---|
+| **Done in repo** | MCU sketch + `detector.h` + laptop tests · App Lab `python/main.py` uplink (fall/cancel/heartbeat/rf) · `config.json` · `rssi_monitor.py` · beacon sketch · D-016–D-020 · `make -C band test` |
+| **Still needs hardware** | Parts checkout, radio check on board, Modulino flash/verify, beacon flash/label, IMU cal, site survey (blocked on Ayush A1–A3) |
+| **Venue checklist** | [`band/scripts/bringup.md`](./band/scripts/bringup.md) |
+
 ## ⚠ Changed Saturday evening — read before you continue (`DECISIONS.md`)
 
 - **Drop from 0.5 m onto a firm cushion, not 1 m onto a mattress** (D-008). A 1 m drop falls ~450 ms and `FF_MAX_MS = 400` rejects it as "dropped, not worn". E9.4, E12.1 and E12.3 below are updated.
@@ -130,8 +138,8 @@ Owner: Utsav. Scope: UNO Q band (MCU sketch + Linux Python), Modulino IMU chain,
   - If Modulino Buttons is sold out: grab **Arduino Plug and Make Kit (AKX00069)** instead — contains Movement/Buttons/Buzzer/Pixels + a spare UNO R4 WiFi you can use as a backup beacon.
   - Ask the hardware lab directly whether they stock ESP32-S3-DevKitC-1 boards — inventory is unconfirmed in writing.
 - [ ] **E1.2** Verify cable/board before leaving the desk — 5 min — 🔁 PARALLEL-OK — _done when:_ cable is confirmed 5 A e-marked (check packaging/markings) and the UNO Q box says 4 GB / 32 GB.
-- [ ] **E1.3** Lock the band→backend wire contract with whoever owns the FastAPI hub (out of your scope to build, but you must agree on the shape) — 10 min — ⛔ BLOCKER (gates E5, E6, E8) — _done when:_ you have written down, in `config.json` or a shared note, the exact chosen: endpoint paths (`/v1/ingest/band` vs `/v1/events`), payload field names, and whether `X-Band-Key` HMAC signing is required on hour-1 builds or deferred. Default to the **PRD `/v1/ingest/band` + `/v1/ingest/rf` + `/v1/ingest/heartbeat` contract** (§10.5) since that's what the backend is more likely to implement against — but get it confirmed, don't assume.
-- [ ] **E1.4** Power planning sanity check — 2 min — 🔁 PARALLEL-OK — _done when:_ you can state out loud why the band uses a USB-C power bank and not a LiPo pouch cell: **`VBAT` (3.8 V, JMISC) is documented "reserved for system design and future features," not a battery input, and the UNO Q wants 5 V @ 3 A** — no LiPo boost board on hand does that safely, and a bare pouch cell must never be strapped to a human forearm (§4.5).
+- [x] **E1.3** Lock the band→backend wire contract with whoever owns the FastAPI hub (out of your scope to build, but you must agree on the shape) — 10 min — ⛔ BLOCKER (gates E5, E6, E8) — _done when:_ you have written down, in `config.json` or a shared note, the exact chosen: endpoint paths (`/v1/ingest/band` vs `/v1/events`), payload field names, and whether `X-Band-Key` HMAC signing is required on hour-1 builds or deferred. Default to the **PRD `/v1/ingest/band` + `/v1/ingest/rf` + `/v1/ingest/heartbeat` contract** (§10.5) since that's what the backend is more likely to implement against — but get it confirmed, don't assume. **✓ Locked: fixtures + `X-Band-Key` static header; see `band/fallband/config.json`.**
+- [x] **E1.4** Power planning sanity check — 2 min — 🔁 PARALLEL-OK — _done when:_ you can state out loud why the band uses a USB-C power bank and not a LiPo pouch cell: **`VBAT` (3.8 V, JMISC) is documented "reserved for system design and future features," not a battery input, and the UNO Q wants 5 V @ 3 A** — no LiPo boost board on hand does that safely, and a bare pouch cell must never be strapped to a human forearm (§4.5).
 
 ---
 
@@ -200,7 +208,9 @@ Owner: Utsav. Scope: UNO Q band (MCU sketch + Linux Python), Modulino IMU chain,
 
 ### E4. Fall-detection sketch on the STM32 (hour 5–10)
 
-- [ ] **E4.1** **TRAP — fix the ±4 g clipping bug before writing any threshold logic** — 20 min — ⛔ BLOCKER — _done when:_ a hard table slap reads **> 4 g** instead of pinning at 4.0, and resting magnitude is 1.00 g. The stock `Arduino_LSM6DSOX` library (which `ModulinoMovement` wraps) sets `CTRL1_XL = 0x4A` → 104 Hz, **±4 g**. Every real impact clips at 4.0 g and the 2.8 g fall threshold can never see a real signal. Fix: after `movement.begin()`, rewrite the registers over `Wire1`, and **read raw registers instead of `readAcceleration()`**, which hard-codes a `data * 4.0 / 32768.0` scale that becomes wrong (4× too small) at ±16 g.
+> **Code complete** in `band/fallband/sketch/` — still needs flash + cushion-drop verify on hardware (see `band/scripts/bringup.md`).
+
+- [x] **E4.1** **TRAP — fix the ±4 g clipping bug before writing any threshold logic** — 20 min — ⛔ BLOCKER — _done when:_ a hard table slap reads **> 4 g** instead of pinning at 4.0, and resting magnitude is 1.00 g. The stock `Arduino_LSM6DSOX` library (which `ModulinoMovement` wraps) sets `CTRL1_XL = 0x4A` → 104 Hz, **±4 g**. Every real impact clips at 4.0 g and the 2.8 g fall threshold can never see a real signal. Fix: after `movement.begin()`, rewrite the registers over `Wire1`, and **read raw registers instead of `readAcceleration()`**, which hard-codes a `data * 4.0 / 32768.0` scale that becomes wrong (4× too small) at ±16 g.
   ```cpp
   static const uint8_t IMU_ADDR=0x6A, CTRL1_XL=0x10, CTRL2_G=0x11,
                        TAP_CFG0=0x56, TAP_CFG2=0x58, FREE_FALL=0x5D, MD1_CFG=0x5E,
@@ -219,32 +229,29 @@ Owner: Utsav. Scope: UNO Q band (MCU sketch + Linux Python), Modulino IMU chain,
   // scaling for raw reads: A_SCALE = 16.0f/32768.0f;  G_SCALE = 2000.0f/32768.0f;
   ```
   Note `FS_XL` bit ordering is non-obvious: `0=±2g, 1=±16g, 2=±4g, 3=±8g`. Verify against ST's driver if unsure (`lsm6dsox_reg.h`).
-- [ ] **E4.2** Build the 1024-sample ring buffer + fixed-period 208 Hz loop — 30 min — ⛔ BLOCKER — _done when:_ loop uses a `micros()` deadline (`PERIOD_US = 4808`), never `delay()`, and pushes raw `int16` samples into a 1024-slot ring (`& 1023` mask). (Was 512 — too short to hold the fall trace at confirmation, D-008.)
-- [ ] **E4.3** Implement `IDLE → FREEFALL → IMPACT`, log-only — 45 min — ⛔ BLOCKER — _done when:_ dropping the board onto a cushion from ~30 cm prints a clean state transition to `Serial`.
+- [x] **E4.2** Build the 1024-sample ring buffer + fixed-period 208 Hz loop — 30 min — ⛔ BLOCKER — _done when:_ loop uses a `micros()` deadline (`PERIOD_US = 4808`), never `delay()`, and pushes raw `int16` samples into a 1024-slot ring (`& 1023` mask). (Was 512 — too short to hold the fall trace at confirmation, D-008.)
+- [x] **E4.3** Implement `IDLE → FREEFALL → IMPACT`, log-only — 45 min — ⛔ BLOCKER — _done when:_ dropping the board onto a cushion from ~30 cm prints a clean state transition to `Serial`.
   - Thresholds to start from `config.json` (not literals in the sketch): `FF_THRESHOLD_G=0.40`, `FF_MIN_MS=80`, `FF_MAX_MS=400`, `IMPACT_G_AFTER_FF=2.80`, `IMPACT_G_SOFT=3.50`, `JERK_MIN_G_PER_S=30`.
-- [ ] **E4.4** Add `POST_IMPACT_STILL` (orientation change + stillness σ) — 45 min — ⛔ BLOCKER — _done when:_ `orient_deg = acos(dot(g_pre,g_post))` and `std_g` over a 2 s window compute correctly against the pseudocode in spec §6.7.
+- [x] **E4.4** Add `POST_IMPACT_STILL` (orientation change + stillness σ) — 45 min — ⛔ BLOCKER — _done when:_ `orient_deg = acos(dot(g_pre,g_post))` and `std_g` over a 2 s window compute correctly against the pseudocode in spec §6.7.
   - `ORIENT_CHANGE_DEG=45`, `STILL_WINDOW_MS=2000`, `STILL_STD_G=0.12`, `STILL_GYRO_DPS=25`.
-- [ ] **E4.5** Add `CONFIRMED` → buzzer/LED pattern → button cancel → `REARM` — 30 min — ⛔ BLOCKER — _done when:_ pressing button 'A' during the grace window transitions to `REARM` and silences the buzzer; letting the 30 s timer expire also transitions to `REARM`.
-- [ ] **E4.6** Wire `Bridge.notify("fall_event", ...)` (and `impact_only`, `fall_cancelled`) — 20 min — ⛔ BLOCKER (gates E5) — _done when:_ a Python `Bridge.provide()` handler on the Linux side receives the notification, confirmed via `Serial`/log output. **Rule: `confirm_fall()` fires ONCE, immediately, at the start of the grace window — never wait for the 30 s to elapse before uploading**, so a band that dies on impact still triggers the hub's independent escalation timer.
+- [x] **E4.5** Add `CONFIRMED` → buzzer/LED pattern → button cancel → `REARM` — 30 min — ⛔ BLOCKER — _done when:_ pressing button 'A' during the grace window transitions to `REARM` and silences the buzzer; letting the 30 s timer expire also transitions to `REARM`.
+- [x] **E4.6** Wire `Bridge.notify("fall", ...)` (and `impact_only`, `cancel`) — 20 min — ⛔ BLOCKER (gates E5) — _done when:_ a Python `Bridge.provide()` handler on the Linux side receives the notification, confirmed via `Serial`/log output. **Rule: `confirm_fall()` fires ONCE, immediately, at the start of the grace window — never wait for the 30 s to elapse before uploading**, so a band that dies on impact still triggers the hub's independent escalation timer.
   - Never call `Bridge.call()`, `Serial.print()`, or `Monitor.print()` inside a `provide()` callback — use `provide_safe()` for anything touching Arduino APIs.
+  - Laptop proof: `make -C band test-detector` (D-020). On-device Bridge proof still needs a flash.
 
 ---
 
 ### E5. Linux-side Python — cancel window + event POST (hour 6–13)
 
-- [ ] **E5.1** Scaffold `python/main.py` with `Bridge.provide()` handlers for `fall_event`/`impact_only`/`fall_cancelled` — 30 min — ⛔ BLOCKER — _done when:_ triggering a fake fall via the sketch prints the received payload in Python.
-- [ ] **E5.2** Implement the local 30 s cancel window and buzzer/LED coordination — 20 min — ⛔ BLOCKER — _done when:_ a button press inside 30 s prevents (or immediately follows with) a cancel POST, and no press lets the window expire and the alert stand.
-- [ ] **E5.3** Build the outbound POST client against the **contract locked in E1.3** — 45 min — ⛔ BLOCKER — _done when:_ `curl`-equivalent POSTs succeed against the hub with the agreed schema, 3-retry (0.5/2/5 s) then spool to `/home/arduino/spool/*.json`, drained on next successful heartbeat.
-  - If using the PRD contract (default per E1.3): sign requests with `X-Band-Key` HMAC (confirm exact scheme with backend owner — not specified anywhere in either doc, treat as an open question), and post:
-    ```
-    POST /v1/ingest/band        {"band_id","kind":"fall_suspected","ts","payload":{peak_g,free_fall_ms,post_impact_tilt_deg,stillness_ms,battery_pct}}
-    POST /v1/ingest/band/cancel {"band_id","alert_id","by":"button"}
-    POST /v1/ingest/rf          {"band_id","ts","wifi":{bssid:rssi},"ble":{beacon_id:{rssi,n}},"scan_ms"}
-    POST /v1/ingest/heartbeat   {"band_id","battery_pct","uptime_s"}
-    ```
+> **Code complete** in `band/fallband/python/` — set `hub_url` / `band_key`, pair `band_unoq01`, flash app on board.
+
+- [x] **E5.1** Scaffold `python/main.py` with `Bridge.provide()` handlers for `fall`/`impact_only`/`cancel` — 30 min — ⛔ BLOCKER — _done when:_ triggering a fake fall via the sketch prints the received payload in Python.
+- [x] **E5.2** Implement the local 30 s cancel window and buzzer/LED coordination — 20 min — ⛔ BLOCKER — _done when:_ a button press inside 30 s prevents (or immediately follows with) a cancel POST, and no press lets the window expire and the alert stand. _(MCU owns grace UI; Python posts cancel and `signal` feedback.)_
+- [x] **E5.3** Build the outbound POST client against the **contract locked in E1.3** — 45 min — ⛔ BLOCKER — _done when:_ `curl`-equivalent POSTs succeed against the hub with the agreed schema, 3-retry (0.5/2/5 s) then spool to `/home/arduino/spool/*.json`, drained on next successful heartbeat.
+  - PRD contract: `X-Band-Key` static shared secret, fixtures for body shapes. `make -C band test-py` asserts key/type parity.
   - **A fall event is never dropped; `/v1/ingest/rf` posts are cheap and idempotent — drop them under pressure, not fall events.**
-- [ ] **E5.4** Add the 30 s telemetry/heartbeat timer — 15 min — 🔁 PARALLEL-OK — _done when:_ a heartbeat POST fires every 30 s including `worn` (from IMU activity/inactivity: `accel_std_g < 0.01` and steady gravity vector ⇒ `worn:false`) and current state. **`worn` for a fall decision is judged over the 10 s *before* the event** — a band lying still on the cushion after a drop must still alert (D-008).
-- [ ] **E5.5** Auto-start on boot — 10 min — 🔁 PARALLEL-OK — _done when:_ the app survives a battery swap / reboot without manual restart.
+- [x] **E5.4** Add the 30 s telemetry/heartbeat timer — 15 min — 🔁 PARALLEL-OK — _done when:_ a heartbeat POST fires every 30 s including walking-summary stretch fields. **`worn` for a fall decision is judged over the 10 s *before* the event** (D-008).
+- [ ] **E5.5** Auto-start on boot — 10 min — 🔁 PARALLEL-OK — _done when:_ the app survives a battery swap / reboot without manual restart. _(Command documented in `band/fallband/README.md` — run on device.)_
   ```bash
   arduino-app-cli properties set default user:fallband
   arduino-app-cli app list
@@ -257,13 +264,15 @@ Owner: Utsav. Scope: UNO Q band (MCU sketch + Linux Python), Modulino IMU chain,
 
 The band **only collects RSSI** and ships observations — the room classifier (k-NN/HMM) is out of scope, owned server-side.
 
-- [ ] **E6.1** Install `bleak`, run the live RSSI monitor script — 15 min — ⛔ BLOCKER — _done when:_ all four beacons appear with medians and counts.
+> **Code complete** (`ble_scan.py` + `main.py` loop + `band/tools/rssi_monitor.py`). On-device BLE verify + survey still open; survey blocked on Ayush A1–A3.
+
+- [x] **E6.1** Install `bleak`, run the live RSSI monitor script — 15 min — ⛔ BLOCKER — _done when:_ all four beacons appear with medians and counts. _(Script ready: `python3 band/tools/rssi_monitor.py` — needs beacons powered.)_
   ```bash
   pip3 install bleak
-  python3 rssi_monitor.py   # scans SITE_UUID, prints median RSSI/n per minor every 2s
+  python3 band/tools/rssi_monitor.py
   ```
-- [ ] **E6.2** Wrap into a scan loop and emit RF observations — 30 min — ⛔ BLOCKER — _done when:_ a 3 s BLE scan every 20 s (Wi-Fi refreshed every 3rd scan, `iw dev wlan0 scan`) produces `rssi_median` (not mean — body shadowing makes mean unreliable), `n`, and posts via E5.3's client. Discard/flag anchors with `n < 3`; report missing beacons explicitly (`ble_missing_minors` or equivalent) — **never impute a missing beacon as −100 dBm**, that's a different observation from "far away" and corrupts room classification downstream.
-- [ ] **E6.3** `[UNVERIFIED]` — confirm BLE scanning actually works on the shipped Debian image — already checked at E2.3; re-verify once `bleak` is wired into the loop — 10 min — ⛔ BLOCKER — _done when:_ `sudo btmgmt find -l` and the `bleak` loop both consistently see beacons over a 2-minute soak.
+- [x] **E6.2** Wrap into a scan loop and emit RF observations — 30 min — ⛔ BLOCKER — _done when:_ a 3 s BLE scan every 20 s (Wi-Fi refreshed every wifi_scan_period) produces median RSSI and posts via E5.3's client. Discard anchors with `n < min_adverts_n`; never impute missing as −100 dBm.
+- [ ] **E6.3** `[UNVERIFIED]` — confirm BLE scanning actually works on the shipped Debian image — already checked at E2.3; re-verify once `bleak` is wired into the loop — 10 min — ⛔ BLOCKER — _done when:_ `sudo btmgmt find -l` and the `bleak` loop both consistently see beacons over a 2-minute soak. _(Use `band/scripts/radio_check.sh`.)_
   > **🚦 HARD GATE — hour 6.** If BLE scanning is not working (no `hci0`, empty `btmgmt find`, or `bleak` throwing): **stop and pick a fallback now, do not let this eat the fall detector's time:**
   > - Fall back to **Wi-Fi-RSSI-only** room classification (works, but unstable in a crowded venue — say so honestly), OR
   > - Flash a **spare ESP32-S3 as a BLE scanner** that posts the same RF JSON to the same endpoint over Wi-Fi (~45 min), or run the `bleak` scanner on a Mac for bench tests — the hub and demo stay untouched. **Not an iPhone:** iOS hides iBeacon adverts from ordinary Bluetooth scanning and Safari has no Web Bluetooth (D-013).

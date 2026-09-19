@@ -17,6 +17,7 @@ survey — fingerprints are tied to positions.
 
 ## Flash (one command per board)
 
+<<<<<<< HEAD
 One-time setup:
 ```sh
 brew install arduino-cli
@@ -25,6 +26,17 @@ arduino-cli config add board_manager.additional_urls https://espressif.github.io
 arduino-cli core update-index && arduino-cli core install esp32:esp32
 arduino-cli lib install NimBLE-Arduino
 ```
+=======
+## After flashing (don't skip)
+- Verify from a Mac: `python3 band/tools/rssi_monitor.py` — all four minors visible.
+- **Measure `MEASURED_POWER_1M` per beacon** (utsavtodo E8.1): hold the band 1.0 m
+  away, line of sight, take the 15 s median RSSI, write it into both the beacon's
+  sketch and `config.json → rf.beacons[].tx_power_1m`. The −59 default is only a guess
+  and every distance estimate scales off this byte.
+- Power each from any USB wall wart (mains — battery life is not a concern tonight).
+- Demo prop: unplugging one beacon mid-demo shows the `beacon_offline` event and the
+  degrade-to-unknown story (§3.5) — rehearse it once.
+>>>>>>> c894c0b (Add fallband Linux agent and close the hardware software gap.)
 
 Then, with the board on USB (`ls /dev/cu.usb*` to find the port):
 ```sh

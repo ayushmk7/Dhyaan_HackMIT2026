@@ -1,0 +1,5 @@
+# detector binary (built by make test-detector)
+tests/detector_test
+**/__pycache__/
+*.pyc
+.cache/

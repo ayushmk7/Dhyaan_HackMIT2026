@@ -262,6 +262,65 @@ urgent. Urgent at zero needs λ ≥ ln(100) ≈ 4.6. The seed script already use
 
 **Changed.** `TECHNICAL_PRD.md` §8.2 · `ayushneedtodo.md`.
 
+### D-016 · Demo hallways surveyed as `hallway`, not `transit`
+**Date:** 2026-09-19 · **Status:** Accepted
+
+**Context.** `HARDWARE_SPEC.md` §8.4 step 5 says label hallways `transit`, but the hub zone graph
+(`backend/app/location.py`) has `hallway` and no `transit` key. Fingerprints labelled `transit` would
+never match.
+
+**Decision.** For the taped expo floor plan, survey corridors as **`hallway`**. Four beacons stay on
+kitchen / bathroom / bedroom / front_door; hallway is identified by the mid-strength pattern. Demo
+adjacency (requested of Ayush as A3):
+
+```
+bedroom ── hallway ── bathroom
+              │
+              ├── kitchen
+              └── front_door ── OUTSIDE
+```
+
+**Changed.** `ayushextra.md` · band survey docs. **Follow-up:** Ayush A3 (loadable zone graph).
+
+### D-017 · MCU grace window follows hub `cancel_window_s`
+**Date:** 2026-09-19 · **Status:** Accepted
+
+**Decision.** On a successful `POST /v1/ingest/band` that returns `cancel_window_s`, the Linux agent
+calls `Bridge.call("set_param", "grace_s", …)` so the buzzer/LED cancel window matches the hub's
+independent timer. Defaults stay 30 s if the hub omits the field.
+
+**Changed.** `band/fallband/python/main.py` · `sketch.ino` `set_param("grace_s")`.
+
+### D-018 · Fall detector deviations from §6.7 pseudocode
+**Date:** 2026-09-19 · **Status:** Accepted
+
+**Decision.** `detector.h` implements §6.5–6.7 with four deliberate changes:
+1. `g_pre` is the mean over [−1.5 s, −0.5 s] from the ring, not a running EMA (EMA drags through free-fall).
+2. Stillness σ accumulates incrementally during `POST_IMPACT_STILL`.
+3. `worn` is snapshotted at impact from the preceding 10 s (D-008).
+4. Threshold defaults are compiled in (= §6.4) so the band still detects if Linux is down; `config.json`
+   overrides at boot via Bridge.
+
+**Changed.** `band/fallband/sketch/detector.h`.
+
+### D-019 · Physical band identity is `band_unoq01`
+**Date:** 2026-09-19 · **Status:** Accepted
+
+**Decision.** The real UNO Q posts as `band_unoq01` so simulator traffic (`band_a3f2`) stays separable
+in Mongo (`HARDWARE_INTEGRATION.md`). Seed / pair that id to `res_eleanor`. Until F-09/A4, firmware
+sends `battery_pct: 100` as a documented placeholder (`config.json → compat.battery_pct_placeholder`).
+
+**Changed.** `band/fallband/config.json` · `ayushextra.md` A8.
+
+### D-020 · Fall FSM is header-only and laptop-testable
+**Date:** 2026-09-19 · **Status:** Accepted
+
+**Decision.** `detector.h` has no Arduino headers so `band/tests/detector_test.cpp` can regression-test
+§10.2 synthetics with `make -C band test-detector` before the board exists. Sketch and tests share one
+implementation.
+
+**Changed.** `band/fallband/sketch/detector.h` · `band/tests/detector_test.cpp` · `band/Makefile`.
+
 ---
 
 ## Code follow-ups these decisions create

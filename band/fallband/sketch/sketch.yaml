@@ -1,0 +1,4 @@
+default_fqbn: arduino:zephyr:unoq
+libraries:
+  - Arduino_RouterBridge
+  - Arduino_Modulino
