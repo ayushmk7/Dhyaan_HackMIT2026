@@ -595,8 +595,15 @@ Split of responsibility:
 
 | Runs on | What |
 |---|---|
-| STM32U585 (Arduino sketch, 104 Hz IMU poll) | The threshold cascade. Deterministic, no OS jitter. Raises the interrupt. |
+| STM32U585 (Arduino sketch, **208 Hz IMU poll, ±16 g**) | The threshold cascade. Deterministic, no OS jitter. Notifies Linux over the Bridge. |
 | QRB2210 Debian (Python, App Lab) | 30 s local cancel window + buzzer/LED, Wi-Fi, HTTPS POST to backend, `band_still` heartbeat every 60 s |
+
+> **Sensor configuration is owned by `HARDWARE_SPEC.md` §6, and it overrides any number in this
+> document.** An earlier draft here said 104 Hz / ±8 g with a GPIO interrupt. That is wrong twice over:
+> the stock `Arduino_LSM6DSOX` library sets `CTRL1_XL = 0x4A` (±4 g), so a real impact **clips at 4.0 g**
+> and the 2.8 g threshold sits under a ceiling that flattens the very signal it is looking for — the fix
+> is `CTRL1_XL = 0x56` (208 Hz, ±16 g) with raw-register reads, because `readAcceleration()` hard-codes
+> a ÷4 scale. Read the hardware spec before writing firmware; the trap is silent.
 
 The cascade — four conditions, all must hold, within a 2.5 s window. These are threshold-based and we
 say so; we are not shipping a trained fall classifier in 24 hours.

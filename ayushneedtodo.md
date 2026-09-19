@@ -1,66 +1,100 @@
-# Ayush — what I need to do
+# Ayush — backend core + perception/intelligence
 
-Everything except **hardware/firmware** and the **React Native frontend**. Those are someone else's lane.
-Source of truth: [`TECHNICAL_PRD.md`](./TECHNICAL_PRD.md). Hardware: [`HARDWARE_SPEC.md`](./HARDWARE_SPEC.md). Product/demo: [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md).
+Your lanes: **A (backend core)** and **C (perception + intelligence)**.
+Not yours: voice and frontend are Abhinav's ([`abhinavtodo.md`](./abhinavtodo.md)), hardware is Utsav's ([`utsavtodo.md`](./utsavtodo.md)).
 
-## How to use this
+Source of truth: [`TECHNICAL_PRD.md`](./TECHNICAL_PRD.md) · [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md)
 
-Three lanes, A/B/C. They are mostly parallel after the first hour, but **A1 gates everything** — nobody can emit an event until the event table and `emit()` exist. Work A1 first even if you'd rather play with the voice agent.
+## Do these in the first 15 minutes
 
-- `⛔ BLOCKER` — someone else is stuck until this is done. Do it now.
-- `🔁 PARALLEL-OK` — hand it to a teammate or do it while something downloads.
-- `_done when:_` — if you can't run the check, the task isn't done. No "mostly working".
+- [ ] **Z1** Start the local model downloads in the background (C1.1). Multi-GB. They will not finish at hour 18. — 5 min
+- [ ] **Z2** Get an Anthropic API key working; check current model IDs with the `claude-api` skill rather than trusting memory. — 5 min
+- [ ] **Z3** Create the repo skeleton and push it, so Abhinav and Utsav have somewhere to commit. — 10 min — ⛔ BLOCKER
+- [ ] **Z4** Write the four interface fixtures as `.json` files in `fixtures/` (band event, ingest response, websocket alert push, RSSI scan) — even with made-up values. Both of them are blocked on the shapes, not on your code. — 20 min — ⛔ BLOCKER
 
-## Do these in the first 15 minutes, before anything else
+**You are the blocker for two other people.** A1 (schema + `emit()`) and the fixtures gate everything they do. Do them before you touch a VLM.
 
-These have long lead times or external dependencies that will not get faster at hour 18.
+## The clock
 
-- [ ] **Z1** Start the local model downloads in the background (see C1.1). Multi-GB. They will not finish later. — 5 min
-- [ ] **Z2** Create the Twilio account and verify every phone number that will be dialled on stage, including a judge's if you dare (see B1.1). Trial accounts refuse unverified numbers. — 15 min — ⛔ BLOCKER
-- [ ] **Z3** Get the Deepgram API key and run one hello-world call against it (B1.2). — 10 min
-- [ ] **Z4** Get an Anthropic API key working, and check current model IDs with the `claude-api` skill rather than trusting memory. — 5 min
-- [ ] **Z5** Confirm at check-in that the hardware hub actually has ESP32 boards and a spare IMU. If not, the RF lane changes shape today, not tomorrow. — 10 min
+Hacking started **Saturday 11:00** and stops **Sunday 11:00**. Expo judging is **Sunday 12:00–14:30**, panel judging 14:45–16:45. Hour numbers below are hours since Saturday 11:00.
 
-## The critical path
+| Hour | Clock | Gate |
+|---|---|---|
+| H0 | Sat 11:00 | Start |
+| H6 | Sat 17:00 | Hard gates on anything with an external dependency |
+| H12 | Sat 23:00 | Feature freeze on anything not on the critical path |
+| **H13** | **Sun 00:00** | **⛔ Plume project must exist or you cannot be judged** |
+| H18 | Sun 05:00 | Integration freeze — no new code paths after this |
+| H22 | Sun 09:00 | Rehearse the demo three times, on the real hardware |
+| H24 | Sun 11:00 | Hacking stops |
 
-Everything else is decoration hanging off this line. If you are behind, cut decoration, never the line.
+## The critical path — all three of you sit on it
 
 ```
-A1 schema + emit()  →  A3 ingest endpoint  →  A4 alerts FSM
-                                                    ↓
-                                        B3 outbound call fires
-                                                    ↓
-                                        B4 Deepgram agent classifies
-                                                    ↓
-                                        B5 escalation reaches a human
+Utsav: band fires an event   →   Ayush: ingest + FSM   →   Abhinav: the phone rings
+                                         ↓
+                              Abhinav: agent classifies the answer
+                                         ↓
+                              Ayush: FSM escalates   →   Abhinav: family's phone lights up
 ```
 
-**That chain is the demo.** A fall event goes in, a phone rings, a person answers, the right human gets called. Everything in lane C (VLM, localization, baseline, RAG) makes it a *product* and wins the data-flavoured prizes, but if the chain above does not run end to end, you have nothing to show a judge.
+**That chain is the demo.** A fall goes in, a phone rings, a person answers, the right human gets called. Everything else — the cameras, the room tracking, the learned baseline, the chat — makes it a product and wins the data prizes, but if that chain does not run end to end you have nothing to show a judge.
 
-## Cut list, in the order you cut
+## The interface contract — agree these at H1, do not renegotiate at H14
 
-When you are at hour 18 and behind — and you will be — cut from the bottom up:
+Three people cannot integrate at hour 18 unless the seams were frozen at hour 1. Each seam has one owner who writes it down and one consumer who codes against it.
 
-| # | Cut this | What you lose | What still works |
+| Seam | Owner writes | Consumer codes against | Frozen by |
 |---|---|---|---|
-| 1 | RAG chat (C6) | The "ask about mum" moment | Timeline still shows events |
-| 2 | Camera/VLM (C3) | ADL tracking, the B2B story | B2C fall + location demo intact |
-| 3 | Baseline learner (C5) | "We learn her normal" | Hard-rule alerts still fire |
-| 4 | RF localization (C4) | Room-level location | Fall detection unaffected |
-| 5 | Contact #2 in the ladder (B5) | Redundancy | Ladder still escalates once |
+| **Band → backend** | Utsav posts the exact event JSON he will send | Ayush's `/v1/ingest/band` accepts it | **H2** |
+| **Backend → app** | Ayush publishes the endpoint list + websocket payloads | Abhinav's API client + fixtures mirror them | **H2** |
+| **FSM → voice** | Ayush exposes "place a call to X for alert Y" and an "agent classified it as Z" callback | Abhinav's bridge calls exactly those | **H3** |
+| **Band → RF** | Utsav posts the RSSI scan payload shape | Ayush's localizer consumes it | **H4** |
 
-**Never cut:** the event table, the FSM, the outbound call. That is the project.
+The rule: **the owner writes a real example payload into the repo as a `.json` fixture file, not a message in Discord.** The consumer builds against the fixture. If the fixture changes, the owner tells the consumer out loud.
+
+## When you are behind — cut in this order
+
+You will be behind. Cut from the bottom up, never from the top.
+
+| # | Cut | Lose | Still works |
+|---|---|---|---|
+| 1 | RAG chat | The "ask about mum" moment | Timeline still shows events |
+| 2 | Camera + VLM | ADL tracking, the B2B story | B2C fall + location demo intact |
+| 3 | Baseline learner | "We learn her normal" | Hard-rule alerts still fire |
+| 4 | RF localization | Room-level location | Fall detection unaffected |
+| 5 | Second contact in the ladder | Redundancy | Ladder still escalates once |
+| 6 | The physical band | The object judges can touch | A phone posting the same JSON demos the same system |
+
+**Never cut:** the event table, the FSM, the outbound call.
 
 ## Truth in demos
 
-Write these on the whiteboard and say them out loud to judges. Being the team that says which parts are synthetic buys more credibility than pretending.
+Write these on the whiteboard. Say them out loud to judges. Being the team that volunteers which parts are synthetic buys more credibility than being the team that gets caught.
 
-- The 14 days of resident history are generated by a seed script. The learner running on it is real.
+- The 14 days of resident history come from a seed script. The learner running on it is real.
 - The "home" is a table with three beacons taped to it.
 - The band is a dev board on a strap, not a product.
 - We do not dial 911, and this is not a medical device.
 
+## Two things that are already known to be true
+
+- **Submission is on Plume, not Devpost**, and the project must exist before Sunday 00:00.
+- **Prior art is close.** [LifeLine](https://devpost.com/software/lifeline-5prxbs) (TerraHacks 2025) already does fall detection → automated LLM phone call. The one thing nobody has done is **call the fallen person first and let their answer choose the escalation tier**. That is the whole differentiator — point the demo at it and say so.
+
 ---
+
+## ⛔ Spec conflicts you must resolve at H1 — before firmware locks its POST format
+
+The two specs were written in parallel and disagree in three places. **Resolve them out loud at the H1 standup, write the decision in the repo, and do not let anyone code past it.** The resolutions below are the defaults; overrule them together if you have a reason.
+
+| # | Conflict | Resolution |
+|---|---|---|
+| 1 | **Band → backend endpoint.** `HARDWARE_SPEC` §5.4–5.7 says `POST /v1/events`, rich `fallband.event.v1` schema, no auth. `TECHNICAL_PRD` §10.5 says `POST /v1/ingest/band` + `/ingest/rf` + `/ingest/band/cancel`, simpler payload, `X-Band-Key` HMAC. | **PRD wins** — it owns the API surface and the app codes against it. Utsav conforms. Drop the HMAC to a shared static header for the demo if it costs more than 20 minutes. |
+| 2 | **Sensor config.** PRD §4.1 said 104 Hz / ±8 g / GPIO interrupt. `HARDWARE_SPEC` §6 says 208 Hz / ±16 g / Bridge.notify. | **Hardware spec wins** — its numbers came from reading the datasheet against library source, and the ±4 g clipping trap is real. PRD §4.1 has been corrected to match. |
+| 3 | **Resolution naming.** `POST /alerts/{id}/resolve` takes `resolution: "fell_ok"`; the FSM state is `FELL_BUT_FINE`. | Pick one string, grep the repo, done in five minutes. Leave it and you will debug it at H19. |
+
+Also flagged, lower stakes: REST auths with `Authorization: Bearer <JWT>` while the websocket takes `?token=<jwt>` in the query string. Unavoidable for WS, but query-string tokens land in server logs — fine for a hackathon, worth saying out loud if a judge asks about security.
 ## A. Backend core
 
 Owner: Ayush. Scope: repo scaffold, Python env, FastAPI app, SQLite schema, `events.emit()` + bus,
@@ -246,140 +280,6 @@ owned elsewhere — this slice only stubs the surfaces those teams plug into.
 **Contradictions / gaps found in the PRD (relayed as requested):**
 1. §3.3's DDL has no `bands` table, but §3.2 (`band_offline`, `band_low_battery`) and §10.5 (`/ingest/heartbeat`, `/bands/pair`) both require resolving `band_id → resident_id` and tracking `last_seen`/`battery_pct` somewhere. Added a minimal `bands` table (task A5.4) — flag to the team at the T+2:00 schema freeze.
 2. §4.3's state diagram has no explicit `EXHAUSTED`-from-`ESCALATED_FINAL` timeout value in the table view of §4.2, only in the diagram (300s) — used the diagram's number (`EXHAUSTED_TIMEOUT_S=300`) since it's more complete than the table.
-## B. Voice (Twilio + Deepgram)
-
-### B0. ⛔ HOUR-0: accounts, verification, and one "hello world" call — DO THIS BEFORE ANY BRIDGE CODE
-
-- [ ] **B0.1** ⛔ BLOCKER Create Twilio account, buy/confirm a voice-capable number, and note `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_E164` — 5 min — _done when:_ `twilio api:core:accounts:fetch` (or console) shows the account SID and the number appears under Phone Numbers.
-- [ ] **B0.2** ⛔ BLOCKER Verify all team + resident-role test phones as Caller IDs (trial accounts can ONLY call verified numbers, max 5 recipients) — 10 min — _done when:_ Console → Phone Numbers → Verified Caller IDs lists 4+ numbers, each confirmed via SMS/voice PIN.
-  - Trap: the trial signup number is auto-verified but everyone else's phone is not — verify teammates' phones immediately, not "later."
-- [ ] **B0.3** 🔁 PARALLEL-OK Upgrade the Twilio account with ~$20 credit — 5 min — _done when:_ account shows "Pay as you go", removing the 5-recipient cap and the trial voice preamble (PRD flags the exact preamble wording as `[UNVERIFIED]` — just upgrade, don't investigate it).
-- [ ] **B0.4** ⛔ BLOCKER Confirm Twilio outbound voice per-minute pricing + number rental cost — PRD marks this `[UNVERIFIED]` — 3 min — _done when:_ you've looked at twilio.com/en-us/voice/pricing and written the $/min figure into the budget doc.
-- [ ] **B0.5** Sign up for Deepgram, grab `DEEPGRAM_API_KEY` — 3 min — _done when:_ key is in env.
-- [ ] **B0.6** ⛔ BLOCKER PRD flags this `[UNVERIFIED]`: write a 10-line standalone script that opens `wss://agent.deepgram.com/v1/agent/converse` with header `Authorization: Token <DEEPGRAM_API_KEY>` and confirms you get a `Welcome` frame back, not a 401/403 — 10 min — _done when:_ script prints `Welcome`. If it 401s, try `Bearer` before assuming Token is wrong.
-    ```python
-    import asyncio, websockets, os
-    async def main():
-        async with websockets.connect(
-            "wss://agent.deepgram.com/v1/agent/converse",
-            additional_headers={"Authorization": f"Token {os.environ['DEEPGRAM_API_KEY']}"},
-        ) as ws:
-            print(await ws.recv())  # expect Welcome
-    asyncio.run(main())
-    ```
-- [ ] **B0.7** ⛔ BLOCKER PRD flags this `[UNVERIFIED]`: confirm the Python Twilio SDK call shape — read the code tabs on the Call resource docs page and check `client.calls.create(to=, from_=, twiml=, timeout=, machine_detection=, async_amd=, ...)` actually matches current SDK version installed — 10 min — _done when:_ `pip show twilio` version matches docs tab you read, and a throwaway script successfully creates a call object (see B0.8).
-- [ ] **B0.8** ⛔ BLOCKER "Hello world" outbound call, no bridge, no Deepgram — just prove Twilio + your account can ring a verified phone with static TwiML (`<Say>`) — 10 min — _done when:_ a verified team phone actually rings and plays "hello from kestrel."
-    ```python
-    from twilio.rest import Client
-    c = Client(SID, TOKEN)
-    c.calls.create(to="+1...", from_=FROM_E164, twiml="<Response><Say>Hello from Kestrel.</Say></Response>")
-    ```
-- [ ] **B0.9** Set up `cloudflared tunnel --url http://localhost:8000` and PIN the hostname (write it to `.env` as `PUBLIC_WSS`/`PUBLIC_HTTPS`) — 5 min — _done when:_ hitting the tunneled HTTPS URL from a phone browser (off wifi) returns a response. **Do not restart the tunnel after this point** — a new tunnel run gets a new hostname and silently breaks every call made after that.
-
-### B1. Backend contract with the FSM (what this engineer calls, doesn't own)
-
-- [ ] **B1.1** Confirm/import the FSM entry points you depend on, do not reimplement: `events.emit(...)` (kestrel/events.py) for writing `fall_suspected`, `call_answered`, `escalate_acknowledged` etc., and `FSM.handle_voice_tool(alert_id, role, fn_name, args)` which the bridge calls on every `FunctionCallRequest` — 10 min — _done when:_ you can import both and call `FSM.handle_voice_tool` against a fake alert_id in a REPL without exception.
-- [ ] **B1.2** Confirm the alert-row helper functions your bridge needs but does not own: `db_bind_call(call_id, call_sid, stream_sid)` and `append_transcript(call_id, role, content)` — 5 min — _done when:_ both are importable and you've seen their signature (backend/DB engineer owns implementation).
-- [ ] **B1.3** 🔁 PARALLEL-OK Agree with the FSM owner on the exact JSON shape `handle_voice_tool` returns (goes back to Deepgram as `FunctionCallResponse.content`) — 10 min — _done when:_ a written example dict exists in a shared doc/slack, e.g. `{"ok": true}`.
-
-### B2. Outbound call placement (`kestrel/voice/outbound.py`)
-
-- [ ] **B2.1** Implement `place_call(to_e164, alert_id, role, call_id, attempt=1)` exactly per §5.3: inline TwiML with `<Connect><Stream>` (bidirectional — NOT `<Start><Stream>`, which is receive-only) carrying `<Parameter>` for `alert_id`, `call_id`, `role` — 20 min — _done when:_ calling `place_call` rings a verified phone and the TwiML XML validates (no escaping bugs — use `xml.sax.saxutils.escape` on all interpolated values).
-- [ ] **B2.2** Wire `timeout=25`, `machine_detection="Enable"`, `async_amd="true"`, `async_amd_status_callback`, `status_callback` + `status_callback_event=["initiated","ringing","answered","completed"]` — 10 min — _done when:_ a test call's Twilio console log shows all 4 status callback events hit your `/twilio/status` endpoint.
-- [ ] **B2.3** Implement `/twilio/status` and `/twilio/amd` receiver stubs that just log the payload for now (real AMD handling comes in B6) — 10 min — _done when:_ curl-replaying a sample Twilio AMD POST body against the endpoint returns 200 and logs `AnsweredBy`.
-- [ ] **B2.4** 🔁 PARALLEL-OK Implement the retry-once-then-escalate caller: attempt 2 fifteen seconds after attempt 1 ends on `no-answer`/`busy`/`failed`, then hand off to contact ladder — 15 min — _done when:_ a unit test with a mocked Twilio client shows exactly one retry and no third attempt.
-
-### B3. Media Streams bridge (`kestrel/voice/bridge.py`) — the core of this slice
-
-- [ ] **B3.1** ⛔ BLOCKER Stand up the FastAPI websocket route `/twilio/stream`, accept the connection, and on Twilio's `start` event capture `streamSid`, `callSid`, and `customParameters` (`alert_id`, `call_id`, `role`) — 20 min — _done when:_ logging the `start` message from a real test call shows all three custom params present.
-- [ ] **B3.2** ⛔ BLOCKER Open the Deepgram socket, send the `Settings` message (§5.2, built via `build_settings(ctx)` keyed on `role`), and **wait for `SettingsApplied` before relaying any audio** — 20 min — _done when:_ logs show `SettingsApplied` received before the first `media` frame is forwarded.
-- [ ] **B3.3** Implement `twilio_to_deepgram()`: on `media` event, base64-decode Twilio's payload and send the **raw bytes as a binary websocket frame** to Deepgram — do NOT re-wrap in JSON — 15 min — _done when:_ a packet capture / debug log confirms outgoing DG frames are binary, not `{"type":"Media",...}` JSON.
-- [ ] **B3.4** Implement `deepgram_to_twilio()`: on binary message from DG, base64-encode and wrap as `{"event":"media","streamSid":...,"media":{"payload":...}}` back to Twilio — 15 min — _done when:_ agent's TTS audibly plays on the test call.
-- [ ] **B3.5** No resampling, anywhere. Both sides are `mulaw`/8000 by explicit Settings config — the only transform in the pipe is base64 decode/encode — 5 min — _done when:_ a grep of the bridge file for `audioop|resample|scipy` returns nothing.
-- [ ] **B3.6** Implement the `KeepAlive` loop: send `{"type":"KeepAlive"}` to Deepgram every 8s, running concurrently via `asyncio.gather` alongside both directional loops — 10 min — _done when:_ a call left "quiet" (no speech either side) for 30s does not drop the DG socket.
-- [ ] **B3.7** Handle `stop` event from Twilio by breaking the loop and closing the DG socket cleanly — 10 min — _done when:_ hanging up the test call does not leave an orphaned DG websocket (check DG dashboard/connection count).
-
-### B4. Barge-in
-
-- [ ] **B4.1** ⛔ BLOCKER On `UserStartedSpeaking` from Deepgram, immediately send `{"event":"clear","streamSid":...}` to Twilio — this flushes Twilio's playback buffer and IS the entire barge-in implementation — 10 min — _done when:_ interrupting the agent mid-sentence on a live test call stops the audio within ~200ms instead of finishing the sentence.
-  - Note: PRD flags `[UNVERIFIED]` whether Deepgram also halts TTS generation server-side on `UserStartedSpeaking` — assume it does NOT and always send `clear` regardless.
-- [ ] **B4.2** Confirm `streamSid` is attached to every single outbound Twilio frame, not just `media` — including `clear` and `mark` — 5 min — _done when:_ grep of all `tw.send_text` calls shows `streamSid` in every payload.
-
-### B5. Function calling / escalation ladder execution
-
-- [ ] **B5.1** Wire `FunctionCallRequest` handling: parse `fn["arguments"]` JSON, call `FSM.handle_voice_tool(alert_id, role, fn["name"], args)`, send back `FunctionCallResponse` with `id`, `name`, `content` — 20 min — _done when:_ a scripted fake `mark_ok` FunctionCallRequest produces a `FunctionCallResponse` echoed to a mock DG socket.
-- [ ] **B5.2** Load the 4 tool defs (`mark_ok`, `escalate`, `request_callback`, `end_call`) verbatim from §4.6 into `agent.think.functions` in Settings — 10 min — _done when:_ Settings JSON round-trips through a JSON validator and matches PRD schema exactly, including `end_call`'s `defer_until_eot: true`.
-- [ ] **B5.3** Do NOT defer `mark_ok`, `escalate`, `request_callback` — only `end_call` gets `defer_until_eot: true` — 5 min — _done when:_ code review confirms only one function object has that key.
-- [ ] **B5.4** Handle `FunctionCallCancelled` as a no-op (FSM actions must already be idempotent — confirm this property with whoever owns `handle_voice_tool`, don't assume) — 5 min — _done when:_ calling `handle_voice_tool` twice with the same args does not double-fire escalation (e.g. does not place two contact calls).
-- [ ] **B5.5** On `AgentAudioDone`, check `ctx["pending_hangup"]` and hang up the Twilio call via the REST API if set (this is how `end_call`'s deferred execution actually closes the phone line after the farewell line finishes) — 15 min — _done when:_ a test call ending in `end_call` closes the call only after the goodbye audio is heard, not before.
-- [ ] **B5.6** Silence-escalates-by-default: if the call ends with no tool call, default classification to `incoherent` and escalate — 15 min — _done when:_ a test call where the agent talks but nobody calls a tool (e.g. hang up before deciding) results in an `escalate(reason="incoherent")`-equivalent FSM transition, not a silent drop.
-- [ ] **B5.7** 🔁 PARALLEL-OK Implement the 20s-silence-after-greeting timer client-side in the bridge (repeat greeting once via `InjectAgentMessage`, then escalate reason="silence" if still nothing) — 15 min — _done when:_ a test call where you say nothing after the greeting triggers exactly one repeated greeting then an escalate call at ~20s.
-
-### B6. Voicemail / AMD handling
-
-- [ ] **B6.1** ⛔ Implement `/twilio/amd` receiver: on `AnsweredBy` ∈ `{machine_start, machine_end_beep, machine_end_silence, machine_end_other, fax}`, write `call_answered` event with `answered_by`, set `calls.classification="voicemail"` — 15 min — _done when:_ calling your own cell with voicemail on and letting it go to voicemail produces this event in the DB.
-- [ ] **B6.2** Send `InjectAgentMessage` with the 12-second voicemail script (verbatim from §5.6) so Aura speaks it into the voicemail — 10 min — _done when:_ replaying a recorded voicemail-answered call shows the injected message text spoken, not the normal greeting.
-- [ ] **B6.3** On `AgentAudioDone` after the voicemail injection, hang up the Twilio call — 5 min — _done when:_ the call ends automatically right after the voicemail script finishes, no dead air.
-- [ ] **B6.4** ⛔ Advance the FSM exactly as if `no_answer` occurred — a voicemail is NOT an answer, must not classify as resident contact — one `if` statement, get it right — 10 min — _done when:_ a voicemail-classified call still triggers the same next-state transition (`RETRY_RESIDENT` or `CALLING_CONTACT_1`) as a true no-answer.
-- [ ] **B6.5** On `AnsweredBy = unknown` (AMD timed out), treat as human and let the agent talk normally — 5 min — _done when:_ code path shows `unknown` falls through to the normal live-agent branch, not the voicemail branch.
-
-### B7. Call logging / transcripts
-
-- [ ] **B7.1** 🔁 PARALLEL-OK On every `ConversationText` event from Deepgram, call `append_transcript(call_id, role, content)` — 10 min — _done when:_ after a test call, the DB/log has a full turn-by-turn transcript with correct roles.
-- [ ] **B7.2** 🔁 PARALLEL-OK Log `Error`/`Warning` frames from Deepgram with code+description — 5 min — _done when:_ forcing a bad Settings message (e.g. typo a field) produces a visible error log line, not a silent hang.
-- [ ] **B7.3** Bind `call_sid` + `stream_sid` to `alert_id`/`call_id` at `start` time via `db_bind_call` so transcripts and status callbacks can be joined later — 10 min — _done when:_ querying by `alert_id` after a test call returns the transcript, the AMD verdict, and the final classification in one place.
-
-### B8. Local test harness — iterate on prompts without dialing anyone
-
-- [ ] **B8.1** 🔁 PARALLEL-OK Record 5-10 short caller audio clips (mulaw/8k WAV) covering each classification branch: "I'm fine", "I fell but I'm up", "help I can't get up", confused/slurred rambling, silence — 15 min — _done when:_ files exist in `test_audio/` at correct format (`ffmpeg -i in.wav -ar 8000 -ac 1 -c:a pcm_mulaw out.wav`).
-- [ ] **B8.2** ⛔ Write `scripts/replay_to_agent.py`: opens a Deepgram Voice Agent socket directly (same Settings as bridge, resident role), streams a recorded WAV's raw mulaw bytes in ~20ms chunks (simulate real-time pacing) instead of live mic/Twilio audio, and prints `ConversationText` + `FunctionCallRequest` events to stdout — 30 min — _done when:_ running it against the "help I can't get up" clip prints an `escalate(reason="distress")` function call with no phone involved.
-    ```python
-    # scripts/replay_to_agent.py — sketch
-    import asyncio, websockets, json, os, wave, time
-    async def replay(wav_path, role="resident"):
-        async with websockets.connect(DG_URL, additional_headers=DG_HDRS) as dg:
-            await dg.send(json.dumps(build_settings({"role": role})))
-            assert json.loads(await dg.recv())["type"] == "SettingsApplied"
-            async def sender():
-                with wave.open(wav_path, "rb") as w:
-                    chunk = w.readframes(160)  # ~20ms @ 8000Hz mulaw
-                    while chunk:
-                        await dg.send(chunk)
-                        await asyncio.sleep(0.02)
-                        chunk = w.readframes(160)
-            async def receiver():
-                async for msg in dg:
-                    if not isinstance(msg, bytes):
-                        print(json.loads(msg))
-            await asyncio.gather(sender(), receiver())
-    ```
-- [ ] **B8.3** Use B8.2 as the default prompt-iteration loop: change `agent.think.prompt`, rerun against all clips in `test_audio/`, confirm expected tool call fires each time, before ever touching a real phone — 10 min (ongoing) — _done when:_ all 5 clips map to their expected classification with zero live calls placed.
-- [ ] **B8.4** 🔁 PARALLEL-OK Write a bridge-level integration test using a fake Twilio websocket client (asyncio, sends synthetic `start`/`media`/`stop` frames from a recorded clip) that exercises the FULL bridge including barge-in `clear` messages and FSM calls, mocking only the real Twilio REST call — 25 min — _done when:_ this test passes in CI/locally without any Twilio account interaction.
-
-### B9. Fallback ladder if telephony dies mid-demo
-
-- [ ] **B9.1** 🔁 PARALLEL-OK Build a browser-based WebRTC fallback call path (e.g. a minimal page that opens a mic-enabled websocket straight to the same Deepgram agent bridge, bypassing Twilio entirely) — 30 min — _done when:_ opening the page on a laptop and speaking triggers the same escalate/mark_ok flow as a phone call.
-- [ ] **B9.2** 🔁 PARALLEL-OK Pre-record a fallback "agent" audio clip (the greeting + a canned escalation line) to play if BOTH Twilio and Deepgram are unreachable at demo time — 10 min — _done when:_ an mp3/wav exists and a one-line script can play it on cue.
-- [ ] **B9.3** Document and rehearse the last-resort path: "judge/teammate manually presses an 'Acknowledge' button in a laptop UI" to fake a human answering and advance the FSM state for demo purposes — 10 min — _done when:_ a button exists (even a curl command to a `/demo/force_ack` endpoint) that transitions the alert to `ACKNOWLEDGED` without any live audio.
-- [ ] **B9.4** Write the fallback decision tree as a one-pager next to the demo laptop: "Twilio call fails → try WebRTC page → try pre-recorded clip → press the laptop button" — 5 min — _done when:_ it's printed/visible and every team member has read it once.
-
-### B10. Hour-0 friction sweep (re-verify from §5.7 / Appendix A before demo day)
-
-- [ ] **B10.1** Confirm A2P 10DLC does NOT block outbound voice (it's SMS/MMS-only) — but if the final escalation step (§4.2 `ESCALATED_FINAL`) uses SMS, that leg DOES need 10DLC, which will not clear in 24 hours. Change the B2C final step to a voice call to contact 3 + push, not SMS — 10 min — _done when:_ code path for `ESCALATED_FINAL` places a call, not `messages.create(...)`.
-- [ ] **B10.2** Reconfirm the trial 10-minute call cap is moot (calls are ~45s) and the trial preamble is gone post-upgrade (B0.3) — 5 min — _done when:_ a live test call has no Twilio-injected preamble audio before your TwiML starts.
-- [ ] **B10.3** Re-verify the `cloudflared` tunnel hostname has not changed since B0.9 — a tunnel restart mid-demo silently breaks every call — 2 min — _done when:_ `PUBLIC_WSS` env var matches the currently running tunnel's printed hostname.
-
-### B-checkpoints
-
-| hour | what must work | one-command proof |
-|---|---|---|
-| 0 | Twilio account upgraded, 4+ phones verified, Deepgram key works, static-TwiML call rings a real phone | `python -c "from kestrel.voice.outbound import hello_world_call; hello_world_call('+1...')"` and phone rings with `<Say>` audio |
-| 1 | DG websocket auth confirmed, Twilio SDK call shape confirmed, cloudflared tunnel pinned | `python scripts/dg_connect_test.py` prints `Welcome`; `curl -s $PUBLIC_HTTPS/health` returns 200 |
-| 3-4 | Full bridge live: place_call → Media Stream → DG Settings → agent speaks greeting → barge-in works | Call a verified phone via `place_call(...)`, interrupt the greeting out loud, confirm audio stops within ~200ms |
-| 6-8 | All 4 tool calls fire correctly end-to-end on real calls; voicemail path classifies as `no_answer` | Run `scripts/replay_to_agent.py` against all 5 `test_audio/` clips — 5/5 correct tool calls, zero live calls |
-| 10-12 | Escalation ladder executes against real FSM: resident no-answer → retry → contact 1 → contact 2 → final | `curl -X POST localhost:8000/debug/simulate_fall` and watch `alerts` row walk every state within ~4 min via `sqlite3 kestrel.db "select state from alerts order by state_changed_at"` |
-| 20-22 | Fallback ladder rehearsed; transcripts/logging complete for any real call made in testing | Open the WebRTC fallback page, speak "help", confirm same escalate event as a phone call; `sqlite3 kestrel.db "select * from calls where call_id=?"` shows full transcript |
-
 ## C. Perception + intelligence
 
 ### C1. Local model + runtime setup (M5 Pro, 48 GB)
@@ -515,15 +415,8 @@ _🔁 PARALLEL-OK with C3/C4. Server consumes `POST /v1/ingest/rf` payloads `{wi
 
 ---
 
-## Known contradictions in the spec, found while writing this
+## Open spec questions in your lanes
 
-The lane agents read the PRD adversarially. Four things did not hold up. Two are fixed in the PRD already; two are yours to decide.
-
-| # | Contradiction | Status |
-|---|---|---|
-| 1 | Final escalation step sent an **SMS**, but the same doc excludes A2P 10DLC registration as unachievable in 24 h — that SMS would never send | **Fixed.** Ladder is voice-only end to end; address spoken twice |
-| 2 | DDL had no `bands` table, yet `band_offline` events and `/bands/pair` both need `band_id -> resident_id` | **Fixed.** `bands` table added to the DDL |
-| 3 | `RetrievalPlan` defines `t0_iso`/`t1_iso`; `retrieve()` reads `p.t0`/`p.t1` | **Open.** Pick one name at schema freeze, C6 |
-| 4 | Exhausted-timeout (300 s) appears only in the state diagram, never in the timing table | **Open.** Diagram value was used; confirm it |
-
-Two more that are not contradictions but will bite: the Deepgram auth header and the Twilio `calls.create` binding are both written as working code while self-flagged `[UNVERIFIED]`. B0 verifies them before any bridge code exists. And whether Deepgram halts TTS server-side on `UserStartedSpeaking` is unverified — always sending `clear` is the right mitigation either way.
+- `RetrievalPlan` defines `t0_iso`/`t1_iso` but `retrieve()` reads `p.t0`/`p.t1`. Pick one at schema freeze.
+- The exhausted-timeout (300 s) appears only in the §4.3 state diagram, never in the §4.2 timing table. The diagram value is what the TODO assumes — confirm it.
+- §6.7 VLM latency and §7.4 RF accuracy are both self-flagged `[UNVERIFIED]` by the PRD. They are measurement tasks, not errors: measure on the real machine and write the numbers back into the doc.
