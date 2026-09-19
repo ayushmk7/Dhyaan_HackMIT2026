@@ -141,14 +141,17 @@ export default function Settings() {
         )}
       </Card>
 
-      <Hairline style={{ marginTop: sp(8), marginBottom: sp(4) }} />
+      <SectionTitle>Try it</SectionTitle>
+      <Txt kind="caption" tone="muted" style={{ marginBottom: sp(3) }}>
+        Safe to press — nothing here calls a real phone.
+      </Txt>
       <View style={{ gap: sp(2) }}>
         <Btn label="Rehearse a fall alert" kind="quiet" busy={rehearsing} onPress={rehearse} />
         <Txt kind="caption" tone="muted">
-          Runs the real escalation ladder against the demo backend.
+          Plays the whole escalation, start to finish, with simulated calls.
         </Txt>
         <Btn
-          label="Switch to staff demo"
+          label="See the staff side"
           kind="quiet"
           onPress={() => { setRole('staff'); router.replace('/(staff)'); }}
         />

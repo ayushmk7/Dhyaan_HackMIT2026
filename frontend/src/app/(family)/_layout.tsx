@@ -1,12 +1,13 @@
 // Family tabs: Home · Timeline · Ask · Settings (§10.2).
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { ColorValue, Text } from 'react-native';
+import { ColorValue } from 'react-native';
+import { Icon } from '@/components/icon';
 import { palette } from '@/theme/tokens';
 
-const glyph = (g: string) => {
-  function TabGlyph({ color }: { color: ColorValue }) {
-    return <Text style={{ fontSize: 18, color }}>{g}</Text>;
+const glyph = (name: string) => {
+  function TabGlyph({ color, focused }: { color: ColorValue; focused: boolean }) {
+    return <Icon name={name} size={22} color={color} weight={focused ? 'semibold' : 'regular'} />;
   }
   return TabGlyph;
 };
@@ -25,10 +26,10 @@ export default function FamilyLayout() {
         tabBarLabelStyle: { fontSize: 12 },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: glyph('⌂') }} />
-      <Tabs.Screen name="timeline/index" options={{ title: 'Timeline', tabBarIcon: glyph('☰') }} />
-      <Tabs.Screen name="chat" options={{ title: 'Ask', tabBarIcon: glyph('✳︎') }} />
-      <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: glyph('⚙︎') }} />
+      <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: glyph('house') }} />
+      <Tabs.Screen name="timeline/index" options={{ title: 'Timeline', tabBarIcon: glyph('calendar.day.timeline.left') }} />
+      <Tabs.Screen name="chat" options={{ title: 'Ask', tabBarIcon: glyph('bubble.left') }} />
+      <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: glyph('gearshape') }} />
       <Tabs.Screen name="timeline/[eventId]" options={{ href: null }} />
     </Tabs>
   );

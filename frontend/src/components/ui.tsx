@@ -121,6 +121,11 @@ export const Card = ({ children, style, night = false }: { children: React.React
         borderColor: night ? palette.nightLine : palette.line,
         padding: sp(4),
       },
+      // HIG-style gentle elevation; borders alone read as wireframe.
+      !night && {
+        shadowColor: palette.ink, shadowOpacity: 0.05, shadowRadius: 10,
+        shadowOffset: { width: 0, height: 3 },
+      },
       style,
     ]}
   >

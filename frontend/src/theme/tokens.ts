@@ -5,7 +5,7 @@ export const palette = {
   paper: '#F6F2E9',
   raised: '#FDFBF5',
   ink: '#221F19',
-  inkMuted: '#6F6858',
+  inkMuted: '#665E4D',
   line: '#E4DCCA',
 
   slate: '#46607A',
@@ -65,7 +65,7 @@ export const type = {
   display: { fontFamily: font.black, fontSize: 34, lineHeight: 40, letterSpacing: -0.5 },
   title: { fontFamily: font.display, fontSize: 22, lineHeight: 28, letterSpacing: -0.3 },
   stat: { fontFamily: font.black, fontSize: 28, lineHeight: 34 },
-  body: { fontSize: 16, lineHeight: 23 },
-  label: { fontSize: 14, lineHeight: 19, fontWeight: '600' as const },
+  body: { fontSize: 17, lineHeight: 24 }, // iOS body default (HIG)
+  label: { fontSize: 15, lineHeight: 20, fontWeight: '600' as const },
   caption: { fontSize: 13, lineHeight: 18 },
 } as const;

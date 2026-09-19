@@ -4,12 +4,14 @@ import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Btn, Hairline, Row, Screen, StatusDot, Txt } from '@/components';
+import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { useResidents } from '@/lib/hooks';
 import type { Resident } from '@/lib/types';
 import { useLive } from '@/store/live';
-import { sp } from '@/theme/tokens';
+import { useSession } from '@/store/session';
+import { palette, sp } from '@/theme/tokens';
 import type { ResidentState } from '@/theme/tokens';
 
 const TIER: Record<ResidentState, number> = {
@@ -49,6 +51,7 @@ export default function Triage() {
   const { data } = useResidents();
   const liveStates = useLive((s) => s.states);
   const liveLocations = useLive((s) => s.locations);
+  const { setRole, finishOnboarding } = useSession();
   const [showOk, setShowOk] = useState(false);
 
   const residents = (data ?? [])
@@ -88,10 +91,17 @@ export default function Triage() {
 
       {normal.length > 0 && (
         <View style={{ marginTop: sp(5) }}>
-          <Pressable accessibilityRole="button" onPress={() => setShowOk((v) => !v)}>
-            <Txt kind="caption" tone="muted">
-              {showOk ? 'Hide' : `${normal.length} residents look normal`}
-            </Txt>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setShowOk((v) => !v)}
+            style={{ paddingVertical: sp(2) }}
+          >
+            <Row gap={1.5}>
+              <Icon name={showOk ? 'chevron.down' : 'chevron.right'} size={12} color={palette.inkMuted} />
+              <Txt kind="caption" tone="muted">
+                {showOk ? 'Hide the quiet ones' : `${normal.length} more look normal tonight`}
+              </Txt>
+            </Row>
           </Pressable>
           {showOk && (
             <View style={{ marginTop: sp(2) }}>
@@ -106,12 +116,22 @@ export default function Triage() {
         </View>
       )}
 
-      <Btn
-        label="Simulate a fall in 214"
-        kind="quiet"
-        onPress={() => { api.simulate('fall', 'res_harold'); }}
-        style={{ marginTop: sp(8) }}
-      />
+      <Hairline style={{ marginTop: sp(9), marginBottom: sp(4) }} />
+      <View style={{ gap: sp(2) }}>
+        <Btn
+          label="Simulate a fall in 214"
+          kind="quiet"
+          onPress={() => { api.simulate('fall', 'res_harold'); }}
+        />
+        <Txt kind="caption" tone="muted">
+          Plays the whole escalation for Harold, with simulated calls. Safe to press.
+        </Txt>
+        <Btn
+          label="Back to the family app"
+          kind="ghost"
+          onPress={() => { setRole('family'); finishOnboarding(); router.replace('/(family)'); }}
+        />
+      </View>
     </Screen>
   );
 }

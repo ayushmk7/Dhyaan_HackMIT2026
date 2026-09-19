@@ -1,12 +1,13 @@
 // Staff tabs: Triage · Floor · Rounds (§10.1 S1–S5). Same quiet bar as family.
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { ColorValue, Text } from 'react-native';
+import { ColorValue } from 'react-native';
+import { Icon } from '@/components/icon';
 import { palette } from '@/theme/tokens';
 
-const glyph = (g: string) => {
+const glyph = (name: string) => {
   function TabGlyph({ color, focused }: { color: ColorValue; focused: boolean }) {
-    return <Text style={{ fontSize: 18, color, fontWeight: focused ? '700' : '400' }}>{g}</Text>;
+    return <Icon name={name} size={22} color={color} weight={focused ? 'semibold' : 'regular'} />;
   }
   return TabGlyph;
 };
@@ -24,9 +25,9 @@ export default function StaffLayout() {
         },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Triage', tabBarIcon: glyph('≡') }} />
-      <Tabs.Screen name="floor" options={{ title: 'Floor', tabBarIcon: glyph('⌗') }} />
-      <Tabs.Screen name="rounds" options={{ title: 'Rounds', tabBarIcon: glyph('☾') }} />
+      <Tabs.Screen name="index" options={{ title: 'Triage', tabBarIcon: glyph('list.bullet') }} />
+      <Tabs.Screen name="floor" options={{ title: 'Floor', tabBarIcon: glyph('square.grid.2x2') }} />
+      <Tabs.Screen name="rounds" options={{ title: 'Rounds', tabBarIcon: glyph('moon.stars') }} />
       <Tabs.Screen name="resident/[id]" options={{ href: null }} />
     </Tabs>
   );

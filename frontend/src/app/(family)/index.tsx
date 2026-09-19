@@ -1,13 +1,15 @@
 // Home: one calm sentence about Eleanor, where she is, and how today is going.
 import { useQueryClient } from '@tanstack/react-query';
+import { router } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RoomTimeBar, Row, SectionTitle, StatusDot, Tile, Txt } from '@/components';
 import { Entrance } from '@/components/entrance';
+import { Icon } from '@/components/icon';
 import { useLocationHistory, useResident, useTimeline } from '@/lib/hooks';
-import { ago, dayOf, mins, zoneLabel } from '@/lib/format';
+import { ago, dayOf, eventTitle, mins, timeOf, zoneLabel } from '@/lib/format';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
 import { palette, sp, type ResidentState } from '@/theme/tokens';
@@ -128,6 +130,26 @@ export default function Home() {
 
         <SectionTitle>Where her day went</SectionTitle>
         <RoomTimeBar segments={segments ?? []} />
+
+        {events?.[0] && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/(family)/timeline')}
+            style={({ pressed }) => [{
+              marginTop: sp(6), paddingVertical: sp(3),
+              borderTopWidth: 1, borderTopColor: palette.line,
+              opacity: pressed ? 0.6 : 1,
+            }]}
+          >
+            <Row style={{ justifyContent: 'space-between' }}>
+              <Txt kind="caption" tone="muted">Last noticed</Txt>
+              <Icon name="chevron.right" size={12} color={palette.inkMuted} />
+            </Row>
+            <Txt kind="body" style={{ marginTop: 2 }}>
+              {eventTitle(events[0].type)} · {timeOf(events[0].ts)}
+            </Txt>
+          </Pressable>
+        )}
       </ScrollView>
     </View>
   );

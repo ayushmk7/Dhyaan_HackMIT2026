@@ -25,15 +25,11 @@ export const mins = (s: number) => `${Math.round(s / 60)} min`;
 export const zoneLabel = (zone: string | null | undefined) =>
   (zone ?? 'unknown').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
-// Icon glyphs for event rows — text, deliberately, not an icon set.
-export const eventGlyph = (type: string): string => {
-  if (type.startsWith('meal')) return '🍽';
-  if (type.startsWith('walk')) return '🚶';
-  if (type.includes('night') || type === 'bed_exit') return '🌙';
-  if (type.includes('fall') || type === 'button_pressed') return '⚠︎';
-  if (type.startsWith('zone') || type.includes('home')) return '⌂';
-  if (type.startsWith('call') || type.includes('voice') || type.includes('escalation')) return '☏';
-  return '·';
+// embedding_text is written for retrieval ("On Saturday at 12:42 PM, …"); the UI
+// already shows the time, so strip the preamble for display and re-capitalize.
+export const displaySentence = (text: string): string => {
+  const stripped = text.replace(/^On [A-Za-z]+( \d{1,2} [A-Za-z]+)? (morning|evening|afternoon)?(at [\d:]+\s?[AP]M)?,?\s*/i, '');
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
 };
 
 export const eventTitle = (type: string): string =>

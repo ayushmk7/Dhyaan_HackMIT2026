@@ -31,7 +31,7 @@ export default function Welcome() {
 
       <Btn
         kind="quiet"
-        label="Explore the family demo"
+        label="Try the family demo"
         onPress={() => {
           setRole('family');
           finishOnboarding();
@@ -40,7 +40,7 @@ export default function Welcome() {
       />
       <Btn
         kind="quiet"
-        label="Explore the staff demo"
+        label="Try the staff demo"
         style={{ marginTop: sp(3) }}
         onPress={() => {
           setRole('staff');

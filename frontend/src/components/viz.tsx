@@ -4,7 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { palette, sp, radius, type, zoneColor } from '@/theme/tokens';
 import type { KEvent, LadderStep, LocationSegment } from '@/lib/types';
-import { eventGlyph, eventTitle, mins, timeOf, zoneLabel } from '@/lib/format';
+import { displaySentence, eventTitle, mins, timeOf, zoneLabel } from '@/lib/format';
+import { eventSymbol, Icon } from './icon';
 import { Txt, Row } from './ui';
 
 // ---- Timeline event row --------------------------------------------------------
@@ -17,7 +18,11 @@ export function EventRow({ event, onPress }: { event: KEvent; onPress?: () => vo
       style={({ pressed }) => [styles.eventRow, pressed && onPress ? { opacity: 0.6 } : null]}
     >
       <View style={[styles.glyph, event.deviation && styles.glyphDeviation]}>
-        <Text style={{ fontSize: 15 }}>{eventGlyph(event.type)}</Text>
+        <Icon
+          name={eventSymbol(event.type)}
+          size={15}
+          color={event.deviation ? palette.ochre : palette.inkMuted}
+        />
       </View>
       <View style={{ flex: 1 }}>
         <Row style={{ justifyContent: 'space-between' }}>
@@ -25,7 +30,7 @@ export function EventRow({ event, onPress }: { event: KEvent; onPress?: () => vo
           <Txt kind="caption" tone="muted">{timeOf(event.ts)}</Txt>
         </Row>
         <Txt kind="caption" tone="muted" style={{ marginTop: 2 }} numberOfLines={2}>
-          {event.embedding_text}
+          {displaySentence(event.embedding_text)}
         </Txt>
       </View>
     </Pressable>
