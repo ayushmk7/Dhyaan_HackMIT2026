@@ -184,7 +184,7 @@ Every frame that reaches the VLM costs 3–5 seconds, so almost none do:
 | 2 | motion, MOG2 on 320×180 grey, foreground > 0.8 % | ~90 % of a lived-in room | ~2 ms |
 | 3 | person, YOLO11n on MPS, class 0 only | ~30 % of what moved | ~25 ms |
 | 4 | keyframe rules (appear / posture / dwell / on_floor) | all but ~1 batch/min | <1 ms |
-| 5 | `qwen3-vl:8b`, 1–3 frames, JSON schema | — | 2.9–6.1 s measured |
+| 5 | `qwen3-vl:8b`, 1–3 frames, JSON schema | — | **2.8 s warm median** (3 frames, measured; 4.5–6.7 s cold or under load) |
 
 Every threshold is in one dict, `TUNING` in `vision/__init__.py`. **They are not
 universal.** A bright kitchen with a window behind the chair will need
@@ -233,6 +233,13 @@ python -m vision --dry-run --demo --source rehearsal.mp4 --camera-id cam_mac_01
 prints the exact `POST /v1/ingest/camera` body, which should diff clean against
 `fixtures/camera_observation.json`.
 
+Measured on this machine (M-series, 48 GB), `--demo`, real webcam → live API:
+four observations in 100 s, each accepted as an `observation` row, the second
+crossing the dedup threshold into a `visitor_present` event and updating
+`/presence` to *"Eleanor has someone visiting."* — no zone, no evidence text.
+The plan's fallback trigger (drop to `qwen3-vl:4b` if a 3-frame batch exceeds
+6 s) is **not** met warm, so 8b stays.
+
 ### Known ceilings
 
 - **`think: false` is mandatory.** `qwen3-vl` is a thinking model; with thinking
@@ -250,3 +257,8 @@ prints the exact `POST /v1/ingest/camera` body, which should diff clean against
   re-identification. Two people in frame become `with_visitor` and nothing is
   recorded about the second. Upgrade is `model.track(persist=True)`.
 - **In-process state only.** The keyframe selector and the ring reset on restart.
+- **macOS camera permission is per-terminal and intermittent.** The TCC prompt
+  attaches to whichever process opens the device, so the first `make vision-demo`
+  must be run by hand and Allowed; a worker launched from a non-interactive shell
+  gets `cannot open camera source '0'` (a one-line message, not a traceback) until
+  it has been. On stage, grant it before the slot and do not change terminals.

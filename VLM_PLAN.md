@@ -712,8 +712,13 @@ Hour 0 is when the three agents start reading this file. Times are per agent, in
 | 18–22 | Slack for what broke. Sleep in shifts. | | |
 | 22–24 | Demo setup (§10.0). | | |
 
-**Cut list, in order.** 1) YOLO person gate → `--no-yolo` (motion-only; VLM decides presence).
-2) Usual-spots learning → static `afternoon` fact only. 3) `on_floor` → alert (already stretch).
+**Cut list, in order — CORRECTED after the real webcam run.** ~~1) YOLO person gate →
+`--no-yolo`~~ **Do not cut this first.** Measured on the actual camera: MOG2 absorbs a still
+person into the background in about 100 seconds, so motion alone reports a resident who has
+fallen asleep in her chair as *absent*. The person gate is what re-confirms presence every 5 s
+while she is believed to be in view. Cutting it turns a nap into "out of view since 2:10", which
+is the one wrong answer this product must not give. If the gate has to go, raise the VLM cadence
+to cover it and say so on stage. New first cut: 2) Usual-spots learning → static `afternoon` fact only. 3) `on_floor` → alert (already stretch).
 4) Ollama text fallback for chat → template answers grouped by kind. 5) Onboarding *Test* button
 → static instructions. 6) Fact editing in Settings → read-only list (API keeps supersede).
 7) `done.tsx` → merge its three lines into the contacts screen. Never cut: consent gates (both),
