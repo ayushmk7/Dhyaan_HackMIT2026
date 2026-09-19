@@ -1,10 +1,11 @@
 // Settings: the ladder, what alerts fire, and the privacy promises — in plain words.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
-import { Pressable, Switch, View } from 'react-native';
+import { Pressable, Share, Switch, View } from 'react-native';
 import { Btn, Card, Hairline, Row, Screen, SectionTitle, Txt } from '@/components';
 import { api } from '@/lib/api';
 import { useContacts } from '@/lib/hooks';
+import { registerForPush, sendTestPush } from '@/lib/push';
 import { useSession } from '@/store/session';
 import { palette, sp } from '@/theme/tokens';
 
@@ -32,11 +33,31 @@ export default function Settings() {
   const [alerts, setAlerts] = useState({ falls: true, bathroom: true, routine: true });
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
   const [rehearsing, setRehearsing] = useState(false);
+  const [pushToken, setPushToken] = useState<string | null>(null);
+  const [pushNote, setPushNote] = useState<string | null>(null);
 
   const rehearse = async () => {
     setRehearsing(true);
     await api.simulate('fall');
     setRehearsing(false);
+  };
+
+  const registerPush = async () => {
+    const { token, reason } = await registerForPush();
+    setPushToken(token);
+    setPushNote(token ? `Registered · …${token.slice(-8)}` : reason ?? null);
+  };
+
+  // ponytail: real export is a backend job (§10.5 has no endpoint yet) —
+  // this shares what the app already knows so the control isn't a dead button.
+  const exportData = async () => {
+    const [summaries, events] = await Promise.all([
+      api.getSummaries('res_eleanor'), api.getEvents('res_eleanor'),
+    ]);
+    await Share.share({
+      title: `${residentName} — Dhyaan export`,
+      message: JSON.stringify({ resident: residentName, summaries, events }, null, 2),
+    });
   };
 
   return (
@@ -59,7 +80,7 @@ export default function Settings() {
         </Txt>
       </Card>
 
-      <SectionTitle>What Kestrel tells you about</SectionTitle>
+      <SectionTitle>What Dhyaan tells you about</SectionTitle>
       <Card>
         <Toggle
           label="Falls"
@@ -89,7 +110,7 @@ export default function Settings() {
       <SectionTitle>Privacy</SectionTitle>
       <Card>
         <Txt kind="body">
-          Kestrel senses movement from her band and which room she’s in. It never records
+          Dhyaan senses movement from her band and which room she’s in. It never records
           audio or video you can watch — video never leaves the home, and no one in the
           family can view a feed. What you see are sentences about her day, nothing more.
         </Txt>
@@ -97,8 +118,11 @@ export default function Settings() {
         <Txt kind="caption" tone="muted">
           Consent for {residentName}
           {consentGivenBy ? ` was given by ${consentGivenBy}` : ' was recorded during setup'}.
-          Kestrel is not a medical device and does not call 911.
+          Dhyaan is not a medical device and does not call 911.
         </Txt>
+        <Pressable onPress={exportData} style={{ marginTop: sp(3) }}>
+          <Txt kind="label" tone="slate">Export her data</Txt>
+        </Pressable>
         <Pressable onPress={() => setConfirmingRevoke(true)} style={{ marginTop: sp(3) }}>
           <Txt kind="label" tone="alert">Revoke consent and delete everything</Txt>
         </Pressable>
@@ -112,7 +136,7 @@ export default function Settings() {
               kind="danger"
               onPress={() => { reset(); router.replace('/onboard/welcome'); }}
             />
-            <Btn label="Keep Kestrel running" kind="quiet" onPress={() => setConfirmingRevoke(false)} />
+            <Btn label="Keep Dhyaan running" kind="quiet" onPress={() => setConfirmingRevoke(false)} />
           </View>
         )}
       </Card>
@@ -128,6 +152,11 @@ export default function Settings() {
           kind="quiet"
           onPress={() => { setRole('staff'); router.replace('/(staff)'); }}
         />
+        <Btn label="Register this phone for push" kind="quiet" onPress={registerPush} />
+        {pushNote && <Txt kind="caption" tone="muted">{pushNote}</Txt>}
+        {pushToken && (
+          <Btn label="Send a test fall push" kind="quiet" onPress={() => sendTestPush(pushToken)} />
+        )}
       </View>
     </Screen>
   );

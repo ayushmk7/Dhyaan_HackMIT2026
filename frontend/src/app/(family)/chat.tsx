@@ -54,7 +54,7 @@ export default function Chat() {
       >
         <Txt kind="display">Ask about {residentName}</Txt>
         <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>
-          Answers come only from what Kestrel observed, with the evidence attached.
+          Answers come only from what Dhyaan observed, with the evidence attached.
         </Txt>
 
         {messages.length === 0 && (
@@ -76,8 +76,20 @@ export default function Chat() {
                 <Txt kind="body">{m.text}</Txt>
               </View>
             ) : (
-              <Card key={m.id} style={{ alignSelf: 'stretch' }}>
-                <Text style={{ fontFamily: font.serif, fontSize: 17, lineHeight: 25, color: palette.ink }}>
+              // TODO D8.1: a refusal must read differently from an answer.
+              <Card
+                key={m.id}
+                style={{
+                  alignSelf: 'stretch',
+                  ...(m.refused ? { borderLeftWidth: 4, borderLeftColor: palette.ochre } : {}),
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: font.serif, fontSize: 17, lineHeight: 25,
+                    color: m.refused ? palette.inkMuted : palette.ink,
+                  }}
+                >
                   {m.text}
                 </Text>
                 {!!m.citations?.length && (
@@ -101,7 +113,7 @@ export default function Chat() {
             ),
           )}
           {thinking && (
-            <Txt kind="caption" tone="muted">Kestrel is reading her week…</Txt>
+            <Txt kind="caption" tone="muted">Dhyaan is reading her week…</Txt>
           )}
         </View>
       </ScrollView>

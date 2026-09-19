@@ -1,4 +1,4 @@
-// Room survey (§7.2): 30 seconds of walking per room teaches Kestrel what each
+// Room survey (§7.2): 30 seconds of walking per room teaches Dhyaan what each
 // room sounds like in radio.
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -59,7 +59,7 @@ export default function Survey() {
       <Txt kind="title">Walk each room with the band</Txt>
       <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
         Take the band to a room, press start, and walk around for 30 seconds. That is
-        how Kestrel learns which room {residentName} is in.
+        how Dhyaan learns which room {residentName} is in.
       </Txt>
 
       <View style={{ marginTop: sp(5), gap: sp(3) }}>
@@ -94,7 +94,7 @@ export default function Survey() {
       </View>
 
       <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>
-        Three rooms is enough to start — Kestrel keeps refining as she lives her days.
+        Three rooms is enough to start — Dhyaan keeps refining as she lives her days.
         You can map the rest anytime from Settings.
       </Txt>
 

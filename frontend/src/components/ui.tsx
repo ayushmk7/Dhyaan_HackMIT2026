@@ -1,4 +1,4 @@
-// Kestrel primitives. Every screen builds from these — see DESIGN.md.
+// Dhyaan primitives. Every screen builds from these — see DESIGN.md.
 import React from 'react';
 import {
   ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextStyle, View, ViewStyle,

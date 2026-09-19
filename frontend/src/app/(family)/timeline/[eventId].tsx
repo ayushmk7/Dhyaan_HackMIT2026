@@ -58,7 +58,7 @@ export default function EventDetail() {
         </Row>
         <Hairline style={{ marginVertical: sp(3) }} />
         <Row style={{ justifyContent: 'space-between' }}>
-          <Txt kind="label">How Kestrel knows</Txt>
+          <Txt kind="label">How Dhyaan knows</Txt>
           <Txt kind="body" style={{ flexShrink: 1, textAlign: 'right' }}>{sensorSentence(event)}</Txt>
         </Row>
         <Hairline style={{ marginVertical: sp(3) }} />
@@ -70,7 +70,7 @@ export default function EventDetail() {
 
       {verdict ? (
         <Txt kind="body" tone="ok" style={{ marginTop: sp(6) }}>
-          Got it — Kestrel will weigh this differently next time.
+          Got it — Dhyaan will weigh this differently next time.
         </Txt>
       ) : (
         <View style={{ marginTop: sp(6), gap: sp(2) }}>

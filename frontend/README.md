@@ -1,6 +1,6 @@
-# Kestrel — React Native app
+# Dhyaan — React Native app
 
-Family + staff app for the Kestrel elder-care sensing platform (see `../TECHNICAL_PRD.md` §10).
+Family + staff app for the Dhyaan elder-care sensing platform (see `../TECHNICAL_PRD.md` §10).
 Expo SDK 57 · RN 0.86 · expo-router · Zustand (websocket-owned state) · TanStack Query (server reads).
 
 ## Run it
@@ -39,3 +39,18 @@ src/
 Design rules live in `DESIGN.md`. Short version: serif sentences for the human
 statements, rust only for alerts, no cards-for-everything, evidence is always a
 sentence and never an image.
+
+## EAS dev build (TODO D1.3 — human steps)
+
+Push notifications need a dev build, not Expo Go. One-time setup (needs an Apple
+developer account + Expo account):
+
+```sh
+npx eas login
+npx eas init          # writes the real projectId into app.json extra.eas
+npx eas build --profile development --platform ios
+```
+
+iOS builds take 15–25 min — kick this off at hour 0, not hour 20. After install,
+Settings → "Register this phone for push" → "Send a test fall push" proves the
+end-to-end push path with no backend (TODO D10.3).

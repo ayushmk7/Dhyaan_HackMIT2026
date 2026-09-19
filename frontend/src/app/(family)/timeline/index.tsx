@@ -64,7 +64,7 @@ export default function Timeline() {
       <Txt kind="display">Her week</Txt>
       {sections.length === 0 && (
         <Txt kind="body" tone="muted" style={{ marginTop: sp(4) }}>
-          Nothing observed yet — the timeline fills in as Kestrel notices meals, walks and rooms.
+          Nothing observed yet — the timeline fills in as Dhyaan notices meals, walks and rooms.
         </Txt>
       )}
       {sections.map((s) => (

@@ -2,7 +2,7 @@
 // an opening alert takes over the screen no matter where you are (§10.2).
 import {
   Fraunces_400Regular, Fraunces_400Regular_Italic, Fraunces_600SemiBold, Fraunces_700Bold,
-  useFonts,
+  Fraunces_900Black, useFonts,
 } from '@expo-google-fonts/fraunces';
 import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack, usePathname } from 'expo-router';
@@ -51,6 +51,7 @@ function AlertWatcher() {
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     Fraunces_400Regular, Fraunces_400Regular_Italic, Fraunces_600SemiBold, Fraunces_700Bold,
+    Fraunces_900Black,
   });
   const connect = useLive((s) => s.connect);
 

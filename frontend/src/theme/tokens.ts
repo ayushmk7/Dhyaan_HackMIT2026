@@ -1,4 +1,4 @@
-// Kestrel design tokens. The single source of color/space/type truth.
+// Dhyaan design tokens. The single source of color/space/type truth.
 // Palette from the bird: slate wing, rust back. Rust means "alert" — nothing else.
 
 export const palette = {
@@ -56,14 +56,15 @@ export const radius = { card: 14, pill: 999, tile: 10 } as const;
 export const font = {
   display: 'Fraunces_600SemiBold',
   displayBold: 'Fraunces_700Bold',
+  black: 'Fraunces_900Black',
   displayItalic: 'Fraunces_400Regular_Italic',
   serif: 'Fraunces_400Regular',
 } as const;
 
 export const type = {
-  display: { fontFamily: font.display, fontSize: 34, lineHeight: 40, letterSpacing: -0.5 },
+  display: { fontFamily: font.black, fontSize: 34, lineHeight: 40, letterSpacing: -0.5 },
   title: { fontFamily: font.display, fontSize: 22, lineHeight: 28, letterSpacing: -0.3 },
-  stat: { fontFamily: font.displayBold, fontSize: 28, lineHeight: 34 },
+  stat: { fontFamily: font.black, fontSize: 28, lineHeight: 34 },
   body: { fontSize: 16, lineHeight: 23 },
   label: { fontSize: 14, lineHeight: 19, fontWeight: '600' as const },
   caption: { fontSize: 13, lineHeight: 18 },

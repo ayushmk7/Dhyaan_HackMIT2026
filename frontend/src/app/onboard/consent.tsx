@@ -9,14 +9,14 @@ import { useSession } from '@/store/session';
 
 const SENSED = [
   'Her band notices movement, stillness, and possible falls.',
-  'Small room beacons tell Kestrel which room she is in — not where in the room.',
+  'Small room beacons tell Dhyaan which room she is in — not where in the room.',
   'No video ever leaves her home, and family never sees video. Ever.',
 ];
 
 const FAMILY_SEES = [
   'Whether she is OK, and which room she is in',
   'Meals, walks, and nights — as sentences, never footage',
-  'Every call Kestrel makes, and why',
+  'Every call Dhyaan makes, and why',
 ];
 
 export default function Consent() {
@@ -29,11 +29,11 @@ export default function Consent() {
     <Screen>
       <Txt kind="title">Her consent comes first</Txt>
       <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
-        Kestrel watches over one person. She — or the person legally able to decide
+        Dhyaan watches over one person. She — or the person legally able to decide
         with her — should agree to what it senses.
       </Txt>
 
-      <Txt kind="label" style={{ marginTop: sp(6), marginBottom: sp(2) }}>Who is Kestrel looking out for?</Txt>
+      <Txt kind="label" style={{ marginTop: sp(6), marginBottom: sp(2) }}>Who is Dhyaan looking out for?</Txt>
       <TextInput
         style={styles.input}
         value={resident}
@@ -44,7 +44,7 @@ export default function Consent() {
       />
 
       <Card style={{ marginTop: sp(5) }}>
-        <Txt kind="label">What Kestrel senses</Txt>
+        <Txt kind="label">What Dhyaan senses</Txt>
         {SENSED.map((line) => (
           <Txt key={line} kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{line}</Txt>
         ))}
@@ -56,7 +56,7 @@ export default function Consent() {
           <Txt key={line} kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{line}</Txt>
         ))}
         <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
-          What family cannot see: video, audio, or anything Kestrel didn’t observe.
+          What family cannot see: video, audio, or anything Dhyaan didn’t observe.
         </Txt>
       </Card>
 

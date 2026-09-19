@@ -136,5 +136,6 @@ export type WsEnvelope =
   | { t: 'alert.voice'; alert_id: string; speaker: TranscriptLine['speaker']; text: string }
   | { t: 'alert.closed'; alert_id: string; resolution: string; acked_by: string | null }
   | { t: 'location.changed'; resident_id: string; location: ResidentLocation }
+  | { t: 'location.dwell'; resident_id: string; zone: string; dwell_s: number; expected_p95_s: number; escalating: boolean }
   | { t: 'event.new'; event: KEvent }
   | { t: 'resident.state'; resident_id: string; state: ResidentState; reason?: string };

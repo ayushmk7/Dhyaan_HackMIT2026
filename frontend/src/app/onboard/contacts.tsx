@@ -1,4 +1,4 @@
-// The escalation ladder. Order matters — this is who Kestrel calls, in order,
+// The escalation ladder. Order matters — this is who Dhyaan calls, in order,
 // when she doesn’t answer.
 import { router } from 'expo-router';
 import { useState } from 'react';
@@ -44,9 +44,9 @@ export default function Contacts() {
 
   return (
     <Screen>
-      <Txt kind="title">Who should Kestrel call?</Txt>
+      <Txt kind="title">Who should Dhyaan call?</Txt>
       <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
-        If {residentName} doesn’t answer, Kestrel calls these people — in this order.
+        If {residentName} doesn’t answer, Dhyaan calls these people — in this order.
       </Txt>
 
       <View style={{ marginTop: sp(5), gap: sp(3) }}>

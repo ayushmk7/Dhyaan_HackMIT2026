@@ -8,7 +8,8 @@
     "scheme": "dhyaan",
     "userInterfaceStyle": "light",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.dhyaan.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -38,6 +39,11 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "REPLACE-AFTER-eas-init"
+      }
     }
   }
 }

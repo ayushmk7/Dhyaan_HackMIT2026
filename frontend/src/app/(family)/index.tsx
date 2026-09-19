@@ -3,7 +3,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { RoomTimeBar, Row, SectionTitle, StatusDot, Tile, Txt } from '@/components';
+import { Entrance } from '@/components/entrance';
 import { useLocationHistory, useResident, useTimeline } from '@/lib/hooks';
 import { ago, dayOf, mins, zoneLabel } from '@/lib/format';
 import { useLive } from '@/store/live';
@@ -21,7 +23,7 @@ function headline(name: string, state: ResidentState): string {
     case 'attention': return `${name} is worth a look`;
     case 'alerting': return `${name} needs someone now`;
     case 'offline': return `${name}'s band is offline`;
-    default: return `Kestrel is learning ${name}'s routine`;
+    default: return `Dhyaan is learning ${name}'s routine`;
   }
 }
 
@@ -61,6 +63,11 @@ export default function Home() {
 
   return (
     <View style={{ flex: 1, backgroundColor: palette.paper }}>
+      <LinearGradient
+        colors={['#FBF8F1', palette.paper]}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 280 }}
+        pointerEvents="none"
+      />
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + sp(4),
@@ -72,22 +79,26 @@ export default function Home() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <Txt kind="display">{headline(residentName, state)}</Txt>
+        <Entrance index={0}>
+          <Txt kind="display">{headline(residentName, state)}</Txt>
+        </Entrance>
 
-        <Row style={{ marginTop: sp(4) }} gap={2}>
-          <StatusDot state={state} />
-          <Txt kind="body">
-            {location
-              ? `In the ${zoneLabel(location.zone).toLowerCase()} · ${mins(dwellS)}`
-              : 'Kestrel isn’t sure which room she’s in right now'}
+        <Entrance index={1}>
+          <Row style={{ marginTop: sp(4) }} gap={2}>
+            <StatusDot state={state} />
+            <Txt kind="body">
+              {location
+                ? `In the ${zoneLabel(location.zone).toLowerCase()} · ${mins(dwellS)}`
+                : 'Dhyaan isn’t sure which room she’s in right now'}
+            </Txt>
+          </Row>
+          <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>
+            {resident
+              ? `Band last heard ${ago(resident.last_seen)}` +
+                (resident.band_battery_pct != null ? ` · battery ${resident.band_battery_pct}%` : '')
+              : ' '}
           </Txt>
-        </Row>
-        <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>
-          {resident
-            ? `Band last heard ${ago(resident.last_seen)}` +
-              (resident.band_battery_pct != null ? ` · battery ${resident.band_battery_pct}%` : '')
-            : ' '}
-        </Txt>
+        </Entrance>
 
         <SectionTitle>Today so far</SectionTitle>
         <Row gap={2}>

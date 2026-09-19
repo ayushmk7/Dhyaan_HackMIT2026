@@ -1,4 +1,4 @@
-// Kestrel's information graphics: event rows, the room-time bar, the live
+// Dhyaan's information graphics: event rows, the room-time bar, the live
 // escalation ladder, and 14-day sparklines. Pure Views — no chart library.
 import React, { useEffect, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';

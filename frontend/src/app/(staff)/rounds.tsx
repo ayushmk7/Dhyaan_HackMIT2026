@@ -1,13 +1,15 @@
 // Night rounds: 23:00–07:00 mode. Only what deviated tonight, darkest screen
 // in the app — Marcus reads this in a dim corridor.
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import React from 'react';
-import { Pressable, View } from 'react-native';
-import { Card, Row, Screen, StateChip, StatusDot, Txt } from '@/components';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Card, Row, StateChip, StatusDot, Txt } from '@/components';
 import { ago } from '@/lib/format';
 import { useResidents } from '@/lib/hooks';
 import { useLive } from '@/store/live';
-import { font, sp } from '@/theme/tokens';
+import { font, palette, sp } from '@/theme/tokens';
 import type { ResidentState } from '@/theme/tokens';
 
 const SEVERITY: Record<ResidentState, number> = {
@@ -15,6 +17,7 @@ const SEVERITY: Record<ResidentState, number> = {
 };
 
 export default function Rounds() {
+  const insets = useSafeAreaInsets();
   const { data } = useResidents();
   const liveStates = useLive((s) => s.states);
 
@@ -25,7 +28,16 @@ export default function Rounds() {
     .sort((a, b) => SEVERITY[a.state] - SEVERITY[b.state]);
 
   return (
-    <Screen night>
+    <View style={{ flex: 1, backgroundColor: palette.night }}>
+      <LinearGradient colors={[palette.night, '#0B1016']} style={StyleSheet.absoluteFill} />
+      <ScrollView
+        contentContainerStyle={{
+          paddingTop: insets.top + sp(3),
+          paddingHorizontal: sp(5),
+          paddingBottom: insets.bottom + sp(6),
+        }}
+        showsVerticalScrollIndicator={false}
+      >
       <Txt kind="display" tone="nightInk">Night rounds</Txt>
       <Txt kind="caption" tone="nightMuted" style={{ marginTop: sp(1) }}>
         Only what changed tonight
@@ -68,6 +80,7 @@ export default function Rounds() {
           </Txt>
         )}
       </View>
-    </Screen>
+      </ScrollView>
+    </View>
   );
 }

@@ -21,7 +21,7 @@ export default function Baseline() {
     <Screen>
       <Txt kind="title">Tell us about {residentName}</Txt>
       <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
-        Kestrel starts from your answers, then learns her real rhythm within a week.
+        Dhyaan starts from your answers, then learns her real rhythm within a week.
       </Txt>
 
       <Question label="When is she usually up?">

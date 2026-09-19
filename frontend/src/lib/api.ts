@@ -1,15 +1,14 @@
-// API facade. Mock today; swap `MODE` to 'http' and fill BASE_URL when the
-// Python backend exists — screens and hooks don't change.
+// API facade (TODO D1.1): screens import ONLY this. USE_MOCKS picks the in-memory
+// backend or the real client (http.ts) — flipping it changes zero call sites.
+import { USE_MOCKS } from './config';
+import { httpApi } from './http';
 import { dhyaan } from './mock/dhyaan';
 import type { Alert, ChatMessage } from './types';
-
-export const MODE: 'mock' | 'http' = 'mock';
-export const BASE_URL = 'https://dhyaan.example.com/v1'; // cloudflared tunnel
 
 // ponytail: simulated latency keeps loading states honest in the demo.
 const wait = (ms = 220) => new Promise((r) => setTimeout(r, ms));
 
-export const api = {
+const mockApi = {
   async listResidents() { await wait(); return dhyaan.listResidents(); },
   async getResident(id: string) { await wait(); return dhyaan.getResident(id) ?? null; },
   async getEvents(residentId: string) { await wait(300); return dhyaan.getEvents(residentId); },
@@ -52,3 +51,5 @@ export const api = {
   },
   async saveContacts(_contacts: unknown) { await wait(400); },
 };
+
+export const api: typeof mockApi = USE_MOCKS ? mockApi : httpApi;
