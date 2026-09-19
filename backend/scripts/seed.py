@@ -18,6 +18,10 @@ from zoneinfo import ZoneInfo
 TZ = ZoneInfo("America/New_York")
 
 from app import db as dbmod
+# Import for its side effect: app.rag registers the embedding hook via
+# events.subscribe() at import time. Import it late (or not at all) and every
+# seeded event is written with no embedding and retrieval returns nothing.
+from app import rag  # noqa: F401
 from app.events import emit
 
 RESIDENT = {
@@ -112,8 +116,7 @@ async def main(wipe: bool, days: int):
     # Embeddings ride background tasks (rag._on_event_created). This process is
     # about to exit, which would cancel them and leave every seeded event
     # unembedded — so wait for them here.
-    from app.rag import drain_embeddings
-    await drain_embeddings()
+    await rag.drain_embeddings()
 
     n = await d.events.count_documents({})
     print(f"seeded {n} events over {days + 1} days for Eleanor")

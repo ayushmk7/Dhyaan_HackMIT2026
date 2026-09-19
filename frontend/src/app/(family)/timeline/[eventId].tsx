@@ -2,7 +2,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
-import { Btn, Card, Hairline, Row, Screen, Txt } from '@/components';
+import { Btn, Card, ErrorState, Hairline, Row, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
 import { dayOf, eventTitle, timeOf, zoneLabel } from '@/lib/format';
 import { useEvent } from '@/lib/hooks';
@@ -24,16 +24,21 @@ const confidenceWords = (c: number) =>
 
 export default function EventDetail() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
-  const { data: event, isLoading } = useEvent(eventId ?? '');
+  const { data: event, isLoading, isError, refetch } = useEvent(eventId ?? '');
   const [verdict, setVerdict] = useState<'expected' | 'false_positive' | null>(null);
   const [busy, setBusy] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   if (!event) {
     return (
       <Screen>
-        <Txt kind="body" tone="muted">
-          {isLoading ? 'Looking that up…' : 'That observation isn’t here any more.'}
-        </Txt>
+        {isError ? (
+          <ErrorState message="Couldn’t load that observation." onRetry={refetch} />
+        ) : (
+          <Txt kind="body" tone="muted">
+            {isLoading ? 'Looking that up…' : 'That observation isn’t here any more.'}
+          </Txt>
+        )}
         <Btn label="Back" kind="quiet" onPress={() => router.back()} style={{ marginTop: sp(5) }} />
       </Screen>
     );
@@ -41,9 +46,15 @@ export default function EventDetail() {
 
   const give = async (v: 'expected' | 'false_positive') => {
     setBusy(true);
-    await api.feedback(event.id, v);
-    setVerdict(v);
-    setBusy(false);
+    setFeedbackError(null);
+    try {
+      await api.feedback(event.id, v);
+      setVerdict(v);
+    } catch {
+      setFeedbackError('Couldn’t save that — try again.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -79,6 +90,7 @@ export default function EventDetail() {
           </Txt>
           <Btn label="This was expected" kind="quiet" busy={busy} onPress={() => give('expected')} />
           <Btn label="This didn’t happen" kind="quiet" busy={busy} onPress={() => give('false_positive')} />
+          {feedbackError && <Txt kind="caption" tone="alert">{feedbackError}</Txt>}
         </View>
       )}
     </Screen>

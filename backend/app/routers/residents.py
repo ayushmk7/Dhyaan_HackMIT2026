@@ -276,9 +276,30 @@ async def get_alert(alert_id: str):
         "resident_id": a["resident_id"], "source": "voice", "payload.alert_id": alert_id,
     }).sort("ts_epoch", 1).to_list(None)
 
+    # The alert takeover screen replays the escalation as it happened. Every FSM
+    # transition already writes an event (app/alerts.py::_apply), so the ladder is
+    # reconstructable rather than needing its own table.
+    ladder_events = await d.events.find({
+        "source": "derived", "payload.alert_id": alert_id,
+    }).sort("ts_epoch", 1).to_list(None)
+    ladder = [
+        {
+            "at": e["ts"],
+            "from_state": (e.get("payload") or {}).get("from_state"),
+            "state": (e.get("payload") or {}).get("to_state"),
+            "trigger": (e.get("payload") or {}).get("trigger"),
+            "detail": (e.get("payload") or {}).get("detail"),
+        }
+        for e in ladder_events
+        # The alert-open event carries an alert_id but no transition, so it would
+        # render as a blank "None -> None" row at the top of the replay.
+        if (e.get("payload") or {}).get("to_state")
+    ]
+
     out = _ser(a)
     out["trigger_event"] = _ser(trigger) if trigger else None
     out["calls"] = [_ser(c) for c in call_events]
+    out["ladder"] = ladder
     return out
 
 
@@ -360,7 +381,26 @@ async def alert_feedback(alert_id: str, body: FeedbackBody):
     d = db()
     a = await d.alerts.find_one({"_id": alert_id})
     if not a:
-        raise HTTPException(404, "alert not found")
+        # The family gives feedback from the TIMELINE, where the thing on screen
+        # is an event, not an alert ("that was fine, she was at her sister's").
+        # Accept either id: look for an alert triggered by this event, and if the
+        # event stands alone (a baseline deviation has no alert) still record the
+        # verdict against the event, because that is what the learner consumes.
+        a = await d.alerts.find_one({"trigger_event_id": alert_id})
+        if not a:
+            ev = await d.events.find_one({"_id": alert_id})
+            if not ev:
+                raise HTTPException(404, "no alert or event with that id")
+            fb = await emit(
+                resident_id=ev["resident_id"], source="manual", type="feedback_given",
+                embedding_text=f"Feedback on {ev['type']}: {body.verdict}"[:400],
+                payload={"event_id": alert_id, "verdict": body.verdict,
+                         "reason": body.reason, "scope": body.scope},
+            )
+            await d.events.update_one({"_id": alert_id},
+                                      {"$set": {"review_state": body.verdict}})
+            return {"ok": True, "feedback_event_id": fb["_id"]}
+        alert_id = a["_id"]
 
     trigger_id = a.get("trigger_event_id")
     text = f"Feedback on alert {alert_id}: {body.verdict}"

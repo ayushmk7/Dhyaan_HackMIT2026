@@ -1,14 +1,17 @@
 // Triage: residents ranked by who needs someone now. The top of this list is
 // the product — Marcus covers 40 rooms and reads only the first few rows.
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
-import { Pressable, View } from 'react-native';
-import { Btn, Hairline, Row, Screen, StatusDot, Txt } from '@/components';
+import React, { useCallback, useState } from 'react';
+import { Pressable, RefreshControl, View } from 'react-native';
+import {
+  Btn, ErrorState, Hairline, LoadingState, Row, Screen, StatusDot, Txt,
+} from '@/components';
 import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { useResidents } from '@/lib/hooks';
-import type { Resident } from '@/lib/types';
+import type { Alert, Resident } from '@/lib/types';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
 import { palette, sp } from '@/theme/tokens';
@@ -18,41 +21,110 @@ const TIER: Record<ResidentState, number> = {
   alerting: 0, attention: 1, offline: 2, learning: 3, ok: 4,
 };
 
-function TriageRow({ r, onPress }: { r: Resident; onPress: () => void }) {
+function TriageRow({ r, alert, acking, onPress, onAck }: {
+  r: Resident; alert?: Alert; acking?: boolean; onPress: () => void; onAck?: () => void;
+}) {
   return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [{ paddingVertical: sp(3) }, pressed && { opacity: 0.6 }]}
-    >
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Row gap={2}>
-          <StatusDot state={r.state} />
-          <Txt kind="label">{r.display_name}</Txt>
+    <View style={{ paddingVertical: sp(3) }}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onPress}
+        style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+      >
+        <Row style={{ justifyContent: 'space-between' }}>
+          <Row gap={2}>
+            <StatusDot state={r.state} />
+            <Txt kind="label">{r.display_name}</Txt>
+          </Row>
+          <Txt kind="caption" tone="muted">{r.room ?? ''}</Txt>
         </Row>
-        <Txt kind="caption" tone="muted">{r.room ?? ''}</Txt>
-      </Row>
-      <Row style={{ justifyContent: 'space-between', marginTop: 2, paddingLeft: sp(4.5) }}>
-        <Txt
-          kind="caption"
-          tone={r.state === 'alerting' ? 'alert' : r.state === 'attention' ? 'warn' : 'muted'}
-          style={{ flex: 1, paddingRight: sp(2) }}
-          numberOfLines={2}
+        <Row style={{ justifyContent: 'space-between', marginTop: 2, paddingLeft: sp(4.5) }}>
+          <Txt
+            kind="caption"
+            tone={r.state === 'alerting' ? 'alert' : r.state === 'attention' ? 'warn' : 'muted'}
+            style={{ flex: 1, paddingRight: sp(2) }}
+            numberOfLines={2}
+          >
+            {r.attention_reason ?? 'Routine looks normal'}
+          </Txt>
+          <Txt kind="caption" tone="muted">{r.last_seen ? ago(r.last_seen) : 'no signal yet'}</Txt>
+        </Row>
+      </Pressable>
+      {alert && onAck && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Acknowledge the alert for ${r.display_name}`}
+          onPress={onAck}
+          disabled={acking}
+          style={({ pressed }) => [
+            { marginTop: sp(1.5), paddingLeft: sp(4.5) },
+            pressed && { opacity: 0.6 },
+          ]}
         >
-          {r.attention_reason ?? 'Routine looks normal'}
-        </Txt>
-        <Txt kind="caption" tone="muted">{ago(r.last_seen)}</Txt>
-      </Row>
-    </Pressable>
+          <Txt kind="label" tone="slate">
+            {acking ? 'Acknowledging…' : 'Acknowledge — I’ve got it'}
+          </Txt>
+        </Pressable>
+      )}
+    </View>
   );
 }
 
 export default function Triage() {
-  const { data } = useResidents();
+  const qc = useQueryClient();
+  const { data, isLoading, isError, refetch } = useResidents();
+  // ponytail: no useOpenAlerts hook in lib/hooks.ts — calling the facade directly
+  // here, same pattern the alert screen's belt-and-braces poll already uses.
+  const { data: openAlerts } = useQuery({
+    queryKey: ['openAlerts'],
+    queryFn: api.listOpenAlerts,
+    refetchInterval: 5000,
+  });
   const liveStates = useLive((s) => s.states);
   const liveLocations = useLive((s) => s.locations);
   const { setRole, finishOnboarding } = useSession();
   const [showOk, setShowOk] = useState(false);
+  const [ackingAlertId, setAckingAlertId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await qc.invalidateQueries();
+    setRefreshing(false);
+  }, [qc]);
+
+  const refreshControl = (
+    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.inkMuted} />
+  );
+
+  if (isLoading && !data) {
+    return (
+      <Screen refreshControl={refreshControl}>
+        <Txt kind="display">Tonight</Txt>
+        <LoadingState label="Loading tonight's list…" />
+      </Screen>
+    );
+  }
+  if (isError && !data) {
+    return (
+      <Screen refreshControl={refreshControl}>
+        <Txt kind="display">Tonight</Txt>
+        <ErrorState message="Couldn’t reach the floor list." onRetry={refetch} />
+      </Screen>
+    );
+  }
+
+  const alertByResident = new Map((openAlerts ?? []).map((a) => [a.resident_id, a]));
+
+  const ack = async (alert: Alert) => {
+    setAckingAlertId(alert.id);
+    try {
+      await api.ack(alert.id, 'Marcus');
+      await qc.invalidateQueries();
+    } finally {
+      setAckingAlertId(null);
+    }
+  };
 
   const residents = (data ?? [])
     .filter((r) => r.id !== 'res_eleanor')
@@ -64,14 +136,18 @@ export default function Triage() {
     .sort((a, b) => {
       const t = TIER[a.state] - TIER[b.state];
       if (t !== 0) return t;
-      return a.last_seen < b.last_seen ? 1 : -1;
+      // Newest first within a severity: an open alert's own clock beats the
+      // band's last heartbeat, which is all we have for non-alerting rows.
+      const aKey = alertByResident.get(a.id)?.opened_at ?? a.last_seen ?? '';
+      const bKey = alertByResident.get(b.id)?.opened_at ?? b.last_seen ?? '';
+      return aKey < bKey ? 1 : -1;
     });
 
   const needsEyes = residents.filter((r) => r.state !== 'ok');
   const normal = residents.filter((r) => r.state === 'ok');
 
   return (
-    <Screen>
+    <Screen refreshControl={refreshControl}>
       <Txt kind="display">Tonight</Txt>
       <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>
         {residents.length} residents · floor 2 · Marcus
@@ -81,7 +157,13 @@ export default function Triage() {
         {needsEyes.map((r, i) => (
           <View key={r.id}>
             {i > 0 && <Hairline />}
-            <TriageRow r={r} onPress={() => router.push(`/(staff)/resident/${r.id}`)} />
+            <TriageRow
+              r={r}
+              alert={alertByResident.get(r.id)}
+              acking={ackingAlertId === alertByResident.get(r.id)?.id}
+              onPress={() => router.push(`/(staff)/resident/${r.id}`)}
+              onAck={alertByResident.get(r.id) ? () => ack(alertByResident.get(r.id)!) : undefined}
+            />
           </View>
         ))}
         {needsEyes.length === 0 && (

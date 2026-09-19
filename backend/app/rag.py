@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 import httpx
 import numpy as np
 
-from .config import ANTHROPIC_API_KEY
+from . import llm
 from .db import db
 from .events import emit, subscribe
 
@@ -197,32 +197,44 @@ def _template_narrative(name: str, date_local: str, docs: list[dict]) -> str:
     return " ".join(parts)[:1000]
 
 
-async def _claude_narrative(name: str, date_local: str, docs: list[dict]) -> str:
-    import anthropic  # ponytail: imported lazily so an unset key never needs the package installed
+async def _baseline_context(resident_id: str) -> str:
+    """One line per learned feature baseline (app/baseline.py, §8), so the
+    narrative prompt can say "she normally walks three times" instead of just
+    reciting today's raw count. Cold-start residents (no baselines yet) get an
+    empty string, which the prompt treats as "no baseline available"."""
+    rows = await db().baselines.find({"resident_id": resident_id}).to_list(length=50)
+    lines = []
+    for r in rows:
+        feature = r["feature"].replace("_", " ")
+        if r.get("cold_start"):
+            continue  # too little history to call it "usual" yet
+        if r.get("lam") is not None:
+            lines.append(f"- usual {feature}: about {r['lam']:.1f} per day")
+        elif r.get("mu") is not None:
+            lines.append(f"- usual {feature}: about {r['mu']:.0f}")
+    return "\n".join(lines)
 
-    client = anthropic.AsyncAnthropic()
-    lines = "\n".join(f"- {d['ts']}: {d['embedding_text']}" for d in docs[:200])
-    prompt = (
-        f"Write a 120-200 word plain-English paragraph summarizing {name}'s day on "
-        f"{date_local} from the observations below. State what happened AND what is "
-        "notably absent (e.g. no dinner recorded, no walk recorded) — absence is "
-        "part of the answer. Do not diagnose, interpret, or speculate about health.\n\n"
-        f"{lines}"
-    )
-    resp = await client.messages.create(
-        model="claude-opus-5", max_tokens=600,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return next(b.text for b in resp.content if b.type == "text")
+
+_NARRATIVE_SYSTEM = (
+    "You write a short daily check-in for the worried adult child of an older "
+    "relative who lives independently and is monitored by in-home sensors. "
+    "Write 2 to 4 plain, warm sentences covering: what she did today, and "
+    "anything that was different from her normal routine (use the baseline "
+    "numbers given, e.g. 'she normally walks three times a day'). Mention "
+    "notable absences (no dinner recorded, no walk recorded) as observations, "
+    "not conclusions. Never diagnose, interpret, speculate about health, or "
+    "use alarming language — describe only what the sensors observed. No "
+    "preamble, no bullet points, just the sentences."
+)
 
 
 async def daily_narrative(resident_id: str, date_local: str) -> str:
     """Summarize one resident-day into the RAG chunk that carries recall (§9.1).
 
     Stored as a daily_summary event. embedding_text is capped at 400 chars by
-    events.emit(), but a 120-200 word narrative usually isn't — so the full
-    text lives in payload.narrative and is what gets embedded/searched; the
-    truncated embedding_text is just the event's own display text.
+    events.emit(), but the narrative usually isn't — so the full text lives in
+    payload.narrative and is what gets embedded/searched; the truncated
+    embedding_text is just the event's own display text.
     """
     resident_doc = await db().residents.find_one({"_id": resident_id}) or {}
     tz = ZoneInfo(resident_doc.get("timezone") or "UTC")
@@ -232,13 +244,19 @@ async def daily_narrative(resident_id: str, date_local: str) -> str:
     }).sort("ts_epoch", 1).to_list(length=2000)
 
     name = resident_doc.get("display_name", "The resident")
-    if ANTHROPIC_API_KEY:
-        try:
-            narrative = await _claude_narrative(name, date_local, docs)
-        except Exception:
-            narrative = _template_narrative(name, date_local, docs)  # ponytail: any API hiccup falls back silently
-    else:
-        narrative = _template_narrative(name, date_local, docs)
+
+    narrative = None
+    if docs:  # nothing to summarize and nothing to spend on — template covers the gap message
+        baseline_ctx = await _baseline_context(resident_id)
+        lines = "\n".join(f"- {d['ts']}: {d['embedding_text']}" for d in docs[:200])
+        user = (
+            f"Resident: {name}\nDate: {date_local}\n\n"
+            f"Her usual patterns (baseline):\n{baseline_ctx or '(not enough history yet)'}\n\n"
+            f"Today's observations:\n{lines}"
+        )
+        narrative = await llm.complete(_NARRATIVE_SYSTEM, user, max_tokens=400)
+    if not narrative:
+        narrative = _template_narrative(name, date_local, docs)  # no key, API hiccup, or empty day — same safe path
 
     event_doc = await emit(
         resident_id=resident_id, source="derived", type="daily_summary",
@@ -313,10 +331,7 @@ def _template_answer(hits: list[dict]) -> str:
     return " ".join(f"{h['text']} [{h['event_id']}]" for h in hits[:4])
 
 
-async def _claude_answer(question: str, hits: list[dict], resident_name: str) -> str:
-    import anthropic
-
-    client = anthropic.AsyncAnthropic()
+async def _claude_answer(question: str, hits: list[dict], resident_name: str) -> str | None:
     ctx = "\n".join(f"[{h['event_id']}] ({h['ts']}) {h['text']}" for h in hits)
     system = (
         f"You answer questions about {resident_name} using ONLY the observations given. "
@@ -326,11 +341,9 @@ async def _claude_answer(question: str, hits: list[dict], resident_name: str) ->
         "advice, diagnosis, interpretation, or prognosis; describe only what was observed. "
         "Two to five sentences, no preamble."
     )
-    resp = await client.messages.create(
-        model="claude-opus-5", max_tokens=500, system=system,
-        messages=[{"role": "user", "content": f"Question: {question}\n\nObservations:\n{ctx}"}],
+    return await llm.complete(
+        system, f"Question: {question}\n\nObservations:\n{ctx}", max_tokens=500,
     )
-    return next(b.text for b in resp.content if b.type == "text")
 
 
 async def answer(resident_id: str, question: str) -> dict:
@@ -351,12 +364,7 @@ async def answer(resident_id: str, question: str) -> dict:
     resident_doc = await db().residents.find_one({"_id": resident_id}) or {}
     name = resident_doc.get("display_name", "the resident")
 
-    text = _template_answer(hits)
-    if ANTHROPIC_API_KEY:
-        try:
-            text = await _claude_answer(question, hits, name)
-        except Exception:
-            text = _template_answer(hits)  # ponytail: API hiccup -> deterministic template, never a hard failure
+    text = await _claude_answer(question, hits, name) or _template_answer(hits)
 
     citations = [{"event_id": h["event_id"], "ts": h["ts"], "text": h["text"]} for h in hits]
     return {"answer": text, "citations": citations, "retrieved_count": len(hits)}

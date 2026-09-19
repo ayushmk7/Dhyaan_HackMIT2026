@@ -1,7 +1,8 @@
 // Dhyaan primitives. Every screen builds from these — see DESIGN.md.
 import React from 'react';
 import {
-  ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextStyle, View, ViewStyle,
+  ActivityIndicator, Pressable, RefreshControlProps, ScrollView, StyleSheet, Text, TextStyle,
+  View, ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { palette, radius, sp, stateColor, type, ResidentState } from '@/theme/tokens';
@@ -9,10 +10,11 @@ import { palette, radius, sp, stateColor, type, ResidentState } from '@/theme/to
 // ---- Screen -----------------------------------------------------------------
 
 export function Screen({
-  children, scroll = true, night = false, style, padded = true,
+  children, scroll = true, night = false, style, padded = true, refreshControl,
 }: {
   children: React.ReactNode; scroll?: boolean; night?: boolean;
   style?: ViewStyle; padded?: boolean;
+  refreshControl?: React.ReactElement<RefreshControlProps>;
 }) {
   const insets = useSafeAreaInsets();
   const base: ViewStyle = {
@@ -31,9 +33,36 @@ export function Screen({
       <ScrollView
         contentContainerStyle={[top, pad, style]}
         showsVerticalScrollIndicator={false}
+        refreshControl={refreshControl}
       >
         {children}
       </ScrollView>
+    </View>
+  );
+}
+
+// ---- Loading / error states ---------------------------------------------------
+// ponytail: one shape for "still loading" and "the request failed" everywhere a
+// screen fetches, so no screen ever silently renders nothing on a bad request.
+
+export function LoadingState({ label = 'Loading…', night = false }: { label?: string; night?: boolean }) {
+  return (
+    <View style={{ paddingVertical: sp(10), alignItems: 'center', gap: sp(3) }}>
+      <ActivityIndicator color={night ? palette.nightMuted : palette.inkMuted} />
+      <Txt kind="caption" tone={night ? 'nightMuted' : 'muted'}>{label}</Txt>
+    </View>
+  );
+}
+
+export function ErrorState({
+  message = 'Couldn’t reach Dhyaan. Check your connection and try again.', onRetry, night = false,
+}: { message?: string; onRetry?: () => void; night?: boolean }) {
+  return (
+    <View style={{ paddingVertical: sp(8), alignItems: 'center', gap: sp(3) }}>
+      <Txt kind="body" tone={night ? 'nightInk' : 'ink'} style={{ textAlign: 'center' }}>
+        {message}
+      </Txt>
+      {onRetry && <Btn label="Try again" kind="quiet" night={night} onPress={onRetry} />}
     </View>
   );
 }

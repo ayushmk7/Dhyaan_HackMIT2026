@@ -92,6 +92,11 @@ async def _resident_for_band(band_id: str) -> str:
 # --- /band ------------------------------------------------------------------
 
 class BandEventIn(BaseModel):
+    # Set by scripts/simulate_band.py. Real firmware never sends it, so anything
+    # carrying simulated=true is fake data — the flag is persisted onto the event
+    # so nobody demos a seeded fall believing it came off a wrist. See
+    # HARDWARE_INTEGRATION.md.
+    simulated: bool = False
     band_id: str = Field(min_length=1)
     type: Literal[BAND_EVENT_TYPES]
     ts: datetime
@@ -119,6 +124,7 @@ async def ingest_band(body: BandEventIn):
             "post_impact_tilt_deg": body.post_impact_tilt_deg,
             "stillness_ms": body.stillness_ms,
             "battery_pct": body.battery_pct,
+            "simulated": body.simulated,
         },
     )
 
@@ -138,6 +144,7 @@ async def ingest_band(body: BandEventIn):
 # --- /band/cancel -------------------------------------------------------------
 
 class BandCancelIn(BaseModel):
+    simulated: bool = False
     band_id: str = Field(min_length=1)
     alert_id: str = Field(min_length=1)
     by: Literal["button", "voice", "staff"] = "button"
@@ -155,6 +162,7 @@ async def ingest_band_cancel(body: BandCancelIn):
 # --- /heartbeat ---------------------------------------------------------------
 
 class HeartbeatIn(BaseModel):
+    simulated: bool = False
     band_id: str = Field(min_length=1)
     battery_pct: int = Field(ge=0, le=100)
     uptime_s: int | None = Field(default=None, ge=0)
@@ -175,7 +183,7 @@ async def ingest_heartbeat(body: HeartbeatIn):
             resident_id=prev["resident_id"], source="band", type="band_low_battery",
             embedding_text=f"Band {body.band_id} battery at {body.battery_pct}%",
             source_id=body.band_id, confidence=1.0,
-            payload={"battery_pct": body.battery_pct},
+            payload={"battery_pct": body.battery_pct, "simulated": body.simulated},
         )
     return Response(status_code=204)
 
@@ -195,6 +203,7 @@ class WifiReading(BaseModel):
 
 
 class RFScanIn(BaseModel):
+    simulated: bool = False
     band_id: str = Field(min_length=1)
     ts: datetime
     beacons: list[BeaconReading] = Field(default_factory=list)

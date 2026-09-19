@@ -57,22 +57,36 @@ export default function RootLayout() {
 
   useEffect(() => { connect(); }, [connect]);
 
+  // ponytail: the real backend only ever broadcasts `alert.update` on
+  // ack/resolve (backend/app/routers/residents.py) — a brand-new alert firing
+  // (e.g. a fall) is never pushed over the socket at all today. Without this
+  // poll, a live alert would only ever surface by background/foreground
+  // cycling the app. Upgrade: have the backend broadcast on alert creation too.
+  const checkForOpenAlert = () => {
+    api.listOpenAlerts().then((open) => {
+      const live = useLive.getState();
+      if (open[0] && live.activeAlert?.id !== open[0].id) {
+        live.applyEvent({ t: 'alert.opened', alert: open[0], resident_id: open[0].resident_id });
+      }
+    }).catch(() => { /* next poll or the next foreground tries again */ });
+  };
+
   // §10.3: on foreground, assume we missed everything — refetch + resync alerts.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
       focusManager.setFocused(state === 'active');
       if (state === 'active') {
         connect();
-        api.listOpenAlerts().then((open) => {
-          const live = useLive.getState();
-          if (open[0] && !live.activeAlert) {
-            live.applyEvent({ t: 'alert.opened', alert: open[0], resident_id: open[0].resident_id });
-          }
-        });
+        checkForOpenAlert();
       }
     });
     return () => sub.remove();
   }, [connect]);
+
+  useEffect(() => {
+    const t = setInterval(checkForOpenAlert, 5000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => { if (fontsLoaded) SplashScreen.hideAsync(); }, [fontsLoaded]);
   if (!fontsLoaded) return null;

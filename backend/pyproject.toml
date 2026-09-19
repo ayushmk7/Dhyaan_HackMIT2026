@@ -10,7 +10,13 @@ dependencies = [
     "httpx>=0.27",
     "numpy>=2.0",
     "python-ulid>=3.0",
+    "anthropic>=0.40",
 ]
+
+[tool.setuptools]
+# Flat layout: without this, setuptools autodiscovery sees fixtures/ as a
+# second top-level package and refuses to build.
+packages = ["app", "app.routers", "scripts"]
 
 [dependency-groups]
 dev = ["pytest>=8.3", "pytest-asyncio>=0.24"]

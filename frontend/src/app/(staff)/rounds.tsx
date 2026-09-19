@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Card, Row, StateChip, StatusDot, Txt } from '@/components';
+import { Card, ErrorState, LoadingState, Row, StateChip, StatusDot, Txt } from '@/components';
 import { ago } from '@/lib/format';
 import { useResidents } from '@/lib/hooks';
 import { useLive } from '@/store/live';
@@ -18,7 +18,7 @@ const SEVERITY: Record<ResidentState, number> = {
 
 export default function Rounds() {
   const insets = useSafeAreaInsets();
-  const { data } = useResidents();
+  const { data, isLoading, isError, refetch } = useResidents();
   const liveStates = useLive((s) => s.states);
 
   const deviating = (data ?? [])
@@ -43,8 +43,13 @@ export default function Rounds() {
         Only what changed tonight
       </Txt>
 
+      {isLoading && !data && <LoadingState label="Loading tonight's rounds…" night />}
+      {isError && !data && (
+        <ErrorState message="Couldn’t reach the floor list." onRetry={refetch} night />
+      )}
+
       <View style={{ marginTop: sp(5), gap: sp(3) }}>
-        {deviating.map((r) => (
+        {!isLoading && !isError && deviating.map((r) => (
           <Pressable
             key={r.id}
             accessibilityRole="button"
@@ -64,13 +69,13 @@ export default function Rounds() {
                   {r.attention_reason ?? 'Needs a look'}
                 </Txt>
                 <Txt kind="caption" tone="nightMuted" style={{ marginTop: sp(1) }}>
-                  Last signal {ago(r.last_seen)}
+                  Last signal {r.last_seen ? ago(r.last_seen) : 'never'}
                 </Txt>
               </Card>
             )}
           </Pressable>
         ))}
-        {deviating.length === 0 && (
+        {!isLoading && !isError && deviating.length === 0 && (
           <Txt
             kind="title"
             tone="nightMuted"

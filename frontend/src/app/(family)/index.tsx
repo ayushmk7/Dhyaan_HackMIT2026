@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { RoomTimeBar, Row, SectionTitle, StatusDot, Tile, Txt } from '@/components';
+import { ErrorState, LoadingState, RoomTimeBar, Row, SectionTitle, StatusDot, Tile, Txt } from '@/components';
 import { Entrance } from '@/components/entrance';
 import { Icon } from '@/components/icon';
 import { useLocationHistory, useResident, useTimeline } from '@/lib/hooks';
@@ -33,8 +33,8 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
   const { residentName } = useSession();
-  const { data: resident } = useResident(RES);
-  const { data: events } = useTimeline(RES);
+  const { data: resident, isLoading: residentLoading, isError: residentError, refetch: refetchResident } = useResident(RES);
+  const { data: events, isError: eventsError, refetch: refetchEvents } = useTimeline(RES);
   const todayKey = localDayKey();
   const { data: segments } = useLocationHistory(RES, todayKey);
   const live = useLive();
@@ -62,6 +62,25 @@ export default function Home() {
   const walks = todays.filter((e) => e.type === 'walk_completed').length;
   const upAtNight = todays.find((e) => e.type === 'night_activity');
   const wentOut = todays.some((e) => e.zone === 'outside');
+
+  // Nothing to show at all yet — don't render a headline built on guesses.
+  if (residentLoading && !resident) {
+    return (
+      <View style={{ flex: 1, backgroundColor: palette.paper, paddingTop: insets.top + sp(6) }}>
+        <LoadingState label={`Loading ${residentName}’s day…`} />
+      </View>
+    );
+  }
+  if (residentError && !resident) {
+    return (
+      <View style={{ flex: 1, backgroundColor: palette.paper, paddingTop: insets.top + sp(6), paddingHorizontal: sp(5) }}>
+        <ErrorState
+          message={`Couldn’t reach Dhyaan to load ${residentName}’s day.`}
+          onRetry={refetchResident}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: palette.paper }}>
@@ -96,13 +115,20 @@ export default function Home() {
           </Row>
           <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>
             {resident
-              ? `Band last heard ${ago(resident.last_seen)}` +
+              ? `Band last heard ${resident.last_seen ? ago(resident.last_seen) : 'never'}` +
                 (resident.band_battery_pct != null ? ` · battery ${resident.band_battery_pct}%` : '')
               : ' '}
           </Txt>
         </Entrance>
 
         <SectionTitle>Today so far</SectionTitle>
+        {eventsError && (
+          <Pressable onPress={() => refetchEvents()} style={{ marginBottom: sp(2) }}>
+            <Txt kind="caption" tone="warn">
+              Couldn’t load today’s activity — tap to try again.
+            </Txt>
+          </Pressable>
+        )}
         <Row gap={2}>
           <Tile
             title="Ate"

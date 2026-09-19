@@ -1,9 +1,12 @@
 // Settings: the ladder, what alerts fire, and the privacy promises — in plain words.
+import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, Share, Switch, View } from 'react-native';
-import { Btn, Card, Hairline, Row, Screen, SectionTitle, Txt } from '@/components';
+import { Btn, Card, ErrorState, Hairline, LoadingState, Row, Screen, SectionTitle, Txt } from '@/components';
 import { api } from '@/lib/api';
+import { API_BASE, USE_MOCKS } from '@/lib/config';
+import { ago } from '@/lib/format';
 import { useContacts } from '@/lib/hooks';
 import { registerForPush, sendTestPush } from '@/lib/push';
 import { useSession } from '@/store/session';
@@ -27,19 +30,87 @@ function Toggle({ label, caption, value, onChange }: {
   );
 }
 
+// ponytail: a screen-only debug view, long-press to reveal — not worth a
+// component in components/ since nothing else will ever mount it.
+function DebugPanel() {
+  const qc = useQueryClient();
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 2000);
+    return () => clearInterval(t);
+  }, []);
+  const lastSuccess = Math.max(
+    0,
+    ...qc.getQueryCache().getAll().map((q) => q.state.dataUpdatedAt || 0),
+  );
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  const testConnection = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      // Routed through react-query so this also counts toward "last successful request".
+      await qc.fetchQuery({ queryKey: ['debug_ping'], queryFn: api.getContacts, staleTime: 0 });
+      setTestResult(`Reached it · ${new Date().toLocaleTimeString()}`);
+    } catch (e) {
+      setTestResult(`Failed — ${e instanceof Error ? e.message : 'unknown error'}`);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <Card style={{ marginTop: sp(3), backgroundColor: palette.slateWash }}>
+      <Txt kind="label">Debug</Txt>
+      <Row style={{ justifyContent: 'space-between', marginTop: sp(2) }}>
+        <Txt kind="caption" tone="muted">Mode</Txt>
+        <Txt kind="caption">{USE_MOCKS ? 'Mock data' : 'Live backend'}</Txt>
+      </Row>
+      <Row style={{ justifyContent: 'space-between', marginTop: sp(1.5) }}>
+        <Txt kind="caption" tone="muted">API base</Txt>
+        <Txt kind="caption" style={{ flexShrink: 1, textAlign: 'right' }} numberOfLines={1}>
+          {API_BASE}
+        </Txt>
+      </Row>
+      <Row style={{ justifyContent: 'space-between', marginTop: sp(1.5) }}>
+        <Txt kind="caption" tone="muted">Last successful request</Txt>
+        <Txt kind="caption">{lastSuccess ? ago(new Date(lastSuccess).toISOString()) : 'none yet'}</Txt>
+      </Row>
+      <Btn
+        label="Test connection"
+        kind="quiet"
+        busy={testing}
+        onPress={testConnection}
+        style={{ marginTop: sp(3) }}
+      />
+      {testResult && <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{testResult}</Txt>}
+    </Card>
+  );
+}
+
 export default function Settings() {
-  const { data: contacts } = useContacts();
+  const { data: contacts, isLoading: contactsLoading, isError: contactsError, refetch: refetchContacts } = useContacts();
   const { residentName, consentGivenBy, reset, setRole } = useSession();
   const [alerts, setAlerts] = useState({ falls: true, bathroom: true, routine: true });
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
   const [rehearsing, setRehearsing] = useState(false);
+  const [rehearseError, setRehearseError] = useState<string | null>(null);
   const [pushToken, setPushToken] = useState<string | null>(null);
   const [pushNote, setPushNote] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [debugOpen, setDebugOpen] = useState(false);
 
   const rehearse = async () => {
     setRehearsing(true);
-    await api.simulate('fall');
-    setRehearsing(false);
+    setRehearseError(null);
+    try {
+      await api.simulate('fall');
+    } catch (e) {
+      setRehearseError(e instanceof Error ? e.message : 'Couldn’t reach Dhyaan to start it.');
+    } finally {
+      setRehearsing(false);
+    }
   };
 
   const registerPush = async () => {
@@ -51,21 +122,33 @@ export default function Settings() {
   // ponytail: real export is a backend job (§10.5 has no endpoint yet) —
   // this shares what the app already knows so the control isn't a dead button.
   const exportData = async () => {
-    const [summaries, events] = await Promise.all([
-      api.getSummaries('res_eleanor'), api.getEvents('res_eleanor'),
-    ]);
-    await Share.share({
-      title: `${residentName} — Dhyaan export`,
-      message: JSON.stringify({ resident: residentName, summaries, events }, null, 2),
-    });
+    setExportError(null);
+    try {
+      const [summaries, events] = await Promise.all([
+        api.getSummaries('res_eleanor'), api.getEvents('res_eleanor'),
+      ]);
+      await Share.share({
+        title: `${residentName} — Dhyaan export`,
+        message: JSON.stringify({ resident: residentName, summaries, events }, null, 2),
+      });
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : 'Couldn’t put that together — try again.');
+    }
   };
 
   return (
     <Screen>
-      <Txt kind="display">Settings</Txt>
+      <Pressable onLongPress={() => setDebugOpen((v) => !v)} delayLongPress={600}>
+        <Txt kind="display">Settings</Txt>
+      </Pressable>
+      {debugOpen && <DebugPanel />}
 
       <SectionTitle>Who gets called, in order</SectionTitle>
       <Card>
+        {contactsLoading && !contacts && <LoadingState label="Loading contacts…" />}
+        {contactsError && !contacts && (
+          <ErrorState message="Couldn’t load her contacts." onRetry={refetchContacts} />
+        )}
         {(contacts ?? []).map((c, i) => (
           <View key={c.id}>
             {i > 0 && <Hairline style={{ marginVertical: sp(2) }} />}
@@ -75,9 +158,11 @@ export default function Settings() {
             </Row>
           </View>
         ))}
-        <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>
-          {residentName} is always called first. Change the order by re-running setup.
-        </Txt>
+        {!contactsLoading && !contactsError && (
+          <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>
+            {residentName} is always called first. Change the order by re-running setup.
+          </Txt>
+        )}
       </Card>
 
       <SectionTitle>What Dhyaan tells you about</SectionTitle>
@@ -123,6 +208,7 @@ export default function Settings() {
         <Pressable onPress={exportData} style={{ marginTop: sp(3) }}>
           <Txt kind="label" tone="slate">Export her data</Txt>
         </Pressable>
+        {exportError && <Txt kind="caption" tone="alert" style={{ marginTop: sp(1) }}>{exportError}</Txt>}
         <Pressable onPress={() => setConfirmingRevoke(true)} style={{ marginTop: sp(3) }}>
           <Txt kind="label" tone="alert">Revoke consent and delete everything</Txt>
         </Pressable>
@@ -150,6 +236,7 @@ export default function Settings() {
         <Txt kind="caption" tone="muted">
           Plays the whole escalation, start to finish, with simulated calls.
         </Txt>
+        {rehearseError && <Txt kind="caption" tone="alert">{rehearseError}</Txt>}
         <Btn
           label="See the staff side"
           kind="quiet"
