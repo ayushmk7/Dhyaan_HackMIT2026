@@ -240,6 +240,20 @@ crossing the dedup threshold into a `visitor_present` event and updating
 The plan's fallback trigger (drop to `qwen3-vl:4b` if a 3-frame batch exceeds
 6 s) is **not** met warm, so 8b stays.
 
+Measured on this machine (M-series, `keep_alive: -1`, 640×360, quality 80,
+temperature 0), three warm runs each:
+
+| | 1 frame | 3 frames |
+|---|---|---|
+| `qwen3-vl:8b` (default) | 2.80 s | 2.75 s |
+| `qwen3-vl:4b` (`--model qwen3-vl:4b`) | 1.94 s | 2.03 s |
+
+The first call after an idle stretch costs 4.7–6.7 s while the model pages back
+in; that is the number a demo will actually feel, so warm it with `make vlm`
+before the slot. On a real webcam, steady state was **3 VLM calls in 120 s** with
+someone in view — the ~1/min budget the cascade is there to enforce. `4b` is
+pulled and a flag away if the room needs it.
+
 ### Known ceilings
 
 - **`think: false` is mandatory.** `qwen3-vl` is a thinking model; with thinking
