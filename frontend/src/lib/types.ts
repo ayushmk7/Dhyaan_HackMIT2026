@@ -114,7 +114,7 @@ export interface ChatCitation {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'kestrel';
+  role: 'user' | 'dhyaan';
   text: string;
   citations?: ChatCitation[];
   refused?: boolean;

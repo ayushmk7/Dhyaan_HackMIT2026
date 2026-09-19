@@ -2,7 +2,7 @@
 // the in-memory backend; in http mode it opens the real socket.
 import { create } from 'zustand';
 import { MODE, BASE_URL } from '@/lib/api';
-import { kestrel } from '@/lib/mock/kestrel';
+import { dhyaan } from '@/lib/mock/dhyaan';
 import type { Alert, LadderStep, ResidentLocation, TranscriptLine, WsEnvelope } from '@/lib/types';
 import type { ResidentState } from '@/theme/tokens';
 
@@ -32,7 +32,7 @@ export const useLive = create<LiveState>((set, get) => ({
     if (unsubscribe) return;
     set({ status: 'connecting' });
     if (MODE === 'mock') {
-      unsubscribe = kestrel.subscribe((m) => get().applyEvent(m));
+      unsubscribe = dhyaan.subscribe((m) => get().applyEvent(m));
       set({ status: 'open' });
       return;
     }

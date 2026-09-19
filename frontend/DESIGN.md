@@ -1,19 +1,22 @@
-# Kestrel app — design system & build rules
+# Dhyaan app — design system & build rules
 
 Read this before writing any screen. Deviations from this doc are bugs.
 
 ## Voice
 
-Kestrel watches over someone's mother. The app must read like a calm, competent
+Dhyaan watches over someone's mother. The app must read like a calm, competent
 human — never like a hospital monitor, never like a SaaS dashboard. Big statements
 are full sentences in a serif ("Eleanor is OK", "She's in the kitchen"). Labels are
 sentence case. No ALL-CAPS eyebrows, no middle-dot metadata rows, no icon soup.
 
 ## Tokens — import from `@/theme/tokens`
 
-Palette is drawn from the kestrel itself: slate-blue of the wing, rust of the back.
-Rust is **reserved for alerts** — if rust appears anywhere but an alert/attention
-surface, it's wrong.
+**Aesthetic reference (per distinctive-frontend.md — document it):** Dhyaan (ध्यान,
+"attention") — a warm, handwritten-letter calm: aged paper, indigo-slate ink,
+turmeric ochre, and sindoor vermilion (`rust`) held back for the one moment that
+matters. Vermilion is **reserved for alerts** — if it appears anywhere but an
+alert/attention surface, it's wrong. The rest of the app stays deliberately quiet
+so the alert takeover's heat lands as a genuine shock.
 
 - `paper` warm ground, `ink` text, `inkMuted` secondary, `line` hairlines
 - `slate` primary/interactive, `slateDeep` pressed
@@ -52,14 +55,25 @@ From `@/components`:
   resident state, location, activeAlert, ladder, live transcript.
 - Session/role/onboarding: `useSession` from `@/store/session`.
 - Mutations (`ack`, `resolve`, `feedback`, `simulate`, pairing, survey): `api` from `@/lib/api`.
-- The mock backend (`@/lib/mock/kestrel`) simulates the fall ladder in real time.
+- The mock backend (`@/lib/mock/dhyaan`) simulates the fall ladder in real time.
   `api.simulate('fall')` starts it. Don't touch its internals from screens.
 
 ## Motion & feedback
 
-One purpose per motion. The alert takeover pulses (Animated loop already in
-`LadderTimeline`); everywhere else prefer none. Use `Vibration` only on the alert
-screen. Respect `useReducedMotion` if you add any animation.
+Orchestrated entrance, not scattered micro-interactions (distinctive-frontend.md §3):
+screens with a hero moment (Home, the alert takeover) get ONE staggered load
+sequence via the shared `Entrance` component — nothing else animates unprompted.
+The alert takeover additionally pulses (`LadderTimeline`) and fires heavy haptics
+on mount and on ack. Use `Vibration`/haptics only on the alert screen. Every
+animation checks `AccessibilityInfo.isReduceMotionEnabled` (the `Entrance`
+component does this for you).
+
+## Backgrounds
+
+Atmospheric depth where it earns its place (distinctive-frontend.md §4): the alert
+takeover and staff Rounds use a layered `expo-linear-gradient` ground; Home gets a
+faint warm wash behind the hero. Everything else stays flat paper — depth is
+spent, not sprinkled.
 
 ## The rules that keep this distinctive
 

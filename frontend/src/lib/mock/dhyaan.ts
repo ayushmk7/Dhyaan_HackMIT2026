@@ -1,4 +1,4 @@
-// In-memory Kestrel backend. Implements the §10.5 contract shapes the app uses,
+// In-memory Dhyaan backend. Implements the §10.5 contract shapes the app uses,
 // plus a real-time fall-ladder simulation driven by timers (§4.2 timings, compressed
 // ~6x so a demo fits in a minute).
 import type {
@@ -15,7 +15,7 @@ type Listener = (m: WsEnvelope) => void;
 const SPEED = 6; // ladder timings divided by this
 const secs = (s: number) => (s * 1000) / SPEED;
 
-class MockKestrel {
+class MockDhyaan {
   private now = Date.now();
   private world = generateEleanor(this.now);
   private residents: Resident[] = [eleanorResident(this.now), ...facilityResidents];
@@ -134,7 +134,7 @@ class MockKestrel {
       alert.calls.push({ role: 'resident', classification: null, transcript: [], duration_s: null });
     });
     this.after(secs(38), () => this.voice(alert, 'agent',
-      `Hi ${name}, this is Kestrel calling because your band thought you might have fallen. Are you okay?`));
+      `Hi ${name}, this is Dhyaan calling because your band thought you might have fallen. Are you okay?`));
     this.after(secs(48), () => this.voice(alert, 'agent', `${name}, can you hear me? Are you okay?`));
     this.after(secs(60), () => {
       alert.calls[0].classification = 'no_answer';
@@ -207,7 +207,7 @@ class MockKestrel {
         ? `There is an active alert right now — open it from the home screen for the live ladder.`
         : `No falls this week. Her band has raised no alerts, and I have no observations that suggest one.`;
     } else {
-      text = `I can only answer from what Kestrel observed. I don't have observations that answer that — ` +
+      text = `I can only answer from what Dhyaan observed. I don't have observations that answer that — ` +
         `try asking about her meals, walks, sleep, or time outside.`;
       refused = true;
     }
@@ -216,7 +216,7 @@ class MockKestrel {
       return new Date(e.ts).toLocaleDateString(undefined, { weekday: 'long' });
     }
 
-    const msg: ChatMessage = { id: `msg_${Date.now().toString(36)}`, role: 'kestrel', text, citations, refused };
+    const msg: ChatMessage = { id: `msg_${Date.now().toString(36)}`, role: 'dhyaan', text, citations, refused };
     this.chatLog.push(msg);
     return msg;
   }
@@ -247,5 +247,5 @@ class MockKestrel {
   }
 }
 
-export const kestrel = new MockKestrel();
+export const dhyaan = new MockDhyaan();
 export { eid };

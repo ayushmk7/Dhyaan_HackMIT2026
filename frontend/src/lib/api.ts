@@ -1,39 +1,39 @@
 // API facade. Mock today; swap `MODE` to 'http' and fill BASE_URL when the
 // Python backend exists — screens and hooks don't change.
-import { kestrel } from './mock/kestrel';
+import { dhyaan } from './mock/dhyaan';
 import type { Alert, ChatMessage } from './types';
 
 export const MODE: 'mock' | 'http' = 'mock';
-export const BASE_URL = 'https://kestrel.example.com/v1'; // cloudflared tunnel
+export const BASE_URL = 'https://dhyaan.example.com/v1'; // cloudflared tunnel
 
 // ponytail: simulated latency keeps loading states honest in the demo.
 const wait = (ms = 220) => new Promise((r) => setTimeout(r, ms));
 
 export const api = {
-  async listResidents() { await wait(); return kestrel.listResidents(); },
-  async getResident(id: string) { await wait(); return kestrel.getResident(id) ?? null; },
-  async getEvents(residentId: string) { await wait(300); return kestrel.getEvents(residentId); },
-  async getEvent(id: string) { await wait(120); return kestrel.getEvent(id) ?? null; },
-  async getSummaries(residentId: string) { await wait(); return kestrel.getSummaries(residentId); },
+  async listResidents() { await wait(); return dhyaan.listResidents(); },
+  async getResident(id: string) { await wait(); return dhyaan.getResident(id) ?? null; },
+  async getEvents(residentId: string) { await wait(300); return dhyaan.getEvents(residentId); },
+  async getEvent(id: string) { await wait(120); return dhyaan.getEvent(id) ?? null; },
+  async getSummaries(residentId: string) { await wait(); return dhyaan.getSummaries(residentId); },
   async getLocationHistory(residentId: string, date: string) {
     await wait(150);
-    return kestrel.getLocationHistory(residentId, date);
+    return dhyaan.getLocationHistory(residentId, date);
   },
-  async getBaselines(residentId: string) { await wait(); return kestrel.getBaselines(residentId); },
-  async getContacts() { await wait(); return kestrel.getContacts(); },
-  async listOpenAlerts() { await wait(100); return kestrel.listOpenAlerts(); },
-  async getAlert(id: string) { await wait(100); return kestrel.getAlert(id) ?? null; },
+  async getBaselines(residentId: string) { await wait(); return dhyaan.getBaselines(residentId); },
+  async getContacts() { await wait(); return dhyaan.getContacts(); },
+  async listOpenAlerts() { await wait(100); return dhyaan.listOpenAlerts(); },
+  async getAlert(id: string) { await wait(100); return dhyaan.getAlert(id) ?? null; },
 
-  async ack(alertId: string, by: string) { kestrel.ack(alertId, by); },
-  async resolve(alertId: string, resolution: string) { kestrel.resolve(alertId, resolution); },
+  async ack(alertId: string, by: string) { dhyaan.ack(alertId, by); },
+  async resolve(alertId: string, resolution: string) { dhyaan.resolve(alertId, resolution); },
   async feedback(eventId: string, verdict: 'expected' | 'false_positive', reason?: string) {
     await wait();
-    return kestrel.feedback(eventId, verdict, reason);
+    return dhyaan.feedback(eventId, verdict, reason);
   },
-  async chat(question: string): Promise<ChatMessage> { await wait(1100); return kestrel.chat(question); },
+  async chat(question: string): Promise<ChatMessage> { await wait(1100); return dhyaan.chat(question); },
   async simulate(kind: 'fall' | 'bathroom' = 'fall', residentId?: string): Promise<Alert> {
     await wait(150);
-    return kestrel.simulate(kind, residentId);
+    return dhyaan.simulate(kind, residentId);
   },
 
   // Onboarding — mock accepts anything plausible.
