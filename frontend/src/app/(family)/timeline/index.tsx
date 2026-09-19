@@ -1,74 +1,70 @@
-// Timeline: reverse-chron day sections — room-time bar, the day's story, then events.
+// Her day. Sentences, in order, each one labelled with where it came from —
+// what Dhyaan saw, what you told it, or what it has worked out from her
+// pattern. Never a room, never a picture: `ActivityItem` carries a sentence
+// and a kind and nothing else, and the server has already applied the family
+// filter (§6.1) before any of this arrives.
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { Pressable, RefreshControl, Share, View } from 'react-native';
+import { Pressable, RefreshControl, View } from 'react-native';
 import {
-  Chip, ErrorState, EventRow, Hairline, LoadingState, RoomTimeBar, Row, Screen, SectionTitle, Txt,
+  Card, Chip, ErrorState, Hairline, KindTag, LoadingState, Row, Screen, SectionTitle, Txt,
 } from '@/components';
 import { Icon } from '@/components/icon';
-import { api } from '@/lib/api';
-import { dayOf } from '@/lib/format';
-import { useLocationHistory, useSummaries, useTimeline } from '@/lib/hooks';
-import type { DaySummary, KEvent } from '@/lib/types';
+import { dayOf, timeOf } from '@/lib/format';
+import { localDayKey, useActivity, useSummaries } from '@/lib/hooks';
+import type { ActivityItem } from '@/lib/types';
+import { useSession } from '@/store/session';
 import { palette, sp } from '@/theme/tokens';
 
-const RES = 'res_eleanor';
-
-const dateKeyOf = (isoTs: string) => {
-  const d = new Date(isoTs);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-
-// ponytail: the facade's getEvents(residentId) has no `types` param yet (PRD
-// §10.5 shows one on the wire — `?types=`), so this filters client-side over
-// whatever's already fetched. Wire it through as a query param once the API
-// facade exposes it — no screen change needed then, just fewer rows over the network.
-const KIND_FILTERS: { label: string; match: (t: string) => boolean }[] = [
+const FILTERS: { label: string; match: (t: string) => boolean }[] = [
   { label: 'All', match: () => true },
-  { label: 'Falls', match: (t) => t.startsWith('fall') },
   { label: 'Meals', match: (t) => t.startsWith('meal') },
-  { label: 'Walks', match: (t) => t === 'walk_completed' },
-  { label: 'Location', match: (t) => t === 'zone_entered' },
-  { label: 'Night', match: (t) => t === 'night_activity' },
+  { label: 'Visitors', match: (t) => t.startsWith('visitor') },
+  {
+    label: 'Out and about',
+    match: (t) => t === 'room_exit' || t === 'room_entry' || t.startsWith('walk')
+      || t === 'left_home' || t === 'returned_home',
+  },
+  { label: 'Nights', match: (t) => t === 'night_activity' || t === 'bed_exit' },
 ];
 
-function DaySection({ label, dateKey, events, summary }: {
-  label: string; dateKey: string; events: KEvent[]; summary?: DaySummary;
-}) {
-  const { data: segments } = useLocationHistory(RES, dateKey);
+const shiftDay = (key: string, days: number) => {
+  const [y, m, d] = key.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  return localDayKey(dt);
+};
+
+function ItemRow({ item, onPress }: { item: ActivityItem; onPress?: () => void }) {
   return (
-    <View>
-      <SectionTitle>{label}</SectionTitle>
-      <RoomTimeBar segments={segments ?? []} />
-      {summary && (
-        <Txt kind="body" tone="muted" style={{ marginTop: sp(3), fontStyle: 'italic' }}>
-          {summary.narrative}
-        </Txt>
-      )}
+    <Pressable
+      accessibilityRole={onPress ? 'button' : 'text'}
+      accessibilityLabel={`${item.sentence} ${timeOf(item.ts)}`}
+      onPress={onPress}
+      disabled={!onPress}
+      style={({ pressed }) => ({ paddingVertical: sp(3), opacity: pressed ? 0.6 : 1 })}
+    >
+      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={3}>
+        <Txt kind="body" style={{ flex: 1 }}>{item.sentence}</Txt>
+        <Txt kind="caption" tone="muted">{timeOf(item.ts)}</Txt>
+      </Row>
       <View style={{ marginTop: sp(2) }}>
-        {events.map((e, i) => (
-          <View key={e.id}>
-            {i > 0 && <Hairline />}
-            <EventRow
-              event={e}
-              onPress={() =>
-                router.push({ pathname: '/(family)/timeline/[eventId]', params: { eventId: e.id } })
-              }
-            />
-          </View>
-        ))}
+        <KindTag kind={item.kind} />
       </View>
-    </View>
+    </Pressable>
   );
 }
 
-export default function Timeline() {
+export default function HerDay() {
   const qc = useQueryClient();
-  const { data: events, isLoading, isError, refetch } = useTimeline(RES);
-  const { data: summaries } = useSummaries(RES);
+  const { residentId } = useSession();
+  const [date, setDate] = useState(localDayKey());
   const [filterIdx, setFilterIdx] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+
+  const { data: activity, isLoading, isError, refetch } = useActivity(residentId, date);
+  const { data: summaries } = useSummaries(residentId);
+  const summary = (summaries ?? []).find((s) => s.date_local === date);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -80,84 +76,106 @@ export default function Timeline() {
     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.inkMuted} />
   );
 
-  const [sharing, setSharing] = useState(false);
-  const shareWeek = async () => {
-    setSharing(true);
-    const letter = await api.sundayLetter();
-    setSharing(false);
-    if (letter) Share.share({ message: letter });
-  };
+  const isToday = date === localDayKey();
+  const dayLabel = dayOf(`${date}T12:00:00`);
 
-  if (isLoading && !events) {
+  const header = (
+    <>
+      <Txt kind="display" accessibilityRole="header">Her day</Txt>
+      <Row style={{ marginTop: sp(4), justifyContent: 'space-between' }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Previous day"
+          onPress={() => setDate((d) => shiftDay(d, -1))}
+          style={({ pressed }) => ({ padding: sp(2), opacity: pressed ? 0.5 : 1 })}
+        >
+          <Icon name="chevron.left" size={14} color={palette.slate} />
+        </Pressable>
+        <Txt kind="label">{dayLabel}</Txt>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Next day"
+          disabled={isToday}
+          onPress={() => setDate((d) => shiftDay(d, 1))}
+          style={({ pressed }) => ({ padding: sp(2), opacity: isToday ? 0.25 : pressed ? 0.5 : 1 })}
+        >
+          <Icon name="chevron.right" size={14} color={palette.slate} />
+        </Pressable>
+      </Row>
+    </>
+  );
+
+  if (isLoading && !activity) {
     return (
       <Screen refreshControl={refreshControl}>
-        <Txt kind="display">Her week</Txt>
-        <LoadingState label="Loading her week…" />
+        {header}
+        <LoadingState label="Reading her day…" />
       </Screen>
     );
   }
-  if (isError && !events) {
+  if (isError && !activity) {
     return (
       <Screen refreshControl={refreshControl}>
-        <Txt kind="display">Her week</Txt>
-        <ErrorState message="Couldn’t load her timeline." onRetry={refetch} />
+        {header}
+        <ErrorState message="Couldn’t load her day." onRetry={refetch} />
       </Screen>
     );
   }
 
-  const filter = KIND_FILTERS[filterIdx];
-  const filtered = (events ?? []).filter((e) => filter.match(e.type));
-
-  // Events arrive newest-first; group into day sections preserving that order.
-  const sections: { label: string; dateKey: string; events: KEvent[] }[] = [];
-  for (const e of filtered) {
-    const label = dayOf(e.ts);
-    const last = sections[sections.length - 1];
-    if (last && last.label === label) last.events.push(e);
-    else sections.push({ label, dateKey: dateKeyOf(e.ts), events: [e] });
-  }
-  const summaryByDate = new Map((summaries ?? []).map((s) => [s.date_local, s]));
+  const filter = FILTERS[filterIdx];
+  const items = (activity?.items ?? []).filter((i) => filter.match(i.type));
+  const total = activity?.items?.length ?? 0;
 
   return (
     <Screen refreshControl={refreshControl}>
-      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <Txt kind="display">Her week</Txt>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Share her week with the family"
-          onPress={shareWeek}
-          disabled={sharing}
-          style={{ paddingVertical: sp(2), opacity: sharing ? 0.5 : 1 }}
-        >
-          <Row gap={1}>
-            <Icon name="square.and.arrow.up" size={16} color={palette.slate} />
-            <Txt kind="label" tone="slate">{sharing ? 'Writing…' : 'Share'}</Txt>
-          </Row>
-        </Pressable>
-      </Row>
+      {header}
 
       <Row style={{ marginTop: sp(4), flexWrap: 'wrap' }} gap={2}>
-        {KIND_FILTERS.map((f, i) => (
+        {FILTERS.map((f, i) => (
           <Chip key={f.label} label={f.label} selected={i === filterIdx} onPress={() => setFilterIdx(i)} />
         ))}
       </Row>
 
-      {sections.length === 0 && (
-        <Txt kind="body" tone="muted" style={{ marginTop: sp(4) }}>
-          {(events ?? []).length === 0
-            ? 'Nothing observed yet — the timeline fills in as Dhyaan notices meals, walks and rooms.'
-            : `Nothing filed under “${filter.label}” yet.`}
+      {summary ? (
+        <Card style={{ marginTop: sp(5) }}>
+          <KindTag kind="pattern" detail="the day’s story" />
+          <Txt kind="body" style={{ marginTop: sp(2.5) }}>{summary.narrative}</Txt>
+        </Card>
+      ) : (
+        <Txt kind="caption" tone="muted" style={{ marginTop: sp(5) }}>
+          Dhyaan writes the day’s story each evening. {isToday ? 'Today’s isn’t written yet.' : 'There isn’t one for this day.'}
         </Txt>
       )}
-      {sections.map((s) => (
-        <DaySection
-          key={s.dateKey}
-          label={s.label}
-          dateKey={s.dateKey}
-          events={s.events}
-          summary={summaryByDate.get(s.dateKey)}
-        />
-      ))}
+
+      <SectionTitle>What it noticed</SectionTitle>
+
+      {items.length === 0 ? (
+        <Txt kind="body" tone="muted">
+          {total === 0
+            ? `No activity noticed ${isToday ? 'yet today' : 'on this day'}. Dhyaan only writes a line when it is confident enough to say a whole sentence.`
+            : `Nothing filed under “${filter.label}” ${isToday ? 'today' : 'on this day'}.`}
+        </Txt>
+      ) : (
+        items.map((item, i) => (
+          <View key={item.id}>
+            {i > 0 && <Hairline />}
+            <ItemRow
+              item={item}
+              // Only an observation has an event behind it to open. A pattern
+              // line and a told fact have no timeline entry, so they get no
+              // tap target rather than one that leads nowhere.
+              onPress={
+                item.kind === 'observed'
+                  ? () => router.push({
+                    pathname: '/(family)/timeline/[eventId]',
+                    params: { eventId: item.id },
+                  })
+                  : undefined
+              }
+            />
+          </View>
+        ))
+      )}
     </Screen>
   );
 }

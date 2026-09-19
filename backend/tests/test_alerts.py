@@ -29,8 +29,26 @@ async def _wait_for_state(db, alert_id, target_states, timeout=3.0, interval=0.0
     )
 
 
-async def _call_events(db, resident_id):
-    return await db.events.find({"resident_id": resident_id, "type": "call_placed"}).to_list(length=None)
+async def _call_events(db, resident_id, expect=None, timeout=3.0, interval=0.02):
+    """Call events, optionally waiting for `expect` of them.
+
+    The FSM writes the state transition and then places the call, and the stub
+    emits `call_placed` from a background task — so reading immediately after the
+    state flips is a race that passes alone and fails in a full suite run. Poll
+    when the test knows how many it expects; read once when asserting none.
+    """
+    q = {"resident_id": resident_id, "type": "call_placed"}
+    if expect is None:
+        return await db.events.find(q).to_list(length=None)
+    elapsed = 0.0
+    rows = []
+    while elapsed < timeout:
+        rows = await db.events.find(q).to_list(length=None)
+        if len(rows) >= expect:
+            return rows
+        await asyncio.sleep(interval)
+        elapsed += interval
+    return rows
 
 
 async def test_cancel_inside_window_is_false_positive_no_call(db, resident, monkeypatch):
@@ -57,7 +75,7 @@ async def test_cancel_window_expiry_calls_resident(db, resident, monkeypatch):
     doc = await _wait_for_state(db, alert["_id"], "CALLING_RESIDENT")
     assert doc["resident_call_attempts"] == 1
 
-    calls = await _call_events(db, resident)
+    calls = await _call_events(db, resident, expect=1)
     assert len(calls) == 1
     assert calls[0]["payload"]["role"] == "resident"
     assert calls[0]["payload"]["to"] == "+15551230000"

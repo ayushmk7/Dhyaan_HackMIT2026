@@ -4,14 +4,17 @@ import React, { useState } from 'react';
 import { View } from 'react-native';
 import { Btn, Card, ErrorState, Hairline, Row, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
-import { dayOf, eventTitle, timeOf, zoneLabel } from '@/lib/format';
+import { dayOf, eventTitle, timeOf } from '@/lib/format';
 import { useEvent } from '@/lib/hooks';
 import type { KEvent } from '@/lib/types';
 import { sp } from '@/theme/tokens';
 
 function sensorSentence(e: KEvent): string {
   switch (e.source) {
-    case 'camera': return e.zone ? `Seen by the ${zoneLabel(e.zone).toLowerCase()} camera` : 'Seen by a camera';
+    // Deliberately never `e.zone`, even though a raw event carries one: this
+    // is a family screen, and a room name must not reach one (§5.2, D-001).
+    // GET /activity already strips it; this is the second lock.
+    case 'camera': return 'Noticed by the camera in her home';
     case 'band': return 'Reported by her band';
     case 'voice': return 'From a phone call';
     case 'derived': return 'Worked out from the pattern of her day';

@@ -2,17 +2,18 @@
 // when she doesn’t answer.
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { Btn, Card, Hairline, Row, Screen, Txt } from '@/components';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Btn, Card, Field, Hairline, Row, Screen, Txt } from '@/components';
+import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
-import { palette, radius, sp, type } from '@/theme/tokens';
+import { palette, sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
 
 type Draft = { name: string; phone: string; relationship: string };
 const emptyDraft: Draft = { name: '', phone: '', relationship: '' };
 
 export default function Contacts() {
-  const { residentName, finishOnboarding } = useSession();
+  const { residentName } = useSession();
   const [contacts, setContacts] = useState<Draft[]>([
     { name: 'Priya Sharma', phone: '+1 617 555 0142', relationship: 'Daughter' },
   ]);
@@ -35,16 +36,24 @@ export default function Contacts() {
     setAdding(false);
   };
 
+  const [error, setError] = useState<string | null>(null);
+
   const finish = async () => {
     setBusy(true);
-    await api.saveContacts(contacts.map((c, i) => ({ ...c, ladder_order: i + 1 })));
-    finishOnboarding();
-    router.replace('/(family)');
+    setError(null);
+    try {
+      await api.saveContacts(contacts.map((c, i) => ({ ...c, ladder_order: i + 1 })));
+      router.push('/onboard/done');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Couldn’t save the call list — try again.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <Screen>
-      <Txt kind="title">Who should Dhyaan call?</Txt>
+      <Txt kind="display" accessibilityRole="header">Who should Dhyaan call?</Txt>
       <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
         If {residentName} doesn’t answer, Dhyaan calls these people — in this order.
       </Txt>
@@ -63,18 +72,18 @@ export default function Contacts() {
                 </View>
               </Row>
               <Row gap={1}>
-                <Pressable accessibilityLabel={`Move ${c.name} earlier`} onPress={() => move(i, -1)} style={styles.arrow}>
-                  <Txt kind="label" tone={i === 0 ? 'muted' : 'slate'}>↑</Txt>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Move ${c.name} earlier`} onPress={() => move(i, -1)} style={styles.arrow}>
+                  <Icon name="chevron.up" size={13} color={i === 0 ? palette.inkMuted : palette.slate} />
                 </Pressable>
-                <Pressable accessibilityLabel={`Move ${c.name} later`} onPress={() => move(i, 1)} style={styles.arrow}>
-                  <Txt kind="label" tone={i === contacts.length - 1 ? 'muted' : 'slate'}>↓</Txt>
+                <Pressable accessibilityRole="button" accessibilityLabel={`Move ${c.name} later`} onPress={() => move(i, 1)} style={styles.arrow}>
+                  <Icon name="chevron.down" size={13} color={i === contacts.length - 1 ? palette.inkMuted : palette.slate} />
                 </Pressable>
                 <Pressable
                   accessibilityLabel={`Remove ${c.name}`}
                   onPress={() => setContacts((cs) => cs.filter((_, j) => j !== i))}
                   style={styles.arrow}
                 >
-                  <Txt kind="label" tone="muted">✕</Txt>
+                  <Icon name="xmark" size={13} color={palette.inkMuted} />
                 </Pressable>
               </Row>
             </Row>
@@ -90,18 +99,18 @@ export default function Contacts() {
 
       {adding ? (
         <Card style={{ marginTop: sp(4) }}>
-          <TextInput
-            style={styles.input} placeholder="Name" placeholderTextColor={palette.inkMuted}
+          <Field
+            label="Name" placeholder="Their full name"
             value={draft.name} onChangeText={(name) => setDraft((d) => ({ ...d, name }))}
           />
-          <TextInput
-            style={[styles.input, { marginTop: sp(2) }]} placeholder="Phone number"
-            placeholderTextColor={palette.inkMuted} keyboardType="phone-pad"
+          <Field
+            label="Phone number" placeholder="+1 617 555 0142" keyboardType="phone-pad"
+            style={{ marginTop: sp(3) }}
             value={draft.phone} onChangeText={(phone) => setDraft((d) => ({ ...d, phone }))}
           />
-          <TextInput
-            style={[styles.input, { marginTop: sp(2) }]} placeholder="Relationship — daughter, neighbor…"
-            placeholderTextColor={palette.inkMuted}
+          <Field
+            label="Relationship" placeholder="Daughter, neighbour…"
+            style={{ marginTop: sp(3) }}
             value={draft.relationship} onChangeText={(relationship) => setDraft((d) => ({ ...d, relationship }))}
           />
           <Row gap={3} style={{ marginTop: sp(3) }}>
@@ -116,11 +125,22 @@ export default function Contacts() {
       <Hairline style={{ marginVertical: sp(6) }} />
 
       <Btn
-        label="Finish — start watching over her"
+        label="Continue"
         busy={busy}
         disabled={contacts.length < 1}
         onPress={finish}
       />
+      {!!error && (
+        <Txt kind="caption" tone="alert" style={{ marginTop: sp(2) }} accessibilityLiveRegion="polite">
+          {error}
+        </Txt>
+      )}
+      {contacts.length === 0 && (
+        <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
+          Add at least one person. If nobody is on this list, a call that she doesn’t
+          answer has nowhere to go.
+        </Txt>
+      )}
     </Screen>
   );
 }
@@ -129,15 +149,5 @@ const styles = StyleSheet.create({
   arrow: {
     width: 34, height: 34, borderRadius: 17,
     alignItems: 'center', justifyContent: 'center',
-  },
-  input: {
-    ...type.body,
-    color: palette.ink,
-    backgroundColor: palette.paper,
-    borderWidth: 1,
-    borderColor: palette.line,
-    borderRadius: radius.tile,
-    paddingHorizontal: sp(3),
-    paddingVertical: sp(2.5),
   },
 });

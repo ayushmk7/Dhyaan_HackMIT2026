@@ -42,6 +42,15 @@ async def ensure_indexes():
     await d.baseline_observations.create_index(
         [("resident_id", 1), ("feature", 1), ("date_local", 1)], unique=True
     )
+    # Camera lane (VLM_PLAN §6.2).
+    await d.profile_facts.create_index([("resident_id", 1), ("active", 1)])
+    await d.cameras.create_index("resident_id")
+    await d.observations.create_index([("resident_id", 1), ("ts_epoch", -1)])
+    # Raw observations are the auditable trail behind the dedup, not a record we
+    # keep: Mongo expires them 7 days after `expires_at` (a real BSON date, not
+    # the ISO strings everything else uses — the TTL monitor only reads dates).
+    await d.observations.create_index("expires_at", expireAfterSeconds=0)
+
     # ponytail: embeddings live on the event doc and are scanned brute-force in
     # rag.py. No vector index, no Atlas. Ceiling ~50k events on a laptop; move to
     # Atlas Vector Search or sqlite-vec past that.

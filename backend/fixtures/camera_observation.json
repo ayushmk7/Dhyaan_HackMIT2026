@@ -1,0 +1,20 @@
+{
+  "camera_id": "cam_mac_01",
+  "resident_id": "res_eleanor",
+  "ts": "2026-09-19T12:41:07-04:00",
+  "span_s": 21.4,
+  "n_frames": 3,
+  "person_count": 1,
+  "activity": "eating",
+  "posture": "seated",
+  "movement": "slow",
+  "spot": "table",
+  "assistive_device": "none",
+  "plate_or_cup_present": true,
+  "hand_to_mouth_observed": true,
+  "confidence": 0.82,
+  "evidence": "A person is seated at the table with a plate and a fork, raising the fork toward their mouth across the frames.",
+  "model": "qwen3-vl:8b",
+  "latency_ms": 3140,
+  "simulated": false
+}

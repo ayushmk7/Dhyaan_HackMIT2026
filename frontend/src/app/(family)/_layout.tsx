@@ -1,4 +1,4 @@
-// Family tabs: Home · Timeline · Ask · Settings (§10.2).
+// Family tabs: Today · Her day · Ask · Settings (VLM_PLAN §7).
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { ColorValue } from 'react-native';
@@ -23,11 +23,11 @@ export default function FamilyLayout() {
           backgroundColor: palette.paper,
           borderTopColor: palette.line,
         },
-        tabBarLabelStyle: { fontSize: 12 },
+        tabBarLabelStyle: { fontSize: 12, fontFamily: 'Fraunces_600SemiBold' },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: glyph('house') }} />
-      <Tabs.Screen name="timeline/index" options={{ title: 'Timeline', tabBarIcon: glyph('calendar.day.timeline.left') }} />
+      <Tabs.Screen name="index" options={{ title: 'Today', tabBarIcon: glyph('house') }} />
+      <Tabs.Screen name="timeline/index" options={{ title: 'Her day', tabBarIcon: glyph('calendar.day.timeline.left') }} />
       <Tabs.Screen name="chat" options={{ title: 'Ask', tabBarIcon: glyph('bubble.left') }} />
       <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: glyph('gearshape') }} />
       <Tabs.Screen name="timeline/[eventId]" options={{ href: null }} />

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { font, palette, sp } from '@/theme/tokens';
 import { useReducedMotion } from './entrance';
+import { Icon } from './icon';
 
 const WHITE = '#FFFFFF';
 const WHITE_SOFT = 'rgba(255,255,255,0.8)';
@@ -74,7 +75,7 @@ export function RingingPulse({ label }: { label: string }) {
         {!reduced && <Animated.View style={[styles.pulseRing, ringStyle(a)]} />}
         {!reduced && <Animated.View style={[styles.pulseRing, ringStyle(b)]} />}
         <View style={styles.pulseCore}>
-          <Text style={{ fontSize: 30, color: WHITE }}>☏</Text>
+          <Icon name="phone.fill" size={28} color={WHITE} />
         </View>
       </View>
       <Text style={[styles.caption, { marginTop: sp(3) }]}>{label}</Text>

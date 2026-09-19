@@ -20,6 +20,11 @@ export const palette = {
   rustDeep: '#8F2F14',
   rustWash: '#F6E2D9',
 
+  // Camera lane: one new wash for "Dhyaan saw this just now". Not a status
+  // colour — it never means alert, and rust still owns that alone.
+  amber: '#9A6B1E',
+  amberWash: '#F7EFDC',
+
   night: '#10161D',
   nightRaised: '#1A232D',
   nightInk: '#EAE5D6',
@@ -54,6 +59,10 @@ export const sp = (n: number) => n * 4;
 export const radius = { card: 14, pill: 999, tile: 10 } as const;
 
 export const font = {
+  // Type extremes (distinctive-frontend.md §1): body drops to Fraunces 300,
+  // heroes climb to 900. The package already ships 100-900 — no new dependency.
+  light: 'Fraunces_300Light',
+  label: 'Fraunces_600SemiBold',
   display: 'Fraunces_600SemiBold',
   displayBold: 'Fraunces_700Bold',
   black: 'Fraunces_900Black',
@@ -62,10 +71,14 @@ export const font = {
 } as const;
 
 export const type = {
+  // One sentence per screen, 40-44px, the only thing at this size.
+  hero: { fontFamily: 'Fraunces_900Black', fontSize: 40, lineHeight: 44, letterSpacing: -1.2 },
   display: { fontFamily: font.black, fontSize: 34, lineHeight: 40, letterSpacing: -0.5 },
   title: { fontFamily: font.display, fontSize: 22, lineHeight: 28, letterSpacing: -0.3 },
   stat: { fontFamily: font.black, fontSize: 28, lineHeight: 34 },
-  body: { fontSize: 17, lineHeight: 24 }, // iOS body default (HIG)
-  label: { fontSize: 15, lineHeight: 20, fontWeight: '600' as const },
-  caption: { fontSize: 13, lineHeight: 18 },
+  // Body is Fraunces 300 now, not system sans — the weight contrast against
+  // the 900 hero is the whole typographic idea.
+  body: { fontFamily: 'Fraunces_300Light', fontSize: 17, lineHeight: 25 },
+  label: { fontFamily: 'Fraunces_600SemiBold', fontSize: 13, lineHeight: 18, letterSpacing: 0.2 },
+  caption: { fontFamily: 'Fraunces_300Light', fontSize: 13, lineHeight: 18 },
 } as const;

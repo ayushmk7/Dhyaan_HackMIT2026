@@ -13,8 +13,13 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+    # [{id, kind: "observed"|"told"|"pattern", ts, text}] — the kind is the
+    # point: a family must always be able to tell what Dhyaan saw from what
+    # they told us and from what is merely her pattern (VLM_PLAN §6.5).
     citations: list[dict]
     retrieved_count: int
+    refused: bool = False
+    refusal_kind: str | None = None
 
 
 class RollupRequest(BaseModel):
@@ -25,7 +30,9 @@ class RollupRequest(BaseModel):
 @router.post("/residents/{resident_id}/chat", response_model=ChatResponse)
 async def chat(resident_id: str, body: ChatRequest):
     """The family's "how has mum been this week" screen."""
-    return await rag.answer(resident_id, body.question)
+    # answer_family(), not answer(): the guard, the kind labels and the
+    # family filter all live on the extended path.
+    return await rag.answer_family(resident_id, body.question)
 
 
 @router.post("/admin/rollup")

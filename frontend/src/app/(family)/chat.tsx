@@ -1,25 +1,40 @@
-// Ask about Eleanor — RAG chat with tappable citations (§10.1 screen 11).
+// Ask. Three sources, always labelled: what you told us, what the camera saw,
+// what her pattern is (§6.5). Every answer carries its citations as chips that
+// name their kind, because a family must always be able to tell observed from
+// assumed.
+//
+// A refusal is not an error. It renders as a quiet raised hand and a plain
+// sentence — no red, no warning icon, no retry — because the questions Dhyaan
+// won't answer, it won't answer for anyone, and being told so calmly is the
+// product working, not failing.
 import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Card, Chip, Row, Txt } from '@/components';
+import { Card, Chip, CitationChip, Row, Txt } from '@/components';
 import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
 import type { ChatMessage } from '@/lib/types';
 import { useSession } from '@/store/session';
-import { font, palette, radius, sp, type } from '@/theme/tokens';
+import { palette, radius, sp, type } from '@/theme/tokens';
 
 const SUGGESTIONS = [
-  'Has she been eating?',
-  'How did she sleep?',
-  'When was she last outside?',
-  'Is she walking enough?',
+  'Has she eaten today?',
+  'What does she usually have for breakfast?',
+  'Where does she spend her afternoons?',
+  'How were her nights this week?',
 ];
 
-export default function Chat() {
+/** One line naming why an answer was withheld, above the answer itself. */
+const REFUSAL_LABEL: Record<string, string> = {
+  surveillance: 'Dhyaan doesn’t answer this, for anyone',
+  medical: 'Outside what Dhyaan can answer',
+  no_data: 'Dhyaan hasn’t been told or shown this',
+};
+
+export default function Ask() {
   const insets = useSafeAreaInsets();
   const { residentName } = useSession();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -55,20 +70,24 @@ export default function Chat() {
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={{
-          paddingTop: insets.top + sp(4),
+          paddingTop: insets.top + sp(5),
           paddingHorizontal: sp(5),
           paddingBottom: sp(4),
         }}
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Txt kind="display">Ask about {residentName}</Txt>
-        <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>
-          Answers come only from what Dhyaan observed, with the evidence attached.
+        <Txt kind="display" accessibilityRole="header">Ask about {residentName}</Txt>
+        <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
+          Answers come from three things, and every one is labelled: what you told
+          Dhyaan, what the camera noticed, and the pattern it has learned. There is no
+          video, and no recording of anything she said.
         </Txt>
 
         {messages.length === 0 && (
           <View style={{ marginTop: sp(6), gap: sp(2) }}>
+            <Txt kind="label" tone="muted">Start with one of these</Txt>
             {SUGGESTIONS.map((s) => (
               <Chip key={s} label={s} onPress={() => send(s)} />
             ))}
@@ -79,7 +98,7 @@ export default function Chat() {
           </View>
         )}
 
-        <View style={{ marginTop: sp(4), gap: sp(3) }}>
+        <View style={{ marginTop: sp(5), gap: sp(3) }}>
           {messages.map((m) =>
             m.role === 'user' ? (
               <View key={m.id} style={{
@@ -90,56 +109,54 @@ export default function Chat() {
                 <Txt kind="body">{m.text}</Txt>
               </View>
             ) : (
-              // A refusal reads as "outside scope", not a warning — no red/amber,
-              // just a quiet label so it's distinct without feeling alarming.
               <Card key={m.id} style={{ alignSelf: 'stretch' }}>
                 {m.refused && (
-                  <Row gap={1.5} style={{ marginBottom: sp(2) }}>
-                    <Icon name="questionmark.circle" size={14} color={palette.slate} />
-                    <Txt kind="caption" tone="slate" style={{ fontWeight: '600' }}>
-                      Outside what Dhyaan has observed
+                  <Row gap={1.5} style={{ marginBottom: sp(2.5) }}>
+                    <Icon name="hand.raised" size={14} color={palette.slate} />
+                    <Txt kind="label" tone="slate">
+                      {REFUSAL_LABEL[m.refusal_kind ?? ''] ?? 'Dhyaan doesn’t answer this'}
                     </Txt>
                   </Row>
                 )}
-                <Text
-                  style={{
-                    fontFamily: font.serif, fontSize: 17, lineHeight: 25,
-                    color: m.refused ? palette.inkMuted : palette.ink,
-                  }}
-                >
-                  {m.text}
-                </Text>
+                <Txt kind="body" style={{ fontSize: 18, lineHeight: 27 }}>{m.text}</Txt>
                 {!!m.citations?.length && (
-                  <Row style={{ flexWrap: 'wrap', marginTop: sp(3) }} gap={2}>
+                  <View style={{ marginTop: sp(3), gap: sp(2) }}>
                     {m.citations.map((c) => (
-                      <Chip
-                        key={c.id}
-                        label={c.label}
-                        onPress={() =>
-                          c.event_ids[0] &&
-                          router.push({
-                            pathname: '/(family)/timeline/[eventId]',
-                            params: { eventId: c.event_ids[0] },
-                          })
+                      <CitationChip
+                        key={`${c.kind}_${c.id}`}
+                        citation={c}
+                        onPress={
+                          c.event_ids[0]
+                            ? () => router.push({
+                              pathname: '/(family)/timeline/[eventId]',
+                              params: { eventId: c.event_ids[0] },
+                            })
+                            : undefined
                         }
                       />
                     ))}
-                  </Row>
+                  </View>
                 )}
               </Card>
             ),
           )}
+
           {thinking && (
-            <Row gap={2}>
-              <ActivityIndicator size="small" color={palette.inkMuted} />
-              <Txt kind="caption" tone="muted">Dhyaan is reading her week…</Txt>
-            </Row>
+            <Card style={{ alignSelf: 'stretch' }}>
+              <Row gap={2}>
+                <ActivityIndicator size="small" color={palette.inkMuted} />
+                <Txt kind="caption" tone="muted" accessibilityLiveRegion="polite">
+                  Dhyaan is reading what it was told and what it saw…
+                </Txt>
+              </Row>
+            </Card>
           )}
+
           {sendError && !thinking && (
             <Row gap={2} style={{ justifyContent: 'space-between' }}>
               <Txt kind="caption" tone="alert" style={{ flex: 1 }}>{sendError}</Txt>
               <Pressable accessibilityRole="button" onPress={() => send(lastQuestion)}>
-                <Txt kind="label" tone="slate">Retry</Txt>
+                <Txt kind="label" tone="slate">Try again</Txt>
               </Pressable>
             </Row>
           )}
@@ -153,6 +170,7 @@ export default function Chat() {
         borderTopWidth: 1, borderTopColor: palette.line, backgroundColor: palette.paper,
       }}>
         <TextInput
+          accessibilityLabel={`Ask about ${residentName}`}
           value={draft}
           onChangeText={setDraft}
           placeholder={`Ask anything about ${residentName}’s week`}
@@ -168,7 +186,8 @@ export default function Chat() {
         />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Send"
+          accessibilityLabel="Ask"
+          accessibilityState={{ disabled: !draft.trim() || thinking }}
           onPress={() => send(draft)}
           style={({ pressed }) => ({
             height: 44, paddingHorizontal: sp(4), borderRadius: radius.card,
@@ -177,7 +196,7 @@ export default function Chat() {
             opacity: draft.trim() && !thinking ? 1 : 0.4,
           })}
         >
-          <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>Ask</Text>
+          <Txt kind="label" tone="paper">Ask</Txt>
         </Pressable>
       </View>
     </KeyboardAvoidingView>

@@ -43,3 +43,34 @@ export const useAlert = (id: string) =>
     enabled: !!id,
     refetchInterval: 3000, // belt-and-braces under the websocket
   });
+
+// ---- camera lane -------------------------------------------------------------
+// Presence is pushed over the websocket (`presence.update`); the 15 s refetch
+// is the belt-and-braces under it, the same trick useAlert already uses. Local
+// day key, because "today" is her day, not UTC's.
+
+export const localDayKey = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+export const usePresence = (residentId: string) =>
+  useQuery({
+    queryKey: ['presence', residentId],
+    queryFn: () => api.getPresence(residentId),
+    enabled: !!residentId,
+    refetchInterval: 15_000,
+  });
+
+export const useActivity = (residentId: string, date = localDayKey()) =>
+  useQuery({
+    queryKey: ['activity', residentId, date],
+    queryFn: () => api.getActivity(residentId, date),
+    enabled: !!residentId && !!date,
+    refetchInterval: 30_000,
+  });
+
+export const useProfile = (residentId: string) =>
+  useQuery({
+    queryKey: ['profile', residentId],
+    queryFn: () => api.getProfile(residentId),
+    enabled: !!residentId,
+  });

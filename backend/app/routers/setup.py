@@ -38,7 +38,7 @@ async def _require_resident(resident_id: str) -> None:
 
 class SimulateIn(BaseModel):
     resident_id: str = Field(min_length=1)
-    kind: Literal["fall", "bathroom", "walk"]
+    kind: Literal["fall", "bathroom", "walk", "meal", "visitor", "out_of_view"]
     # Which way the simulated check-in call goes. Without this the outcome is
     # whatever the server process was last set to, which is unusable on stage —
     # you cannot restart the backend between demo runs to show "she's fine" and
@@ -81,6 +81,16 @@ async def admin_simulate(body: SimulateIn):
             battery_pct=band.get("battery_pct") or 80,
         ))
         return {"event_id": resp["event_id"], "alert_id": resp.get("alert_id")}
+
+    if body.kind in ("meal", "visitor", "out_of_view"):
+        # The on-stage fallback if the webcam misbehaves (§6.1). It posts a
+        # canned observation sequence through the REAL ingest path, so the
+        # dedup, the presence state, the websocket push and the app all behave
+        # exactly as they would for the camera — same reason the fall branch
+        # calls ingest_band() instead of re-deriving the wiring here.
+        from .camera import simulate_camera  # lazy: avoid import cycle at module load
+
+        return await simulate_camera(body.resident_id, body.kind)
 
     if body.kind == "bathroom":
         from ..location import BATHROOM_THRESHOLD_S  # lazy: mirrors ingest.py's own lazy-import style
