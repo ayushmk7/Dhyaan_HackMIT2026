@@ -79,6 +79,64 @@ ${eventSentences.slice(0, 20).join('\n')}`,
   return parsed?.openers?.length ? parsed.openers.slice(0, 3) : null;
 }
 
+// ---- Her care file: care documents → structure (Dropbox "files into action") ----
+
+export interface CareExtract {
+  medications: { name: string; dose?: string; timing?: string }[];
+  appointments: { title: string; when: string; where?: string; note?: string }[];
+  emergency: {
+    allergies: string[];
+    conditions: string[];
+    doctor?: { name: string; phone?: string };
+  };
+  summary: string; // "3 medications, 1 appointment, 1 allergy"
+}
+
+const CARE_PROMPT = `This is a care document for an elderly woman (a discharge summary, medication
+list, appointment letter, or similar), provided by her family to their care app.
+Extract ONLY what the document actually says — never infer, never add.
+Reply with ONLY a JSON object, no fences, shaped exactly:
+{"medications":[{"name":string,"dose":string,"timing":string}],
+ "appointments":[{"title":string,"when":string,"where":string,"note":string}],
+ "emergency":{"allergies":[string],"conditions":[string],"doctor":{"name":string,"phone":string}},
+ "summary":string}
+- timing in her day's terms ("with breakfast", "at night"), not medical shorthand.
+- summary: one short sentence counting what you found.
+- Omit/empty anything the document doesn't state. This is informational organization,
+  not medical advice.`;
+
+export async function extractCareInfo(
+  input: { text: string } | { imageBase64: string; mediaType: string },
+): Promise<CareExtract | null> {
+  if (!client) return null;
+  try {
+    const content: Anthropic.ContentBlockParam[] =
+      'text' in input
+        ? [{ type: 'text', text: `${CARE_PROMPT}\n\nDOCUMENT:\n${input.text.slice(0, 8000)}` }]
+        : [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: input.mediaType as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif',
+                data: input.imageBase64,
+              },
+            },
+            { type: 'text', text: CARE_PROMPT },
+          ];
+    const res = await client.messages.create({
+      model: 'claude-opus-5',
+      max_tokens: 2000,
+      messages: [{ role: 'user', content }],
+    });
+    const block = res.content.find((b) => b.type === 'text');
+    return extractJson<CareExtract>(block && block.type === 'text' ? block.text : null);
+  } catch (e) {
+    console.warn('care extraction failed:', e);
+    return null;
+  }
+}
+
 export async function polishLetter(draft: string): Promise<string | null> {
   return ask(
     `Rewrite this week's elder-care observations as a short warm letter (under 150 words)

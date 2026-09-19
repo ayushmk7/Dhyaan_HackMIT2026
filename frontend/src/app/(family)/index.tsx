@@ -1,5 +1,5 @@
 // Home: one calm sentence about Eleanor, where she is, and how today is going.
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, Pressable, RefreshControl, ScrollView, View } from 'react-native';
@@ -10,6 +10,7 @@ import { Entrance } from '@/components/entrance';
 import { Icon } from '@/components/icon';
 import { useLatestMessage, useLocationHistory, useResident, useTalkAbout, useTimeline } from '@/lib/hooks';
 import { ago, dayOf, eventTitle, mins, timeOf, zoneLabel } from '@/lib/format';
+import { useCareFile } from '@/store/carefile';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
 import { palette, sp, type ResidentState } from '@/theme/tokens';
@@ -37,6 +38,7 @@ export default function Home() {
   const { data: events, isError: eventsError, refetch: refetchEvents } = useTimeline(RES);
   const { data: prompts } = useTalkAbout();
   const { data: herMessage } = useLatestMessage();
+  const nextAppt = useCareFile((s) => s.appointments[0]);
   const todayKey = localDayKey();
   const { data: segments } = useLocationHistory(RES, todayKey);
   const live = useLive();
@@ -206,6 +208,26 @@ export default function Home() {
 
         <SectionTitle>Where her day went</SectionTitle>
         <RoomTimeBar segments={segments ?? []} />
+
+        {nextAppt && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/(family)/carefile')}
+            style={({ pressed }) => [{
+              marginTop: sp(6), paddingVertical: sp(3),
+              borderTopWidth: 1, borderTopColor: palette.line,
+              opacity: pressed ? 0.6 : 1,
+            }]}
+          >
+            <Row style={{ justifyContent: 'space-between' }}>
+              <Txt kind="caption" tone="muted">Coming up</Txt>
+              <Icon name="chevron.right" size={12} color={palette.inkMuted} />
+            </Row>
+            <Txt kind="body" style={{ marginTop: 2 }}>
+              {nextAppt.title} · {nextAppt.when}
+            </Txt>
+          </Pressable>
+        )}
 
         {events?.[0] && (
           <Pressable

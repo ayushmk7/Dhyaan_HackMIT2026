@@ -32,6 +32,7 @@ export default function FamilyLayout() {
       <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: glyph('gearshape') }} />
       <Tabs.Screen name="timeline/[eventId]" options={{ href: null }} />
       <Tabs.Screen name="plan" options={{ href: null }} />
+      <Tabs.Screen name="carefile" options={{ href: null }} />
     </Tabs>
   );
 }

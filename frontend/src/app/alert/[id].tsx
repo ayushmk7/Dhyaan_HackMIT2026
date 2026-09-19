@@ -14,6 +14,7 @@ import { Entrance } from '@/components/entrance';
 import { api } from '@/lib/api';
 import { timeOf } from '@/lib/format';
 import { useAlert, useContacts, useResident } from '@/lib/hooks';
+import { emergencyLine, useCareFile } from '@/store/carefile';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
 import { font, palette, radius, sp, type } from '@/theme/tokens';
@@ -80,6 +81,8 @@ export default function AlertTakeover() {
   const { data: contacts } = useContacts();
   const live = useLive();
   const { role, residentName } = useSession();
+  const careFile = useCareFile();
+  const emsLine = emergencyLine(careFile);
   const { data: resident } = useResident(alert?.resident_id ?? '');
   const [closedNote, setClosedNote] = useState<string | null>(null);
   const player = useAudioPlayer(require('../../../assets/audio/dhyaan-urgent.wav'));
@@ -275,6 +278,15 @@ export default function AlertTakeover() {
           paddingTop: sp(3),
           gap: sp(2.5),
         }}>
+          {emsLine && (
+            <View style={{
+              borderWidth: 1, borderColor: 'rgba(255,255,255,0.45)',
+              borderRadius: radius.card, padding: sp(3),
+            }}>
+              <Text style={[type.caption, { color: WHITE_SOFT }]}>If EMS comes — from her care file</Text>
+              <Text style={[type.caption, { color: WHITE, marginTop: 2 }]}>{emsLine}</Text>
+            </View>
+          )}
           {actionError && (
             <Text style={[type.caption, { color: WHITE, textAlign: 'center', fontWeight: '600' }]}>
               {actionError}

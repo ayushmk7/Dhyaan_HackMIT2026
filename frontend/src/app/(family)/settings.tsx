@@ -9,6 +9,7 @@ import { API_BASE, USE_MOCKS } from '@/lib/config';
 import { ago } from '@/lib/format';
 import { useContacts } from '@/lib/hooks';
 import { registerForPush, sendTestPush } from '@/lib/push';
+import { useCareFile } from '@/store/carefile';
 import { useSession } from '@/store/session';
 import { palette, sp } from '@/theme/tokens';
 
@@ -89,6 +90,26 @@ function DebugPanel() {
   );
 }
 
+function CareFileSummary() {
+  const { medications, appointments, sources } = useCareFile();
+  const summary = sources.length
+    ? `${medications.length} medication${medications.length === 1 ? '' : 's'} · ${appointments.length} upcoming · ${sources.length} document${sources.length === 1 ? '' : 's'} read`
+    : 'The paper folder — med lists, discharge summaries, appointment letters — turned into reminders and an emergency card.';
+  return (
+    <View>
+      <Txt kind={sources.length ? 'label' : 'body'} tone={sources.length ? 'ink' : 'muted'}>
+        {summary}
+      </Txt>
+      <Btn
+        label={sources.length ? 'Open her care file' : 'Add the first document'}
+        kind="quiet"
+        onPress={() => router.push('/(family)/carefile')}
+        style={{ marginTop: sp(3) }}
+      />
+    </View>
+  );
+}
+
 export default function Settings() {
   const { data: contacts, isLoading: contactsLoading, isError: contactsError, refetch: refetchContacts } = useContacts();
   const { residentName, consentGivenBy, reset, setRole } = useSession();
@@ -163,6 +184,11 @@ export default function Settings() {
             {residentName} is always called first. Change the order by re-running setup.
           </Txt>
         )}
+      </Card>
+
+      <SectionTitle>Her care file</SectionTitle>
+      <Card>
+        <CareFileSummary />
       </Card>
 
       <SectionTitle>What Dhyaan tells you about</SectionTitle>
