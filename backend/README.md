@@ -114,3 +114,31 @@ Two things worth knowing about that number. `TECHNICAL_PRD` §8.2's worked examp
 is 1.28, under the 1.3 warn cutoff. Eleanor is seeded to walk 4–6×/day so zero is
 genuinely surprising. And the seed must write local wall-clock time — in UTC, her
 night bathroom trips land in the previous evening and poison `wake_time_min`.
+
+## Integrating Abhinav's voice bridge
+
+`dhyaan/voice/` (lane B) was built against `dhyaan/voice/fsm_stub.py`, an
+in-memory stand-in. `app/voice_adapter.py` is that same seam backed by the real
+FSM and MongoDB, with identical signatures. The switch is one import:
+
+```diff
+- from dhyaan.voice import fsm_stub as fsm
++ from app import voice_adapter as fsm
+```
+
+and one call at startup in `dhyaan/voice/app.py`:
+
+```python
+from app import db, voice_adapter
+await db.connect()
+voice_adapter.install()   # the FSM ladder now dials through Twilio
+```
+
+`install()` closes the loop the other way too: `app/alerts.py` places its calls
+through `app/voice.py`, whose default stub only logs. `install()` swaps in
+`dhyaan.voice.outbound.place_call` so the ladder dials real numbers.
+
+Proved by `tests/test_voice_adapter.py` (10 tests): tool calls drive real state
+transitions, replays are idempotent, transcripts and call bindings persist, and
+a tool call the FSM refuses returns `{"ok": false}` instead of raising into the
+websocket and killing a live call.
