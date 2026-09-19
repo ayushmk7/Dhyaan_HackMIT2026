@@ -9,7 +9,6 @@ import { Card, ErrorState, LoadingState, RoomTimeBar, Row, SectionTitle, StatusD
 import { Entrance } from '@/components/entrance';
 import { Icon } from '@/components/icon';
 import { useLatestMessage, useLocationHistory, useResident, useTalkAbout, useTimeline } from '@/lib/hooks';
-import { detectLastVisit } from '@/lib/visits';
 import { ago, dayOf, eventTitle, mins, timeOf, zoneLabel } from '@/lib/format';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
@@ -38,7 +37,6 @@ export default function Home() {
   const { data: events, isError: eventsError, refetch: refetchEvents } = useTimeline(RES);
   const { data: prompts } = useTalkAbout();
   const { data: herMessage } = useLatestMessage();
-  const { data: visit } = useQuery({ queryKey: ['lastVisit'], queryFn: detectLastVisit, staleTime: Infinity });
   const todayKey = localDayKey();
   const { data: segments } = useLocationHistory(RES, todayKey);
   const live = useLive();
@@ -208,35 +206,6 @@ export default function Home() {
 
         <SectionTitle>Where her day went</SectionTitle>
         <RoomTimeBar segments={segments ?? []} />
-
-        {visit && (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() =>
-              Linking.openURL(
-                `sms:+16175550142&body=${encodeURIComponent(
-                  'Been too long since we saw Mom — when are people free to visit?',
-                )}`,
-              )
-            }
-            style={({ pressed }) => [{
-              marginTop: sp(6), paddingVertical: sp(3),
-              borderTopWidth: 1, borderTopColor: palette.line,
-              opacity: pressed ? 0.6 : 1,
-            }]}
-          >
-            <Row style={{ justifyContent: 'space-between' }}>
-              <Txt kind="caption" tone="muted">
-                {visit.source === 'photos' ? 'From your photo library' : 'Since your last visit'}
-              </Txt>
-              <Icon name="chevron.right" size={12} color={palette.inkMuted} />
-            </Row>
-            <Txt kind="body" style={{ marginTop: 2 }}>
-              Your last visit was {Math.round(visit.daysAgo / 7)} weeks ago · {visit.photoCount} photos
-              from that day. Text the family about the next one?
-            </Txt>
-          </Pressable>
-        )}
 
         {events?.[0] && (
           <Pressable
