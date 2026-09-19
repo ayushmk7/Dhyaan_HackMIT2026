@@ -14,18 +14,44 @@ events.subscribe, so app/events.py needs no changes) for precise "when did X
 happen" lookups.
 """
 
+import asyncio
 import hashlib
+import logging
+import os
 import re
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+import httpx
 import numpy as np
 
 from .config import ANTHROPIC_API_KEY
 from .db import db
 from .events import emit, subscribe
 
+log = logging.getLogger("dhyaan.rag")
+
+# Local embedder. `ollama serve` + `ollama pull nomic-embed-text`, then it is
+# offline forever. Dim is the model's, not ours — nomic-embed-text is 768.
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
+EMBED_TIMEOUT_S = float(os.getenv("EMBED_TIMEOUT_S", "20"))
+
+# Fallback width only. Cosine is computed within one corpus at a time, and a
+# corpus embedded by a mix of the two would be nonsense — see _vec_ok().
 EMBED_DIM = 256
+
+_EMBED_WARNED = False
+
+
+def _warn_embedder_down(e: Exception) -> None:
+    global _EMBED_WARNED
+    _EMBED_WARNED = True
+    log.warning(
+        "embedder unreachable at %s (%s) — falling back to hash embeddings. "
+        "Retrieval ranking will be keyword-quality only. Fix: `ollama serve` "
+        "and `ollama pull %s`.", OLLAMA_URL, e, EMBED_MODEL,
+    )
 
 # High-cardinality telemetry, never indexed — PRD §9.1: it would drown the index
 # and nobody asks "how has she been" about band_still ticks.
@@ -52,38 +78,78 @@ def _hash_embed(text: str, dim: int = EMBED_DIM) -> list[float]:
 
 
 async def embed(texts: list[str]) -> list[list[float]]:
-    """Pluggable embedding function. Deterministic offline fallback always
-    available so tests and the demo never touch the network.
+    """Real semantic embeddings from Ollama, hash fallback when it is not there.
 
-    ponytail: Anthropic does not serve an embeddings endpoint, and pulling in
-    a real one (Ollama nomic-embed-text per PRD §9.3, sentence-transformers,
-    Voyage) is out of scope for ponytail mode. The `ANTHROPIC_API_KEY` check
-    is left in as the wiring point: a real embedding call slots in here behind
-    the same signature without touching any caller.
+    `nomic-embed-text` (768d) runs locally with no API key and no internet once
+    pulled, so the demo still works on venue wifi. The hash fallback keeps tests
+    and a bare clone running — but it has no semantic meaning, so retrieval
+    ranking is only as good as keyword overlap. If `search()` ranks badly, check
+    `ollama serve` is up before blaming the retriever.
+
+        ollama serve &
+        ollama pull nomic-embed-text
+
+    ponytail: one HTTP call against an already-present dep (httpx). No
+    sentence-transformers, no torch, no vector DB.
     """
-    if ANTHROPIC_API_KEY:
-        pass  # no first-party embedding call available; fall through
-    return [_hash_embed(t) for t in texts]
+    if not texts:
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=EMBED_TIMEOUT_S) as c:
+            r = await c.post(f"{OLLAMA_URL}/api/embed",
+                             json={"model": EMBED_MODEL, "input": texts})
+            r.raise_for_status()
+            vecs = r.json()["embeddings"]
+        if len(vecs) != len(texts):
+            raise ValueError(f"asked for {len(texts)} embeddings, got {len(vecs)}")
+        return vecs
+    except Exception as e:  # noqa: BLE001
+        # Never fail a write or a query because the embedder is down.
+        if not _EMBED_WARNED:
+            _warn_embedder_down(e)
+        return [_hash_embed(t) for t in texts]
 
 
-async def _on_event_created(doc):
-    """events.subscribe hook: embed embedding_text at insert time (§9.1/§9.2),
-    without touching app/events.py.
+async def _embed_and_store(doc_id: str, text: str) -> None:
+    try:
+        vec = (await embed([text]))[0]
+        await db().events.update_one({"_id": doc_id}, {"$set": {"embedding": vec}})
+    except Exception as e:  # noqa: BLE001
+        log.warning("embedding %s failed: %s", doc_id, e)
 
-    Must be `async def`, not a plain function returning Motor's awaitable:
-    events.py only awaits a subscriber's return value when
-    `asyncio.iscoroutine(r)` is true, and this Motor version's collection
-    methods return `asyncio.Future`, not a coroutine -- a plain function
-    handing that Future back would never actually be awaited, racing the
-    write against whatever reads the event next.
+
+# Hold references: asyncio only keeps a weak reference to a running task, so a
+# task nobody holds can be garbage-collected mid-flight.
+_embed_tasks: set = set()
+
+
+def _on_event_created(doc):
+    """events.subscribe hook: embed embedding_text in the background (§9.1/§9.2).
+
+    Deliberately NOT awaited. emit() awaits its subscribers, and embedding is an
+    HTTP round-trip to the embedder — awaiting it would put ~100ms of network on
+    the fall-ingest critical path, between the band POST and the alert opening.
+    The embedding is for retrieval, which is eventually consistent by nature, so
+    it rides a background task instead.
+
+    ponytail: a task per event is fine at this rate (tens per minute). If the
+    camera lane ever floods this, batch on a queue with a 1s window.
     """
     if doc["type"] in NOISY_EVENT_TYPES:
         return
-    vec = _hash_embed(doc.get("embedding_text") or "")
-    await db().events.update_one({"_id": doc["_id"]}, {"$set": {"embedding": vec}})
+    t = asyncio.create_task(_embed_and_store(doc["_id"], doc.get("embedding_text") or ""))
+    _embed_tasks.add(t)
+    t.add_done_callback(_embed_tasks.discard)
 
 
 subscribe(_on_event_created)
+
+
+async def drain_embeddings() -> None:
+    """Wait for in-flight embedding tasks. For tests and scripted rollups that
+    query immediately after writing."""
+    while _embed_tasks:
+        await asyncio.gather(*list(_embed_tasks), return_exceptions=True)
 
 
 def _day_range_utc(tz: ZoneInfo, date_local: str) -> tuple[int, int]:
@@ -100,14 +166,23 @@ def _template_narrative(name: str, date_local: str, docs: list[dict]) -> str:
     for d in docs:
         by_type.setdefault(d["type"], []).append(d)
     parts = [f"{date_local} — {name} had {len(docs)} recorded events."]
+    # Name the meals actually eaten, not just a count. Every day's narrative is a
+    # retrieval chunk, and "3 meal(s) observed" is the same sentence 15 days
+    # running — nothing for a semantic search of "has she been eating" to grab.
     if "meal_observed" in by_type:
-        parts.append(f"{len(by_type['meal_observed'])} meal(s) observed.")
+        meals = [m for m in ("breakfast", "lunch", "dinner")
+                 if any((d.get("payload") or {}).get("meal") == m for d in by_type["meal_observed"])]
+        eaten = ", ".join(meals) if meals else f"{len(by_type['meal_observed'])} meals"
+        missed = [m for m in ("breakfast", "lunch", "dinner") if m not in meals]
+        parts.append(f"{name} ate {eaten}.")
+        if missed:
+            parts.append(f"No {' or '.join(missed)} was observed — she skipped {' and '.join(missed)}.")
     else:
-        parts.append("No meals were recorded — this may be a gap, not an absence.")
+        parts.append(f"{name} was not seen eating at all today — this may be a gap, not an absence.")
     if "walk_completed" in by_type:
-        parts.append(f"Walked {len(by_type['walk_completed'])} time(s).")
+        parts.append(f"She walked {len(by_type['walk_completed'])} time(s).")
     else:
-        parts.append("No walks were recorded today.")
+        parts.append("She did not walk at all today.")
     if "bed_exit" in by_type:
         night = sum(
             1 for d in by_type["bed_exit"]
@@ -177,6 +252,11 @@ async def daily_narrative(resident_id: str, date_local: str) -> str:
 
 def _cosine(a, b) -> float:
     a, b = np.asarray(a), np.asarray(b)
+    # A corpus embedded partly by Ollama (768d) and partly by the hash fallback
+    # (256d) is a real possibility: the embedder can go down mid-run. Comparing
+    # across widths is meaningless, and np.dot would raise. Skip instead.
+    if a.shape != b.shape:
+        return -1.0
     denom = float(np.linalg.norm(a) * np.linalg.norm(b))
     return float(np.dot(a, b) / denom) if denom else 0.0
 

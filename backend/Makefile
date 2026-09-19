@@ -1,7 +1,11 @@
-.PHONY: mongo run seed test fmt clean
+.PHONY: mongo embedder run seed test fmt clean
 
 mongo:            ## start the local MongoDB container
 	docker start dhyaan-mongo 2>/dev/null || docker run -d --name dhyaan-mongo -p 27017:27017 mongo:7
+
+embedder:         ## local semantic embeddings (nomic-embed-text, 768d, offline once pulled)
+	@pgrep -qf "ollama serve" || (ollama serve > /tmp/ollama.log 2>&1 &)
+	@sleep 2 && ollama pull nomic-embed-text
 
 run: mongo        ## run the API on 0.0.0.0:8000 (reachable from a phone on the LAN)
 	.venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

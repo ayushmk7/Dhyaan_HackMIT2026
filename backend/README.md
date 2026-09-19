@@ -11,6 +11,7 @@ Specs: [`../TECHNICAL_PRD.md`](../TECHNICAL_PRD.md) · [`../HARDWARE_SPEC.md`](.
 ```bash
 make mongo     # docker mongo:7 on :27017
 uv venv && uv pip install -e . --group dev
+make embedder  # ollama serve + pull nomic-embed-text (once)
 make seed      # Eleanor + 15 days of history, today deliberately anomalous
 make run       # 0.0.0.0:8000
 make test      # 45 tests
@@ -37,7 +38,7 @@ and emits `call_placed`; swapping in real Twilio does not touch the FSM.
 | Band ingest, RF room localization (k-NN + hysteresis) | Real |
 | REST API + websocket for React Native | Real |
 | Baseline learner (robust z + Poisson) | Real |
-| RAG retrieval + citations + medical guardrail | Real plumbing, **weak ranking** — see below |
+| RAG retrieval + citations + medical guardrail | Real, semantic (`nomic-embed-text` via Ollama) |
 | Telephony (Twilio + Deepgram) | **Stub, fill in — `app/voice.py`** |
 | Camera / VLM | Not built (out of backend scope) |
 
@@ -87,10 +88,17 @@ home screen in one request.
 
 Marked `# ponytail:` in the code, with upgrade paths:
 
-- **RAG ranking is weak offline.** Embeddings are a deterministic hash bag-of-tokens
-  so tests and the demo run with no key and no wifi. Retrieval, citations and the
-  medical guardrail are real; semantic ranking is not. Fix is one `ollama pull
-  nomic-embed-text` and swapping `rag.embed` — do it before demoing the chat.
+- **Embeddings need `ollama serve`.** `make embedder` starts it and pulls
+  `nomic-embed-text` (768d, local, offline once pulled, no API key). If it is not
+  running, `embed()` silently falls back to a hash bag-of-tokens and logs a
+  warning once — retrieval still works but ranks by keyword overlap only. Events
+  embedded by each backend have different widths; `_cosine` skips mismatched
+  pairs rather than raising, so a half-embedded corpus degrades instead of
+  breaking. Re-run `make seed` after starting the embedder to re-embed cleanly.
+- **Embedding is off the critical path.** It runs as a background task, so a
+  fall POST never waits on the embedder. Retrieval is therefore eventually
+  consistent — anything that writes then queries immediately (tests, scripts)
+  must `await rag.drain_embeddings()` first. `make seed` already does.
 - No vector index. Brute-force cosine in numpy, fine to ~50k events on a laptop.
 - Auth is two static shared secrets, not JWT. One tenant exists.
 - Room-localization HMM state is process-local, so it resets on restart.
