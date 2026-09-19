@@ -1,0 +1,10 @@
+{
+  "band_id": "band_a3f2",
+  "type": "fall_suspected",
+  "ts": "2026-09-19T14:31:02-04:00",
+  "peak_g": 3.4,
+  "free_fall_ms": 95,
+  "post_impact_tilt_deg": 72,
+  "stillness_ms": 1800,
+  "battery_pct": 64
+}
