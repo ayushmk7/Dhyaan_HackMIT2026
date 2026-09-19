@@ -109,6 +109,12 @@ async def main(wipe: bool, days: int):
         await seed_day(today - timedelta(days=i), anomalous=False)
     await seed_day(today, anomalous=True)  # today: no walk, no lunch
 
+    # Embeddings ride background tasks (rag._on_event_created). This process is
+    # about to exit, which would cancel them and leave every seeded event
+    # unembedded — so wait for them here.
+    from app.rag import drain_embeddings
+    await drain_embeddings()
+
     n = await d.events.count_documents({})
     print(f"seeded {n} events over {days + 1} days for Eleanor")
     print("today is deliberately anomalous: no walk, no lunch — the learner should flag it")

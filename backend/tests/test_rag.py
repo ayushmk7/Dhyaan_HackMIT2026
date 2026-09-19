@@ -12,25 +12,45 @@ def test_no_api_key_in_test_env():
     assert not ANTHROPIC_API_KEY
 
 
-async def test_embed_is_deterministic_offline():
+async def test_embed_is_stable_and_consistently_shaped():
+    """Same text -> same vector, and every vector in a corpus is the same width.
+
+    Width is the model's, not ours (nomic-embed-text is 768, the hash fallback
+    256), so asserting a constant here would just re-break when the model
+    changes. What matters is that one corpus is internally consistent.
+    """
     v1 = await rag.embed(["Eleanor walked the hallway twice this morning."])
     v2 = await rag.embed(["Eleanor walked the hallway twice this morning."])
     assert v1 == v2
-    assert len(v1[0]) == rag.EMBED_DIM
-    # different text -> (almost certainly) a different vector
     v3 = await rag.embed(["Completely unrelated sentence about lunch."])
     assert v3 != v1
+    assert len(v3[0]) == len(v1[0])
 
 
-async def test_embed_requires_no_network_or_key(monkeypatch):
-    # Even if a key were set, embed() must not explode without network/anthropic.
-    monkeypatch.setattr(rag, "ANTHROPIC_API_KEY", "fake-key-not-real")
+async def test_embed_falls_back_when_embedder_is_down(monkeypatch):
+    """The demo must survive ollama not running. Point it at a dead port."""
+    monkeypatch.setattr(rag, "OLLAMA_URL", "http://127.0.0.1:9")
+    monkeypatch.setattr(rag, "EMBED_TIMEOUT_S", 0.3)
     vecs = await rag.embed(["hello"])
     assert isinstance(vecs[0], list)
-    assert len(vecs[0]) == rag.EMBED_DIM
+    assert len(vecs[0]) == rag.EMBED_DIM      # fell back to the hash embedder
+
+
+async def test_cosine_skips_mismatched_widths():
+    """A corpus half-embedded by each backend must not raise or rank nonsense."""
+    assert rag._cosine([0.1] * 768, [0.1] * 256) == -1.0
+    assert rag._cosine([1.0, 0.0], [1.0, 0.0]) == 1.0
+
+
+async def test_embed_batches_in_one_call():
+    vecs = await rag.embed(["first text", "second text", "third text"])
+    assert len(vecs) == 3
+    assert len({len(v) for v in vecs}) == 1
 
 
 async def test_search_ranks_matching_narrative_first(resident, db):
+    # Embedding is a background task now (it is off the ingest critical path),
+    # so a test that queries immediately has to wait for it.
     # Query shares real tokens with the walking narrative (walked/hallway/three/
     # times) and none with the unrelated one -- the hash embedding only carries
     # token-overlap signal, so this is what "obviously matching" means for it.
@@ -45,6 +65,7 @@ async def test_search_ranks_matching_narrative_first(resident, db):
         payload={"narrative": "Eleanor ate breakfast and lunch on schedule with no other events."},
     )
 
+    await rag.drain_embeddings()
     results = await rag.search(resident, "walked hallway three times", k=5)
     assert results, "expected at least one hit"
     assert results[0]["event_id"] == walking_evt["_id"]
