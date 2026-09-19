@@ -80,6 +80,14 @@ export default function Timeline() {
     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.inkMuted} />
   );
 
+  const [sharing, setSharing] = useState(false);
+  const shareWeek = async () => {
+    setSharing(true);
+    const letter = await api.sundayLetter();
+    setSharing(false);
+    if (letter) Share.share({ message: letter });
+  };
+
   if (isLoading && !events) {
     return (
       <Screen refreshControl={refreshControl}>
@@ -109,14 +117,6 @@ export default function Timeline() {
     else sections.push({ label, dateKey: dateKeyOf(e.ts), events: [e] });
   }
   const summaryByDate = new Map((summaries ?? []).map((s) => [s.date_local, s]));
-
-  const [sharing, setSharing] = useState(false);
-  const shareWeek = async () => {
-    setSharing(true);
-    const letter = await api.sundayLetter();
-    setSharing(false);
-    if (letter) Share.share({ message: letter });
-  };
 
   return (
     <Screen refreshControl={refreshControl}>
