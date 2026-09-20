@@ -30,6 +30,9 @@ EVENT_TYPES = {
     # camera presence lane (VLM_PLAN §6.3)
     "activity_observed", "camera_online", "camera_offline", "camera_paused",
     # derived / manual
+    # fall_autocancelled: the camera guard's audit row (app/fallcheck.py) — the
+    # FSM's fall_cancelled records the transition; this records the evidence.
+    "fall_autocancelled",
     "baseline_deviation", "daily_summary", "baseline_updated", "staff_note",
     "family_note", "feedback_given", "profile_updated", "memory_deleted",
 }
@@ -45,6 +48,14 @@ def subscribe(fn):
     """fn(event: dict) -> awaitable. Called after every emit."""
     _subscribers.append(fn)
     return fn
+
+
+def unsubscribe(fn) -> None:
+    """Remove a subscriber added with subscribe(). Unknown fn is a no-op."""
+    try:
+        _subscribers.remove(fn)
+    except ValueError:
+        pass
 
 
 async def emit(

@@ -26,13 +26,17 @@ from .routers import camera, chat, ingest, live, residents, setup
 async def lifespan(app: FastAPI):
     await db.connect()
     from .alerts import start_timers, stop_timers
+    from .fallcheck import start_fallcheck, stop_fallcheck
     from .presence import start_sweeper, stop_sweeper
 
     start_timers()
     # Closes camera episodes nobody has sent an observation for in a while —
     # she stops eating without anyone telling us she stopped (VLM_PLAN §3.6).
     start_sweeper()
+    # Camera evidence can auto-cancel a fall during its window - never block one.
+    start_fallcheck()
     yield
+    stop_fallcheck()
     stop_sweeper()
     stop_timers()
     await db.close()

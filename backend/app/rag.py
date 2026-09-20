@@ -331,6 +331,7 @@ FAMILY_EXCLUDED_TYPES = {
     # alert document directly; it is not something she did with her day.
     "call_placed", "call_answered", "call_no_answer", "voice_response_classified",
     "escalation_started", "escalation_acknowledged", "escalation_exhausted",
+    "fall_autocancelled",  # the camera guard's audit row (app/fallcheck.py)
     # Bookkeeping about the app itself.
     "feedback_given", "profile_updated", "memory_deleted",
 }
