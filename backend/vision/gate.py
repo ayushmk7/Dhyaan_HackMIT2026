@@ -347,9 +347,15 @@ class PersonGate:
         # the frame the worker already has, and the next frame replaces it.
         remember_frame(frame)
         person_conf, obj_conf = self._conf()
+        # The model is asked at the LOWEST bar anything below could accept —
+        # the hold, not the floor — because ultralytics applies `conf` inside
+        # NMS and a box it drops there can never be held. Measured the hard
+        # way: asked at 0.15, a packet at 0.13 vanished and the hold at 0.12
+        # never saw it.
+        hold = self.t["world_hold"] if self.open_vocab else 1.0
         try:
             res = self.model.predict(
-                frame, conf=min(person_conf, obj_conf), imgsz=self.t["person_imgsz"],
+                frame, conf=min(person_conf, obj_conf) * hold, imgsz=self.t["person_imgsz"],
                 device=self.device, verbose=False,
                 **({"classes": self.classes} if self.classes else {}),
             )[0]
@@ -363,13 +369,13 @@ class PersonGate:
             return dict(EMPTY_SCENE, boxes=[], food=[], dishes=[], seating=[])
         names = self.model.names
         # Hysteresis. A calibrated-low cosine floor means a real snack bag sits
-        # at 0.26-0.28 over a 0.20 floor, and measured on a clip with a 1 px
-        # hand-held jitter it crossed the line four times in a second — and
-        # every crossing is a "what I see changed" post. So a label that was
-        # reported last pass stays while it holds `world_hold` of its floor. It
-        # is not memory of a stale plate: the label must still be detected on
-        # THIS frame, just at a lower bar to stay than to arrive.
-        hold = self.t["world_hold"] if self.open_vocab else 1.0
+        # ON the floor once the frame is compressed: 0.13-0.28, median 0.19,
+        # over a 0.20 floor, measured on a clip with 1 px hand-held jitter,
+        # where it crossed the line four times in a second — and every crossing
+        # is a "what I see changed" post. So a label that was reported last
+        # pass stays while it holds `world_hold` of its floor. It is not memory
+        # of a stale plate: the label must still be detected on THIS frame,
+        # just at a lower bar to stay than to arrive.
         boxes, found = [], {"food": set(), "dishes": set(), "seating": set()}
         for cls, conf, box in zip(res.boxes.cls.tolist(), res.boxes.conf.tolist(),
                                   res.boxes.xyxy.tolist()):

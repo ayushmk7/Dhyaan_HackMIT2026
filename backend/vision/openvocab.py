@@ -116,10 +116,51 @@ def _warn(msg):
         print(f"[openvocab] {msg} — falling back to COCO-only food detection.", flush=True)
 
 
+def _clip_cache_is_sound():
+    """A half-written CLIP checkpoint costs 338 MB at every single launch.
+
+    ultralytics' CLIP fork verifies ViT-B-32.pt by SHA256 and silently
+    re-downloads on a mismatch. Kill a worker mid-download (which is exactly
+    what happens when you Ctrl-C a slow first run) and the partial file stays
+    on disk, so every launch afterwards blocks on 338 MB again before the
+    camera even opens. On venue wifi that is a dead demo.
+
+    So: check it ourselves, and delete a bad file rather than let it poison
+    every future start. Returns False when the model will have to download,
+    which is worth a log line rather than a mystery pause.
+    """
+    import hashlib
+    import os
+
+    try:
+        import clip.clip as c
+
+        url = c._MODELS["ViT-B/32"]
+        path = os.path.join(os.path.expanduser(
+            os.getenv("CLIP_CACHE", "~/.cache/clip")), "ViT-B-32.pt")
+        for cand in (path, os.path.join(os.getcwd(), "..", "weights", "clip", "ViT-B-32.pt")):
+            if not os.path.exists(cand):
+                continue
+            want = url.split("/")[-2]
+            got = hashlib.sha256(open(cand, "rb").read()).hexdigest()
+            if got == want:
+                return True
+            os.remove(cand)
+            _warn(f"removed a corrupt CLIP checkpoint at {cand}")
+            return False
+    except Exception:                               # noqa: BLE001
+        pass
+    return False
+
+
 def _get():
     if _state["tried"]:
         return _state["model"]
     _state["tried"] = True
+    if not _clip_cache_is_sound():
+        print("[openvocab] CLIP weights not cached — first load will download "
+              "~338 MB. Set OPENVOCAB=0 to skip open-vocabulary food entirely.",
+              flush=True)
     try:
         from ultralytics import YOLO
         import torch

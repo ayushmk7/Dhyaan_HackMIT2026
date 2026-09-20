@@ -51,10 +51,12 @@ TUNING = dict(
     world_person_conf=float(os.getenv("WORLD_PERSON_CONF", "0.15")),
     world_conf=float(os.getenv("WORLD_CONF", "0.20")),
     # A label already in the scene stays while it scores this fraction of its
-    # floor (0.15 for objects, 0.11 for people). Measured need: a snack bag at
-    # 0.26-0.28 flickered across a 0.20 floor four times in one second of
-    # hand-held jitter, and each flicker is a post. 1.0 disables it.
-    world_hold=float(os.getenv("WORLD_HOLD", "0.75")),
+    # floor (0.12 for objects, 0.09 for people). Measured need: a real crisp
+    # packet on a compressed clip with 1 px hand-held jitter scored 0.13-0.28,
+    # median 0.19, i.e. right on the 0.20 floor, and flickered across it four
+    # times in a second — each flicker a "what I see changed" post. 0.6 covers
+    # that whole measured range; 1.0 disables it.
+    world_hold=float(os.getenv("WORLD_HOLD", "0.6")),
     # COCO floor. Used only when YOLO_MODEL points at a COCO model (the
     # one-line revert), or when the open-vocabulary model cannot load and
     # yolo11s.pt is already on disk.
@@ -85,7 +87,7 @@ TUNING = dict(
     # YOLO answers person/visitor/food/posture every cycle at ~6 ms. The model
     # only writes the sentence, so it runs every 4th cycle. 1 = a model call
     # every time, as it used to be.
-    vlm_every_n=int(os.getenv("VLM_EVERY_N", "4")),
+    vlm_every_n=int(os.getenv("VLM_EVERY_N", "1")),
     max_batch_wait_s=30,      # ...flushed after this long even if short
     absent_after_s=30,        # no person for this long -> "absent", no VLM call
     # --- worker cadence ---
@@ -96,7 +98,13 @@ TUNING = dict(
 
 # --demo: the same rules, fast enough that a bite becomes a sentence inside the
 # 3-minute slot. Not a separate code path — just smaller numbers.
-DEMO = dict(min_gap_s=6, on_dwell_s=15, max_batch_wait_s=15, absent_after_s=12)
+# Demo cadence. on_dwell_s is how often a keyframe fires while she stays in
+# view, and with vlm_every_n=1 that is also how often the VLM writes a
+# sentence. At 15 s the model spoke about once a minute and its output was
+# drowned 45:1 by the detector's templates - measured across a whole run.
+DEMO = dict(min_gap_s=int(os.getenv("MIN_GAP_S", "4")),
+            on_dwell_s=int(os.getenv("ON_DWELL_S", "8")),
+            max_batch_wait_s=15, absent_after_s=12)
 
 # A VLM's vision encoder cost scales with pixels, and this is the single
 # biggest latency lever left. 448x252 is still ample to see a person, a table

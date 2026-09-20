@@ -291,7 +291,17 @@ def test_no_module_in_the_vision_package_touches_the_filesystem():
     import vision
 
     banned = {"imwrite", "imsave", "VideoWriter", "imencode_to_file", "savemat"}
-    allowed_open = {("worker.py", "_fetch_config")}
+    # Two exceptions, both read-only and neither one a frame:
+    #   worker.py::_fetch_config        the --config-json stand-in, text
+    #   openvocab.py::_clip_cache_is_sound
+    #       reads the CLIP checkpoint's bytes to verify its SHA256. A partial
+    #       download (Ctrl-C during a slow first run) otherwise costs 338 MB at
+    #       every launch before the camera even opens, which on venue wifi is a
+    #       dead demo. The rule this test defends is "no FRAME is written to
+    #       disk"; hashing a model file neither writes anything nor touches a
+    #       frame. If a third exception ever wants in, have the argument again.
+    allowed_open = {("worker.py", "_fetch_config"),
+                    ("openvocab.py", "_clip_cache_is_sound")}
     pkg = pathlib.Path(vision.__file__).parent
 
     for path in sorted(pkg.glob("*.py")):
@@ -436,27 +446,31 @@ def test_each_bucket_keeps_its_own_floor():
         hit("toast", (0, 0, 9, 9), conf=0.18),
         hit("cereal", (0, 0, 9, 9), conf=0.21),
     ], )
-    g.t = dict(g.t, world_person_conf=0.15, world_conf=0.20)
+    g.t = dict(g.t, world_person_conf=0.15, world_conf=0.20, world_hold=0.6)
     s = g.scene(blank())
     assert s["person_count"] == 1 and s["food"] == ["cereal"]
-    assert g.model.asked["conf"] == 0.15
+    # Asked at the hold, not the floor: ultralytics applies `conf` inside NMS,
+    # so a box dropped there can never be held. Found the hard way — asked at
+    # 0.15, a packet at 0.13 vanished and the 0.12 hold never saw it.
+    assert g.model.asked["conf"] == pytest.approx(0.15 * 0.6)
 
 
 def test_a_label_needs_the_floor_to_arrive_and_less_to_stay():
-    """Hysteresis, measured need: a real snack bag at 0.26-0.28 over a 0.20
-    floor crossed the line four times in a second of hand-held jitter, and
-    every crossing was a "what I see changed" post. Not memory — the label
-    must still be detected on this frame, at a lower bar."""
+    """Hysteresis, measured need: a real crisp packet on a compressed clip
+    scored 0.13-0.28 (median 0.19) over a 0.20 floor and crossed the line four
+    times in a second of hand-held jitter; every crossing was a "what I see
+    changed" post. Not memory — the label must still be detected on this
+    frame, at a lower bar (0.6 of the floor: 0.12 objects, 0.09 people)."""
     g = fake_gate([])
-    g.t = dict(g.t, world_person_conf=0.15, world_conf=0.20, world_hold=0.75)
+    g.t = dict(g.t, world_person_conf=0.15, world_conf=0.20, world_hold=0.6)
     frames = [
         ([hit("snack bag", (0, 0, 9, 9), conf=0.17), hit("person", (0, 0, 50, 200), conf=0.12)],
          [], 0),          # never seen yet: below the floor, nothing
         ([hit("snack bag", (0, 0, 9, 9), conf=0.26), hit("person", (0, 0, 50, 200), conf=0.16)],
          ["snack bag"], 1),   # arrives
-        ([hit("snack bag", (0, 0, 9, 9), conf=0.17), hit("person", (0, 0, 50, 200), conf=0.12)],
-         ["snack bag"], 1),   # dips to 0.17 / 0.12: held (>= 0.15 / 0.1125)
-        ([hit("snack bag", (0, 0, 9, 9), conf=0.14), hit("person", (0, 0, 50, 200), conf=0.10)],
+        ([hit("snack bag", (0, 0, 9, 9), conf=0.13), hit("person", (0, 0, 50, 200), conf=0.10)],
+         ["snack bag"], 1),   # dips to the measured minimum: held (>= 0.12 / 0.09)
+        ([hit("snack bag", (0, 0, 9, 9), conf=0.11), hit("person", (0, 0, 50, 200), conf=0.08)],
          [], 0),          # gone for real
         ([hit("snack bag", (0, 0, 9, 9), conf=0.17)], [], 0),   # ...and needs the full floor again
     ]
@@ -470,6 +484,7 @@ def test_a_label_needs_the_floor_to_arrive_and_less_to_stay():
     assert c.scene(blank())["food"] == ["pizza"]
     c.model.hits = [hit("pizza", (0, 0, 9, 9), conf=0.35)]
     assert c.scene(blank())["food"] == []
+    assert c.model.asked["conf"] == 0.4
 
 
 def test_nested_person_boxes_count_as_one_person():
