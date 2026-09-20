@@ -173,6 +173,20 @@ def presence_sentence(name: str, presence: dict, tz: ZoneInfo, spot_is_usual: bo
 
 # --- usual spots -------------------------------------------------------------
 
+# episode key -> the spot already counted for it, so one sitting counts once.
+_SPOT_COUNTED: dict[str, str] = {}
+
+
+async def _bump_spot_once(resident_id: str, ts: datetime, tz: ZoneInfo, obs: dict) -> None:
+    spot = obs.get("spot")
+    if spot in (None, "", "unclear", "other"):
+        return
+    if _SPOT_COUNTED.get(resident_id) == spot:
+        return
+    _SPOT_COUNTED[resident_id] = spot
+    await bump_usual_spot(resident_id, ts, tz, spot)
+
+
 async def bump_usual_spot(resident_id: str, ts: datetime, tz: ZoneInfo, spot: str) -> None:
     """`residents.usual_spots = {hour_bucket: {spot: count}}`. The whole "where
     she usually sits" model. Ceiling: no decay, no day-of-week."""
@@ -217,8 +231,15 @@ async def record(obs: dict, resident: dict, camera: dict) -> list[str]:
     activity = obs["activity"]
     s = scale()
 
+    # Counted once per episode, not once per observation. The worker posts two
+    # or three observations a second, so bumping per observation meant a single
+    # afternoon in the armchair added thousands of counts: "where she usually
+    # sits" stopped meaning "on how many separate occasions" and became "where
+    # she sat longest in one stretch", and the top-ranked spot flipped as the
+    # counts raced each other. `_bump_spot_once` below only counts a spot the
+    # first time the current episode sees it.
     if obs.get("person_count", 0) == 1 and obs.get("confidence", 0) >= 0.5:
-        await bump_usual_spot(resident_id, ts, tz, obs.get("spot"))
+        await _bump_spot_once(resident_id, ts, tz, obs)
 
     rule = RULES.get(activity)
     if rule is None:
@@ -256,6 +277,7 @@ async def _flush(iv: dict, resident: dict, tz: ZoneInfo, min_obs: int, min_dur_s
     # PRD §6.5: more corroborating observations -> more confidence, capped.
     conf = min(max((iv["conf_sum"] / max(iv["n"], 1)) * (1 - 0.5 ** iv["n"]), 0.05), 0.95)
 
+    iv["text"] = text
     if iv["event_id"]:
         await db().events.update_one({"_id": iv["event_id"]}, {"$set": {
             "ts_end": iv["last_ts"].isoformat(), "confidence": conf,
@@ -302,6 +324,17 @@ async def close_stale(now: datetime | None = None) -> None:
             continue
         _OPEN.pop(key, None)
         if iv["event_id"]:
+            # The episode's embedding was written by emit() from the text of its
+            # FIRST minute; every _flush() since then rewrote `embedding_text`
+            # and left the vector behind, so a 40-minute lunch retrieved as
+            # whatever it looked like at minute one. Re-embed once, here, at the
+            # only point where the text is final — doing it per _flush() would
+            # be an embedder round-trip per observation.
+            from . import rag  # local: rag subscribes to events, events -> db
+
+            t = asyncio.create_task(rag._embed_and_store(iv["event_id"], iv.get("text") or ""))
+            rag._embed_tasks.add(t)
+            t.add_done_callback(rag._embed_tasks.discard)
             continue
         resident = await db().residents.find_one({"_id": iv["resident_id"]}) or {}
         tz = ZoneInfo(resident.get("timezone") or "UTC")
@@ -347,14 +380,54 @@ async def apply_presence(camera: dict, obs: dict) -> dict:
     continuous = (prev.get("status") == status and last
                   and (obs["_ts"] - _parse(last)).total_seconds() <= IN_VIEW_STALE_S)
     since = prev.get("since") if continuous else obs["_ts"].isoformat()
+
+    # Presence describes an ongoing state, not one frame, so a single
+    # low-information frame must not rewrite it.
+    #
+    # `spot` and `activity` come back `unclear` whenever the detector cannot
+    # tell from that particular frame, and on a live camera that happens every
+    # few seconds. Rebuilding presence from the raw observation each time made
+    # the family's one sentence flap between "settled since 5:34", "settled at
+    # the table since 5:34" and "settled in her usual spot since 5:34" every
+    # few seconds: different wording, different length, reflowing the home
+    # screen while nobody touched it.
+    #
+    # Within a continuous run, an uncertain reading carries the previous value
+    # forward instead. This is the rule the episode record has always used
+    # (`_episode` only overwrites its spot when the new one is not unclear);
+    # presence simply never had it. A break in the run resets everything,
+    # because then it really is a new stretch of her day.
+    def _hold(field: str, value):
+        if not continuous or value not in (None, "", "unclear", "other"):
+            return value
+        return prev.get(field) or value
+
     presence = {
         "status": status,
-        "activity": obs["activity"] if in_view else None,
-        "posture": obs.get("posture") if in_view else None,
-        "spot": obs.get("spot") if in_view else None,
+        "activity": _hold("activity", obs["activity"]) if in_view else None,
+        "posture": _hold("posture", obs.get("posture")) if in_view else None,
+        "spot": _hold("spot", obs.get("spot")) if in_view else None,
         "since": since or obs["_ts"].isoformat(),
         "last_observation_at": obs["_ts"].isoformat(),
     }
+
+    # Decided once per run and then held, for the same reason as `spot` above.
+    # It is derived from a learned prior that the worker is updating while the
+    # run is happening, so recomputing it on every read made the sentence
+    # alternate between "at the table" and "in her usual spot" with nothing
+    # about her having changed.
+    if in_view and presence["spot"]:
+        if continuous and prev.get("spot_is_usual") is not None and prev.get("spot") == presence["spot"]:
+            presence["spot_is_usual"] = prev["spot_is_usual"]
+        else:
+            resident = await db().residents.find_one({"_id": camera["resident_id"]}) or {}
+            tz = ZoneInfo(resident.get("timezone") or "UTC")
+            presence["spot_is_usual"] = (
+                usual_spot_for(resident, obs["_ts"], tz) == presence["spot"]
+            )
+    else:
+        presence["spot_is_usual"] = False
+
     await db().cameras.update_one({"_id": camera["_id"]}, {"$set": {"presence": presence}})
     return presence
 
@@ -394,16 +467,32 @@ async def family_presence(resident_id: str) -> dict:
     ).total_seconds() > IN_VIEW_STALE_S and p["status"] == "in_view":
         p["status"], p["activity"] = "out_of_view", None
 
+    # Prefer the value decided when the run started (apply_presence). Falling
+    # back to a live computation keeps older presence documents working.
     spot = p.get("spot")
-    ts = _parse(p["last_observation_at"]) if p.get("last_observation_at") else now
-    spot_is_usual = bool(spot) and usual_spot_for(resident, ts, tz) == spot
+    if p.get("spot_is_usual") is not None:
+        spot_is_usual = bool(spot) and bool(p["spot_is_usual"])
+    else:
+        ts = _parse(p["last_observation_at"]) if p.get("last_observation_at") else now
+        spot_is_usual = bool(spot) and usual_spot_for(resident, ts, tz) == spot
+
+    # `state` alone is not liveness: a worker killed with -9 never writes
+    # "offline", so `state:"watching"` sits in Mongo forever. /cameras already
+    # knew that and applied HEARTBEAT_STALE_S; this did not, so the two
+    # endpoints disagreed and the home screen said it was watching her while
+    # nothing was. One test, imported rather than copied (local import:
+    # routers/camera.py imports this module).
+    from .routers.camera import HEARTBEAT_STALE_S
+
+    hb = camera.get("last_heartbeat_at")
+    fresh = bool(hb) and (now - _parse(hb)).total_seconds() < HEARTBEAT_STALE_S
 
     return {
         "status": p["status"], "activity": p["activity"], "spot_is_usual": spot_is_usual,
         "since": p.get("since"), "last_observation_at": p.get("last_observation_at"),
         "sentence": presence_sentence(name, p, tz, spot_is_usual),
         "camera": {
-            "online": camera.get("state") == "watching",
+            "online": fresh and camera.get("state") == "watching",
             "consent": bool(resident.get("consent_camera")),
             "paused_until": paused_until if paused else None,
             "paused_by": camera.get("paused_by") if paused else None,

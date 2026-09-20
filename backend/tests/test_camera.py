@@ -549,3 +549,48 @@ async def test_presence_is_pushed_only_when_it_changes(client, camera, db, monke
     body["ts"] = datetime.now(timezone.utc).isoformat()
     assert (await client.post("/v1/ingest/camera", json=body)).status_code == 201
     assert len([m for m in sent if m.get("t") == "presence.update"]) == 2
+
+
+async def test_presence_and_cameras_agree_a_dead_worker_is_offline(client, camera, db):
+    """`kill -9` the worker and `state:"watching"` stays in Mongo forever.
+
+    `/cameras` already applied HEARTBEAT_STALE_S; `/presence` read `state` alone,
+    so the two endpoints disagreed and the home screen told the family it was
+    watching her while nothing was.
+    """
+    await db.cameras.update_one({"_id": camera}, {"$set": {
+        "last_heartbeat_at": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()}})
+
+    p = (await client.get("/v1/residents/res_eleanor/presence")).json()
+    assert p["camera"]["online"] is False
+    assert (await client.get("/v1/cameras")).json()[0]["online"] is False
+
+
+async def test_an_uncertain_frame_does_not_rewrite_the_sentence(client, camera, db):
+    """The family's one sentence must not flap.
+
+    `spot` comes back "unclear" whenever the detector cannot tell from that
+    frame, which on a live camera is every few seconds. Rebuilding presence
+    from each raw observation made the home screen rewrite itself between
+    "settled since 5:34", "settled at the table since 5:34" and "settled in her
+    usual spot since 5:34" while nobody was touching it.
+    """
+    base = {
+        "camera_id": camera, "resident_id": "res_eleanor", "span_s": 4,
+        "n_frames": 2, "person_count": 1, "activity": "sitting", "confidence": 0.8,
+    }
+
+    async def post(**over):
+        body = {**base, "ts": datetime.now(timezone.utc).isoformat(), **over}
+        r = await client.post("/v1/ingest/camera", json=body)
+        assert r.status_code == 201, r.text
+        return r.json()["presence"]
+
+    confident = await post(spot="table")
+    assert confident["sentence"] == (await post(spot="unclear"))["sentence"], \
+        "an unclear frame rewrote the sentence"
+    assert confident["sentence"] == (await post(spot="other"))["sentence"]
+
+    # A genuinely new, confident reading still gets through.
+    moved = await post(spot="armchair")
+    assert moved["sentence"] != confident["sentence"], "a real move was swallowed"
