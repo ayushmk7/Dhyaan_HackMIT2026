@@ -34,12 +34,12 @@ const newFact = (key: string, text: string, author: string): Fact => ({
   created_at: iso(Date.now()),
 });
 
-// Eleanor's seeded facts, what `seedEleanor` writes instead of making the
+// Asha's seeded facts, what `seedEleanor` writes instead of making the
 // presenter type nine answers at the expo table. Mirrors §4.2's examples so
 // the chat's contrast answers have something to contrast against. Mock-only:
 // no screen imports this, so it can never be posted to a real server.
 const SEEDED_FACTS: { key: string; text: string }[] = [
-  { key: 'wake', text: 'Eleanor is usually up around 6:30.' },
+  { key: 'wake', text: 'Asha is usually up around 6:30.' },
   { key: 'breakfast', text: 'Toast and tea, about 8.' },
   { key: 'lunch', text: 'Lunch is usually soup around 12:30.' },
   { key: 'dinner', text: 'Dinner around 6, usually something she cooked earlier.' },
@@ -52,7 +52,7 @@ const SEEDED_FACTS: { key: string; text: string }[] = [
 ];
 
 const emptyProfile = (): Profile => ({
-  name: 'Eleanor',
+  name: 'Asha',
   appearance: null,
   consent: {
     falls: true, camera: false, memory: false,
@@ -84,11 +84,11 @@ const SCRIPT: Beat[] = [
     presence: {
       status: 'in_view', activity: 'eating', spot_is_usual: true,
       since: null, last_observation_at: null,
-      sentence: 'Eleanor is having something to eat at the table.',
+      sentence: 'Asha is having something to eat at the table.',
     },
     item: {
       type: 'meal_observed', kind: 'observed', confidence: 0.82,
-      sentence: 'Eleanor ate at the table.',
+      sentence: 'Asha ate at the table.',
     },
   },
   {
@@ -96,11 +96,11 @@ const SCRIPT: Beat[] = [
     presence: {
       status: 'in_view', activity: 'reading', spot_is_usual: true,
       since: null, last_observation_at: null,
-      sentence: 'Eleanor has been settled in her usual spot, reading by the look of it.',
+      sentence: 'Asha has been settled in her usual spot, reading by the look of it.',
     },
     item: {
       type: 'activity_observed', kind: 'observed', confidence: 0.74,
-      sentence: 'Eleanor was settled in her usual spot, reading.',
+      sentence: 'Asha was settled in her usual spot, reading.',
     },
   },
   {
@@ -108,11 +108,11 @@ const SCRIPT: Beat[] = [
     presence: {
       status: 'out_of_view', activity: 'absent', spot_is_usual: false,
       since: null, last_observation_at: null,
-      sentence: 'Eleanor has been out of view since {since}.',
+      sentence: 'Asha has been out of view since {since}.',
     },
     item: {
       type: 'room_exit', kind: 'observed', confidence: 0.9,
-      sentence: 'Eleanor went out of view, around her usual walk time.',
+      sentence: 'Asha went out of view, around her usual walk time.',
     },
   },
 ];
@@ -396,7 +396,7 @@ class MockCamera {
         type: 'visitor_present',
         kind: 'observed',
         confidence: 0.7,
-        sentence: 'Eleanor had a visitor for about 40 minutes.',
+        sentence: 'Asha had a visitor for about 40 minutes.',
       });
     }
   }

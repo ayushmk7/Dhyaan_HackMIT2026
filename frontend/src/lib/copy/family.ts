@@ -552,6 +552,7 @@ export const family = {
     noHistory: 'Dhyaan isn’t sending the step-by-step history for this alert. This is where it has got to, and it is updating as it goes.',
 
     hearing: 'What the call is hearing',
+    heard: 'What the call heard',
     speakerDhyaan: 'Dhyaan: ',
     speakerHer: (name: string) => `${name}: `,
 

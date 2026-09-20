@@ -41,7 +41,7 @@ type Session = {
   setFact(key: string, text: string): void;
   setCamera(c: Partial<CameraDraft>): void;
   finishOnboarding(): void;
-  /** `Skip setup (dev)` — a session with Eleanor already set up. */
+  /** `Skip setup (dev)` — a session with Asha already set up. */
   seedDemoSession(drafts: FactDraft[]): void;
   /** Drops everything, including the onboarding draft. */
   reset(): void;
@@ -50,7 +50,7 @@ type Session = {
 const emptyGrants: Grants = { falls: null, camera: null, memory: null };
 const emptyCamera: CameraDraft = { zone: null, zoneHint: '' };
 
-// ponytail: `res_eleanor` and `Eleanor` are the seed's one resident, and they
+// ponytail: `res_eleanor` and `Asha` are the seed's one resident, and they
 // are the value the app opens with. The name is a placeholder, not a fact:
 // `useHydrateResident` replaces it with what the server calls her. Ceiling: a
 // first frame can still show the placeholder name for as long as the profile
@@ -59,7 +59,7 @@ const blank = {
   residentId: 'res_eleanor',
   role: null as Role,
   onboarded: false,
-  residentName: 'Eleanor',
+  residentName: 'Asha',
   consentGivenBy: '',
   consentRelationship: '',
   grants: emptyGrants,

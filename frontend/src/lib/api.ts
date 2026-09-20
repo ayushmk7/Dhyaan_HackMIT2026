@@ -89,7 +89,7 @@ const mockApi = {
     const draft = dhyaan.sundayLetterDraft();
     return (
       (await polishLetter(draft)) ??
-      `Eleanor’s week, from Dhyaan:\n\n${dhyaan.getSummaries('res_eleanor').map((s) => s.narrative).join(' ')}\n\nSent from the Dhyaan family app`
+      `Asha’s week, from Dhyaan:\n\n${dhyaan.getSummaries('res_eleanor').map((s) => s.narrative).join(' ')}\n\nSent from the Dhyaan family app`
     );
   },
   async simulate(
@@ -181,7 +181,7 @@ const mockApi = {
   },
 };
 
-// `Skip setup (dev)` seeds Eleanor locally and writes nothing to the server.
+// `Skip setup (dev)` seeds Asha locally and writes nothing to the server.
 // Mock-only by design: against a live backend the seeded resident is whatever
 // `make seed` put there, so there is nothing for the app to fabricate.
 export const seedDemoResident = (author?: string) => {

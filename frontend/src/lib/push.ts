@@ -34,7 +34,7 @@ export async function registerForPush(): Promise<{ token: string | null; reason?
  * Fire the §10.4 FALL payload at this phone, end to end, with no backend.
  *
  * A diagnostic, reached only from the hidden debug panel. It used to hardcode
- * "Possible fall: Eleanor" and `resident_id: 'res_eleanor'`, which meant a test
+ * "Possible fall: Asha" and `resident_id: 'res_eleanor'`, which meant a test
  * notification named the seed's resident on any install. The caller passes who
  * it is actually for, and the body says plainly that it is a test, because a
  * notification that reads exactly like a real fall alert is one a person can

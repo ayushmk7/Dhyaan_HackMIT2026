@@ -20,7 +20,7 @@
 // answer), which are copy with a switch in front of them.
 import * as Haptics from 'expo-haptics';
 import { useAudioPlayer } from 'expo-audio';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Vibration, View } from 'react-native';
 import {
@@ -79,6 +79,29 @@ const inCancelWindow = (state: string) => state === 'suspected' || state === 'lo
 const EMERGENCY_NUMBER = '911';
 
 const firstName = (full: string) => full.split(' ')[0];
+
+/** One voice line. The agent in quiet italics, every human voice in weight. */
+function TranscriptLines({ transcript, name }: {
+  transcript: { speaker: string; text: string }[]; name: string;
+}) {
+  return (
+    <>
+      {transcript.map((line, i) => (
+        <Txt
+          key={i}
+          kind="body"
+          style={
+            line.speaker === 'agent'
+              ? { fontStyle: 'italic', opacity: 0.8, marginBottom: sp(2) }
+              : { fontWeight: '700', marginBottom: sp(2) }
+          }
+        >
+          {line.speaker === 'agent' ? copy.speakerDhyaan : copy.speakerHer(name)}{line.text}
+        </Txt>
+      ))}
+    </>
+  );
+}
 
 // Outside the component so the compiler's immutability rule doesn't apply;
 // wrapped so a sound failure never kills the takeover.
@@ -171,6 +194,12 @@ export default function AlertTakeover() {
   const call911 = () => Linking.openURL(`tel:${EMERGENCY_NUMBER}`);
   const goHome = () => router.replace('/');
 
+  // A dev reload can restore this route with its param lost. With no id there
+  // is nothing to show and nothing to poll: go home instead of standing on an
+  // "already handled" plate for an alert that was never named. After the
+  // hooks, so the hook order never changes.
+  if (!id) return <Redirect href="/" />;
+
   // A flaky LAN hop, not "nobody needs help any more" — never conflate the two.
   if (isError && !alert) {
     return (
@@ -215,8 +244,12 @@ export default function AlertTakeover() {
     // Nobody picked up. That is not an OK, and it is not over for the family:
     // the two ways to reach her stay on the screen.
     const exhausted = !closedNote && state === 'exhausted';
+    // The record of the call survives the close: a resolved alert is the one
+    // place a family re-reads what was said. With a transcript the screen
+    // scrolls; without one it stays a single calm plate.
+    const hasTranscript = transcript.length > 0;
     return (
-      <Screen scroll={false} style={{ justifyContent: 'center' }}>
+      <Screen scroll={hasTranscript} style={hasTranscript ? undefined : { justifyContent: 'center' }}>
         <Stagger gap={4}>
           <Txt kind="display" tone={exhausted ? 'ink' : 'ok'}>{sentence}</Txt>
           <View>
@@ -251,6 +284,12 @@ export default function AlertTakeover() {
             </View>
           ) : null}
           <Btn label={copy.backHome} kind={exhausted ? 'quiet' : 'primary'} onPress={goHome} />
+          {hasTranscript && (
+            <View>
+              <Marquee title={copy.heard} />
+              <TranscriptLines transcript={transcript} name={name} />
+            </View>
+          )}
         </Stagger>
       </Screen>
     );
@@ -351,19 +390,7 @@ export default function AlertTakeover() {
       {transcript.length > 0 && (
         <Entrance index={3}>
           <Marquee title={copy.hearing} />
-          {transcript.map((line, i) => (
-            <Txt
-              key={i}
-              kind="body"
-              style={
-                line.speaker === 'agent'
-                  ? { fontStyle: 'italic', opacity: 0.8, marginBottom: sp(2) }
-                  : { fontWeight: '700', marginBottom: sp(2) }
-              }
-            >
-              {line.speaker === 'agent' ? copy.speakerDhyaan : copy.speakerHer(name)}{line.text}
-            </Txt>
-          ))}
+          <TranscriptLines transcript={transcript} name={name} />
         </Entrance>
       )}
 

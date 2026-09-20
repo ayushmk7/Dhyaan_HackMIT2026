@@ -21,6 +21,7 @@ import {
 } from '@/components';
 import { api } from '@/lib/api';
 import { family } from '@/lib/copy/family';
+import { scrubRooms } from '@/lib/format';
 import type { ChatMessage, RefusalKind } from '@/lib/types';
 import { useSession } from '@/store/session';
 import { radius, sp, type, useTheme } from '@/theme';
@@ -151,7 +152,9 @@ export default function Ask() {
                   {m.text}
                 </Refusal>
               ) : (
-                <Txt kind="body">{m.text}</Txt>
+                // Family surface: the answer is stitched from raw records, so
+                // it gets the same room scrub the activity feed gets (D-001).
+                <Txt kind="body">{scrubRooms(m.text)}</Txt>
               )}
               {!!m.citations?.length && (
                 <View style={{ marginTop: sp(3), gap: sp(2) }}>

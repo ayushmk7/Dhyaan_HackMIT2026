@@ -245,7 +245,7 @@ class MockDhyaan {
     if (/eat|meal|food|dinner|lunch|breakfast|appetite/.test(q)) {
       const meals = evs.filter((e) => e.type === 'meal_observed');
       const skipped = evs.filter((e) => e.type === 'meal_skipped');
-      text = `Eleanor ate ${meals.length} recorded meals this week, breakfast and lunch every day. ` +
+      text = `Asha ate ${meals.length} recorded meals this week, breakfast and lunch every day. ` +
         `But no dinner was observed on ${skipped.length} of the last 3 evenings, which is new for her. ` +
         `Her usual dinner time is about 6:20 PM.`;
       citations = cite([...skipped, ...meals]);

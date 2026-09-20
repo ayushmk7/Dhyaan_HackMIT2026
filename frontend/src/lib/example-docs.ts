@@ -1,6 +1,6 @@
 // A realistic discharge summary for the care-file demo (and for judges to edit live).
 export const EXAMPLE_DISCHARGE = `MOUNT AUBURN HOSPITAL - DISCHARGE SUMMARY
-Patient: Eleanor Vance   DOB: 03/14/1945
+Patient: Asha Vance   DOB: 03/14/1945
 Discharged: after observation for a mechanical fall, no fracture.
 
 DIAGNOSES: Type 2 diabetes. Hypertension. Mild osteoarthritis, both knees.

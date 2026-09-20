@@ -559,14 +559,15 @@ export default function CameraConsole() {
     </View>
   ) : null;
 
-  // `Screen` owns the bar and its clearance: the tab bar raises the bottom
-  // inset, and a hand-rolled paddingBottom here lost it.
+  // `Screen` owns the bar and its clearance. The default inset is the RAISED
+  // one TabBarInsets provides, which is exactly what lifts this bar above the
+  // floating tab bar — `floatingBarInset={false}` zeroed it, and the simulate
+  // row and the pause button rendered underneath the tab capsule.
   return (
     <Screen
       native
       wash
       floatingBar={bar}
-      floatingBarInset={false}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
       {body}

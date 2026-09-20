@@ -25,6 +25,13 @@ export const mins = (s: number) => `${Math.round(s / 60)} min`;
 export const zoneLabel = (zone: string | null | undefined) =>
   (zone ?? 'unknown').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
+// Room names never reach a family surface (D-001, §5.2). The server scrubs the
+// activity feed (rag.scrub_rooms), but GET /events/{id} returns the raw record,
+// so a family screen that renders `embedding_text` must run the same scrub
+// itself. Same pattern and replacement as the server's, so both agree.
+const ROOM_WORDS = /(?:\b(?:in|into|from|to|at|inside)\s+(?:the\s+)?)?\b(kitchen|bedroom|bathroom|living[ _]room|hallway|hall|dining[ _]room)\b/gi;
+export const scrubRooms = (text: string): string => text.replace(ROOM_WORDS, 'at home');
+
 // embedding_text is written for retrieval ("On Saturday at 12:42 PM, …"); the UI
 // already shows the time, so strip the preamble for display and re-capitalize.
 export const displaySentence = (text: string): string => {

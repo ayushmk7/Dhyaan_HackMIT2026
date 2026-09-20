@@ -15,7 +15,7 @@ import {
 } from '@/components';
 import { api } from '@/lib/api';
 import { family } from '@/lib/copy/family';
-import { dayOf, displaySentence, eventTitle, timeOf } from '@/lib/format';
+import { dayOf, displaySentence, eventTitle, scrubRooms, timeOf } from '@/lib/format';
 import { useEvent } from '@/lib/hooks';
 import type { KEvent, SourceKind } from '@/lib/types';
 import { sp } from '@/theme/tokens';
@@ -43,7 +43,9 @@ function sensorSentence(e: KEvent): string {
 const familySentence = (e: KEvent): string => {
   if (e.type === 'fall_suspected') return family.shared.fallSuspected;
   if (e.type === 'fall_confirmed') return family.shared.fallConfirmed;
-  return displaySentence(e.embedding_text);
+  // The raw record names rooms; this is a family screen, so the same scrub the
+  // server runs on the activity feed runs here too (the second lock, for real).
+  return scrubRooms(displaySentence(e.embedding_text));
 };
 
 /** §6.5's three kinds, read off the one field that decides them. */

@@ -1,4 +1,4 @@
-// Seeded demo world: Eleanor at home (B2C) + a facility floor (B2B).
+// Seeded demo world: Asha at home (B2C) + a facility floor (B2B).
 // Everything is generated relative to "now" so the demo always looks live.
 import type {
   BaselineFeature, Contact, DaySummary, KEvent, LocationSegment, Resident,
@@ -50,7 +50,7 @@ function ev(p: {
   };
 }
 
-// ---- Eleanor: 7 days of routine, with a real deviation story ----------------
+// ---- Asha: 7 days of routine, with a real deviation story ----------------
 // Days -6..-1 are full days; day 0 is today up to "now".
 // Story: dinners missing since day -2, fewer walks — feeds tiles, chat, timeline.
 
@@ -72,32 +72,32 @@ export function generateEleanor(now: number) {
 
     push(ev({
       resident_id: R, source: 'camera', type: 'bed_exit', t: wakeT, zone: 'bedroom',
-      text: `On ${weekday(wakeT)} at ${clock(wakeT)}, Eleanor got up for the day.`,
+      text: `On ${weekday(wakeT)} at ${clock(wakeT)}, Asha got up for the day.`,
     }));
     const bfast = at(ds, 8, wobble(5));
     push(ev({
       resident_id: R, source: 'camera', type: 'meal_observed', t: bfast, tEnd: bfast + 18 * MIN,
       zone: 'kitchen', confidence: 0.86, payload: { meal: 'breakfast' },
-      text: `On ${weekday(bfast)} at ${clock(bfast)}, Eleanor ate breakfast in the kitchen for about 18 minutes.`,
+      text: `On ${weekday(bfast)} at ${clock(bfast)}, Asha ate breakfast in the kitchen for about 18 minutes.`,
     }));
     const walk1 = at(ds, 10, wobble(15));
     push(ev({
       resident_id: R, source: 'band', type: 'walk_completed', t: walk1, tEnd: walk1 + 22 * MIN,
       zone: 'outside', payload: { duration_s: 1320 },
-      text: `On ${weekday(walk1)} at ${clock(walk1)}, Eleanor went out for her morning walk, about 22 minutes.`,
+      text: `On ${weekday(walk1)} at ${clock(walk1)}, Asha went out for her morning walk, about 22 minutes.`,
     }));
     const lunch = at(ds, 12, wobble(41));
     push(ev({
       resident_id: R, source: 'camera', type: 'meal_observed', t: lunch, tEnd: lunch + 22 * MIN,
       zone: 'kitchen', confidence: 0.82, payload: { meal: 'lunch' },
-      text: `On ${weekday(lunch)} at ${clock(lunch)}, Eleanor ate lunch in the kitchen for about 22 minutes. Her plate went from full to mostly empty.`,
+      text: `On ${weekday(lunch)} at ${clock(lunch)}, Asha ate lunch in the kitchen for about 22 minutes. Her plate went from full to mostly empty.`,
     }));
     if (!fewWalks) {
       const walk2 = at(ds, 15, wobble(30));
       push(ev({
         resident_id: R, source: 'band', type: 'walk_completed', t: walk2, tEnd: walk2 + 15 * MIN,
         zone: 'outside', payload: { duration_s: 900 },
-        text: `On ${weekday(walk2)} at ${clock(walk2)}, Eleanor took an afternoon walk of about 15 minutes.`,
+        text: `On ${weekday(walk2)} at ${clock(walk2)}, Asha took an afternoon walk of about 15 minutes.`,
       }));
     }
     if (!today) {
@@ -106,14 +106,14 @@ export function generateEleanor(now: number) {
         push(ev({
           resident_id: R, source: 'camera', type: 'meal_skipped', t, zone: 'kitchen',
           confidence: 0.7, deviation: true, payload: { meal: 'dinner' },
-          text: `On ${weekday(t)} evening, no dinner was observed. Eleanor was last seen in the living room at ${clock(at(ds, 19, 5))}.`,
+          text: `On ${weekday(t)} evening, no dinner was observed. Asha was last seen in the living room at ${clock(at(ds, 19, 5))}.`,
         }));
       } else {
         const dinner = at(ds, 18, wobble(20));
         push(ev({
           resident_id: R, source: 'camera', type: 'meal_observed', t: dinner, tEnd: dinner + 25 * MIN,
           zone: 'kitchen', confidence: 0.84, payload: { meal: 'dinner' },
-          text: `On ${weekday(dinner)} at ${clock(dinner)}, Eleanor ate dinner in the kitchen for about 25 minutes.`,
+          text: `On ${weekday(dinner)} at ${clock(dinner)}, Asha ate dinner in the kitchen for about 25 minutes.`,
         }));
       }
       if (d === -3) {
@@ -121,13 +121,13 @@ export function generateEleanor(now: number) {
         push(ev({
           resident_id: R, source: 'band', type: 'night_activity', t: t - DAY + 0, zone: 'hallway',
           deviation: true, payload: { hour_local: 3 },
-          text: `On ${weekday(t - DAY)} at 3:12 AM, Eleanor was up and moving around the hallway for about 9 minutes.`,
+          text: `On ${weekday(t - DAY)} at 3:12 AM, Asha was up and moving around the hallway for about 9 minutes.`,
         }));
       }
       const bed = at(ds, 21, wobble(45));
       push(ev({
         resident_id: R, source: 'band', type: 'zone_entered', t: bed, zone: 'bedroom',
-        text: `On ${weekday(bed)} at ${clock(bed)}, Eleanor settled in the bedroom for the night.`,
+        text: `On ${weekday(bed)} at ${clock(bed)}, Asha settled in the bedroom for the night.`,
       }));
     }
 
@@ -156,7 +156,7 @@ export function generateEleanor(now: number) {
       summaries.push({
         date_local: dayKey(ds),
         narrative:
-          `Eleanor was up at ${clock(wakeT)} and ate ${meals === 3 ? 'all three meals' : 'breakfast and lunch'}.` +
+          `Asha was up at ${clock(wakeT)} and ate ${meals === 3 ? 'all three meals' : 'breakfast and lunch'}.` +
           ` She ${walks === 2 ? 'walked twice' : 'walked once'}${dinnerSkipped ? '. No dinner was observed, the ' +
           (d === -1 ? 'second' : 'first') + ' evening in a row' : ''}.` +
           (d === -3 ? ' She was briefly up at 3 AM, which is unusual for her.' : ''),
@@ -234,7 +234,7 @@ export const facilityResidents: Resident[] = [
 ];
 
 export const eleanorResident = (now: number): Resident => ({
-  id: 'res_eleanor', display_name: 'Eleanor', phone_e164: '+16175550100', room: null, state: 'ok',
+  id: 'res_eleanor', display_name: 'Asha', phone_e164: '+16175550100', room: null, state: 'ok',
   last_seen: iso(now - 40_000), band_battery_pct: 64,
   location: { zone: 'kitchen', label: 'Kitchen', since: iso(now - 12 * MIN), confidence: 0.88, method: 'ble' },
   open_alerts: 0, baseline_ready: true,

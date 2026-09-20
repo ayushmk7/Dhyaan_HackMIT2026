@@ -9,8 +9,9 @@
 // screen. Where the real backend still has no equivalent endpoint at all,
 // the function says so and throws or degrades instead of faking data.
 import { draftOpeners, planFromThread as aiPlanFromThread, polishLetter, type FamilyPlan } from './ai';
-import { API_BASE } from './config';
+import { API_BASE, API_KEY } from './config';
 import { family } from './copy/family';
+import { scrubRooms } from './format';
 import { useSession } from '@/store/session';
 import type {
   ActivityDay, Alert, AlertKind, AlertSeverity, BaselineFeature, CallRow,
@@ -49,7 +50,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       signal: abort.signal,
       headers: {
         'Content-Type': 'application/json',
-        // No Authorization header: the backend has no auth (see config.ts).
+        // The deployed backend generation may still check this shared key; the
+        // no-auth HEAD backend ignores it. Unconditional, so either answers.
+        Authorization: `Bearer ${API_KEY}`,
         ...init?.headers,
       },
     });
@@ -324,7 +327,10 @@ export const httpApi = {
     const raw = await get<Omit<BaselineFeature, 'label' | 'series'>[]>(`/residents/${residentId}/baselines`);
     return raw.map((b) => ({
       ...b,
-      label: locationLabel(b.feature), // reuses the same title-case helper zones use — it's just string formatting
+      // Title-cased feature name, minus a trailing unit suffix: the unit
+      // already renders beside the value, so "longest_inactivity_s" must read
+      // "Longest Inactivity", not "Longest Inactivity S at 16320 s".
+      label: locationLabel(b.feature.replace(/_s$/, '')),
       series: b.last_value == null ? [] : [b.last_value],
     }));
   },
@@ -391,11 +397,21 @@ export const httpApi = {
       refused?: boolean;
       refusal_kind?: ChatMessage['refusal_kind'];
     }>(`/residents/${forResident}/chat`, { question });
+    // Two display scrubs, both second locks on §6.1 (the deployed backend can
+    // still send these):
+    //  · the extractive answer inlines its retrieval ids ("[evt_01M2…]"),
+    //    which no person should read — stripped, sentences left intact.
+    //  · the retriever can cite the alert FSM's own transition rows ("Alert
+    //    alt_…: CALLING_RESIDENT -> CLASSIFYING"), a log line rather than a
+    //    sentence — that citation is dropped, never rewritten.
+    const scrubIds = (text: string) =>
+      text.replace(/\s*\[(?:evt|fact|alt|cam|obs)_[A-Za-z0-9]+\]/g, '').replace(/[ \t]{2,}/g, ' ').trim();
+    const isMachineLine = (text: string) => /^alert\s+alt_/i.test(text) || text.includes('->');
     return {
       id: `msg_${Date.now().toString(36)}`,
       role: 'dhyaan',
-      text: body.answer,
-      citations: (body.citations ?? []).map((c) => {
+      text: scrubIds(body.answer),
+      citations: (body.citations ?? []).filter((c) => !isMachineLine(c.text)).map((c) => {
         const eventId = c.id ?? c.event_id ?? '';
         const kind = c.kind === 'told' || c.kind === 'pattern' ? c.kind : 'observed';
         return {
@@ -406,7 +422,9 @@ export const httpApi = {
           // A 'told' fact is timeless and has no event behind it, so it gets
           // no tap target rather than one that 404s.
           event_ids: kind === 'observed' && eventId ? [eventId] : [],
-          text: c.text,
+          // Raw records name rooms; only the family chat renders this text,
+          // so it carries the same scrub the server runs on the activity feed.
+          text: scrubRooms(c.text),
         };
       }),
       refused: body.refused ?? body.retrieved_count === 0,
