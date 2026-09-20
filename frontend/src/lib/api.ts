@@ -46,7 +46,7 @@ const mockApi = {
     const draft = dhyaan.sundayLetterDraft();
     return (
       (await polishLetter(draft)) ??
-      `Eleanor’s week, from Dhyaan:\n\n${dhyaan.getSummaries('res_eleanor').map((s) => s.narrative).join(' ')}\n\n— sent from the Dhyaan family app`
+      `Eleanor’s week, from Dhyaan:\n\n${dhyaan.getSummaries('res_eleanor').map((s) => s.narrative).join(' ')}\n\nSent from the Dhyaan family app`
     );
   },
   async simulate(kind: 'fall' | 'bathroom' = 'fall', residentId?: string): Promise<Alert> {
@@ -57,7 +57,7 @@ const mockApi = {
   // Onboarding — mock accepts anything plausible.
   async pairBand(code: string) {
     await wait(900);
-    if (code.length !== 6) throw new Error('That code doesn’t look right — it’s 6 digits.');
+    if (code.length !== 6) throw new Error('That code doesn’t look right. It’s 6 digits.');
     return { band_id: 'band_a3f2', rssi: -54 };
   },
   async surveyRoom(_zoneId: string) {

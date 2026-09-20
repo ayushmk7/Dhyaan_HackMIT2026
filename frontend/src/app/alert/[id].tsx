@@ -17,7 +17,7 @@ import { useAlert, useContacts, useResident } from '@/lib/hooks';
 import { emergencyLine, useCareFile } from '@/store/carefile';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
-import { font, palette, radius, sp, type } from '@/theme/tokens';
+import { palette, radius, sp, type } from '@/theme/tokens';
 
 const WHITE = '#FFFFFF';
 const WHITE_SOFT = 'rgba(255,255,255,0.8)';
@@ -136,7 +136,7 @@ export default function AlertTakeover() {
     } catch {
       // ponytail: someone else may have already closed this alert — a refetch
       // picks that up (poll below) instead of leaving the button silently dead.
-      setActionError('That didn’t go through — someone else may already be on it.');
+      setActionError('That didn’t go through. Someone else may already be on it.');
       refetch();
     }
   };
@@ -172,7 +172,7 @@ export default function AlertTakeover() {
       <View style={[styles.paperFill, { padding: sp(6) }]}>
         <Txt kind="display" tone="ok">{sentence}</Txt>
         <Txt kind="body" tone="muted" style={{ marginTop: sp(3) }}>
-          Everything Dhyaan heard and did is saved on {name}’s timeline.
+          Saved to {name}’s timeline.
         </Txt>
         {!!alert.closed_at && (
           <ElapsedStat openedAt={alert.opened_at} closedAt={alert.closed_at} name={name} />
@@ -232,7 +232,7 @@ export default function AlertTakeover() {
             <RingingPulse
               label={
                 lastStep?.step === 'calling_contact_2' && contact2
-                  ? `Calling ${contact1} and ${contact2} — in parallel, nobody waits for voicemail`
+                  ? `Calling ${contact1} and ${contact2} at the same time`
                   : contact2
                     ? `Calling ${contact1} · ${contact2} is next if she doesn’t pick up`
                     : `Calling ${contact1}`
@@ -260,7 +260,7 @@ export default function AlertTakeover() {
                 key={i}
                 style={
                   line.speaker === 'agent'
-                    ? { fontFamily: font.displayItalic, fontSize: 16, lineHeight: 24, color: WHITE_SOFT, marginBottom: sp(2) }
+                    ? { fontStyle: 'italic' as const, fontSize: 16, lineHeight: 24, color: WHITE_SOFT, marginBottom: sp(2) }
                     : { ...type.body, color: WHITE, fontWeight: '700', marginBottom: sp(2) }
                 }
               >
@@ -283,7 +283,7 @@ export default function AlertTakeover() {
               borderWidth: 1, borderColor: 'rgba(255,255,255,0.45)',
               borderRadius: radius.card, padding: sp(3),
             }}>
-              <Text style={[type.caption, { color: WHITE_SOFT }]}>If EMS comes — from her care file</Text>
+              <Text style={[type.caption, { color: WHITE_SOFT }]}>For EMS, from her care file</Text>
               <Text style={[type.caption, { color: WHITE, marginTop: 2 }]}>{emsLine}</Text>
             </View>
           )}
@@ -295,7 +295,7 @@ export default function AlertTakeover() {
           {role === 'staff' ? (
             <>
               <BigWhiteBtn label="Assign to me" onPress={() => act(() => api.ack(id!, 'Marcus'), 'Assigned to you. The ladder has stopped.')} />
-              <OutlineBtn label="Resolved — checked on her" onPress={() => act(() => api.resolve(id!, 'ok'), 'Resolved. Noted on her record.')} />
+              <OutlineBtn label="Resolved, checked on her" onPress={() => act(() => api.resolve(id!, 'ok'), 'Resolved. Noted on her record.')} />
               <OutlineBtn label="False alarm" onPress={() => act(() => api.resolve(id!, 'false_positive'), 'Marked as a false alarm. Nothing else will happen.')} />
             </>
           ) : (
@@ -306,7 +306,7 @@ export default function AlertTakeover() {
               <Text style={[type.caption, { color: WHITE_SOFT, textAlign: 'center' }]}>
                 {phase === 'final'
                   ? 'Dhyaan does not dial 911 for you. If you can’t reach her, this button opens your dialer.'
-                  : 'Opens your phone dialer — Dhyaan never calls 911 itself.'}
+                  : 'Opens your dialer. Dhyaan never calls 911 itself.'}
               </Text>
             </>
           )}

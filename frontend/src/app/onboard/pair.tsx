@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { Btn, Row, Screen, StatusDot, Txt } from '@/components';
 import { api } from '@/lib/api';
-import { font, palette, radius, sp } from '@/theme/tokens';
+import { palette, radius, sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
 
 export default function Pair() {
@@ -21,7 +21,7 @@ export default function Pair() {
       await api.pairBand(code);
       setPaired(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Pairing failed — try the code again.');
+      setError(e instanceof Error ? e.message : 'That code didn’t match. Try again.');
     } finally {
       setBusy(false);
     }
@@ -30,9 +30,8 @@ export default function Pair() {
   return (
     <Screen>
       <Txt kind="title">Pair {residentName}’s band</Txt>
-      <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
-        The band shows a 6-digit code on its light — it will also read the code aloud.
-        Type it here.
+      <Txt kind="body" style={{ marginTop: sp(2) }}>
+        Type the 6-digit code the band shows.
       </Txt>
 
       <TextInput
@@ -55,7 +54,7 @@ export default function Pair() {
         <View style={{ marginTop: sp(6) }}>
           <Row gap={2} style={{ justifyContent: 'center', marginBottom: sp(6) }}>
             <StatusDot state="ok" />
-            <Txt kind="label" tone="ok">Band connected · signal good</Txt>
+            <Txt kind="label" tone="ok">Band connected</Txt>
           </Row>
           <Btn label="Continue" onPress={() => router.push('/onboard/survey')} />
         </View>
@@ -70,14 +69,12 @@ export default function Pair() {
 
 const styles = StyleSheet.create({
   code: {
-    fontFamily: font.displayBold,
-    fontSize: 44,
-    letterSpacing: 10,
+    fontSize: 34,
+    fontWeight: '700',
+    letterSpacing: 8,
     textAlign: 'center',
     color: palette.ink,
     backgroundColor: palette.raised,
-    borderWidth: 1,
-    borderColor: palette.line,
     borderRadius: radius.card,
     paddingVertical: sp(5),
     marginTop: sp(8),

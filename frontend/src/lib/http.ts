@@ -385,7 +385,7 @@ export const httpApi = {
       // have the backend return one, or drop the anchor UI for phone surveys.
       n_anchors: Math.min(6, body.samples),
       separability_db: 0, // not computed over REST — honest zero, not a fabricated confidence score
-      warning: body.stored ? null : 'Not enough signal collected — this room may not be recognized reliably yet.',
+      warning: body.stored ? null : 'Not enough signal collected. this room may not be recognized reliably yet.',
     };
   },
 
@@ -417,7 +417,7 @@ export const httpApi = {
   latestMessage: async (): Promise<{ text: string; at: string } | null> => null,
   planFromThread: async (thread: string): Promise<FamilyPlan> =>
     (await aiPlanFromThread(thread)) ?? {
-      headline: 'Couldn’t read the thread — try pasting it again.',
+      headline: 'Couldn’t read the thread. Try pasting it again.',
       when: null, tasks: [], open_questions: [], reply_text: '',
     },
   sundayLetter: async (): Promise<string> => {

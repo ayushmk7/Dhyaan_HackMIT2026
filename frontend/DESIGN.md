@@ -1,88 +1,48 @@
-# Dhyaan app — design system & build rules
+# Dhyaan app — design contract
 
-Read this before writing any screen. Deviations from this doc are bugs.
+A judge called the old UI what it was: AI-generated. The tells were self-narrating
+chrome, em-dash prose, gray paragraphs, serif-as-chrome, and six equal sections per
+scroll. This contract exists to keep those dead. Deviations are bugs.
 
-## Voice
+References studied (real screenshots, not memory): Gentler Streak, How We Feel,
+Life360. What they share: a face or visual anchors every screen, bold black primary
+text, saturated committed brand color, mute chrome.
 
-Dhyaan watches over someone's mother. The app must read like a calm, competent
-human — never like a hospital monitor, never like a SaaS dashboard. Big statements
-are full sentences in a serif ("Eleanor is OK", "She's at home"). Labels are
-sentence case. No ALL-CAPS eyebrows, no middle-dot metadata rows, no icon soup.
-**Family screens never name a room** — "She's at home", "She went out at 10:15", never
-"She's in the kitchen". Room names belong on staff screens only (`DECISIONS.md` D-001).
+## The five rules
 
-## Tokens — import from `@/theme/tokens`
+1. **Chrome is mute.** No caption ever explains a control ("Safe to press",
+   "Change the order by re-running setup"). A label is its own documentation.
+   Voice lives in exactly three places: empty states, errors, consent content.
+2. **No em dashes in any user-facing string.** Rewrite the sentence. Max one " · "
+   pair per line.
+3. **Gray is metadata only** (timestamps, counts, units). Every sentence and every
+   primary label is ink. A gray paragraph is an instant fail.
+4. **SF only in chrome.** Native large-title headers own screen titles. The serif
+   (Fraunces) is allowed for exactly one thing: Eleanor's own quoted words.
+5. **Every screen has a visual anchor** — an Avatar, an IconBadge rail, the day
+   bar, the alert gradient. A screen that is only text is unfinished.
 
-**Aesthetic reference (per distinctive-frontend.md — document it):** Dhyaan (ध्यान,
-"attention") — a warm, handwritten-letter calm: aged paper, indigo-slate ink,
-turmeric ochre, and sindoor vermilion (`rust`) held back for the one moment that
-matters. Vermilion is **reserved for alerts** — if it appears anywhere but an
-alert/attention surface, it's wrong. The rest of the app stays deliberately quiet
-so the alert takeover's heat lands as a genuine shock.
+## System
 
-- `paper` warm ground, `ink` text, `inkMuted` secondary, `line` hairlines
-- `slate` primary/interactive, `slateDeep` pressed
-- `moss` = OK, `ochre` = attention/warn, `rust` = alert/critical, `rustDeep` pressed
-- `night*` variants: staff Rounds screen and alert takeover use the night ground
+- Ground `paper` #F5F2EB; cards pure white, borderless, `cardShadow`, r16.
+  Separators (`Hairline`) live inside cards only.
+- Brand: saturated green `slate` #1E7A5A (token name is historical). Tonal
+  fills (`slateWash`) for secondary buttons, chips, pills — never outlines.
+  `rust` remains alert-only. Zone colors are saturated (day bar is a hero).
+- People are `Avatar` (gradient monogram). Rows and tiles get `IconBadge`
+  (white SF Symbol on a colored roundrect). Raw emoji = bug.
+- Type tokens only: `heading` for in-screen sections, `stat` for tile values,
+  `label` for row titles, `caption` for metadata. All SF.
+- Navigation: every tab is a native stack (`TabStack` in `@/lib/nav`) with
+  `headerLargeTitle`. Screens under one pass `native` to `Screen` (or set
+  `contentInsetAdjustmentBehavior="automatic"`). Detail screens rely on the
+  native back button — never a custom back row.
+- Demo/dev controls never appear in visible chrome. They live behind the
+  long-press DebugPanel (Settings) and deep links (`/simulate`,
+  `carefile?demo=1`).
 
-Spacing: `sp(n)` = 4px grid. Radius: `radius.card` (14), `radius.pill` (999).
-Never invent hex values or magic paddings.
+## Data rules (unchanged)
 
-## Type
-
-- Display / status sentences / screen titles: **Fraunces** via `<Txt kind="display">`,
-  `"title"`, `"stat"`.
-- UI labels, data, buttons: system sans via `<Txt kind="body">`, `"label"`, `"caption"`.
-- Use the `Txt` component for ALL text. Raw `<Text>` is a bug.
-
-## Components — use these, don't rebuild them
-
-From `@/components`:
-- `Screen` — safe-area page wrapper (`scroll` prop), sets ground color
-- `Txt` — typography (kinds: display, title, stat, body, label, caption; `tone`)
-- `Btn` — primary/quiet/danger buttons, full-width by default
-- `StatusDot`, `StateChip` — resident state colors (single source of truth)
-- `EventRow` — timeline row: icon glyph, sentence, time, deviation ring
-- `RoomTimeBar` — stacked day bar of location segments (zone colors from tokens)
-- `LadderTimeline` — live escalation steps w/ pulsing current step
-- `Tile` — ADL tile (ate / walked / up at night / out of room)
-- `Sparkline` — 14-day mini bars, pure Views
-- `Row`, `Hairline`, `SectionTitle` — layout helpers
-
-## Data — never fetch or invent data inline
-
-- Server reads: TanStack Query hooks in `@/lib/hooks` (`useResidents`,
-  `useResident`, `useTimeline`, `useSummary`, `useAlert`, `useLocationHistory`…).
-- Live state (websocket-owned): zustand `useLive` from `@/store/live` —
-  resident state, location, activeAlert, ladder, live transcript.
-- Session/role/onboarding: `useSession` from `@/store/session`.
-- Mutations (`ack`, `resolve`, `feedback`, `simulate`, pairing, survey): `api` from `@/lib/api`.
-- The mock backend (`@/lib/mock/dhyaan`) simulates the fall ladder in real time.
-  `api.simulate('fall')` starts it. Don't touch its internals from screens.
-
-## Motion & feedback
-
-Orchestrated entrance, not scattered micro-interactions (distinctive-frontend.md §3):
-screens with a hero moment (Home, the alert takeover) get ONE staggered load
-sequence via the shared `Entrance` component — nothing else animates unprompted.
-The alert takeover additionally pulses (`LadderTimeline`) and fires heavy haptics
-on mount and on ack. Use `Vibration`/haptics only on the alert screen. Every
-animation checks `AccessibilityInfo.isReduceMotionEnabled` (the `Entrance`
-component does this for you).
-
-## Backgrounds
-
-Atmospheric depth where it earns its place (distinctive-frontend.md §4): the alert
-takeover and staff Rounds use a layered `expo-linear-gradient` ground; Home gets a
-faint warm wash behind the hero. Everything else stays flat paper — depth is
-spent, not sprinkled.
-
-## The rules that keep this distinctive
-
-1. Spend boldness once per screen — one serif sentence, one big surface. Everything
-   else quiet.
-2. Structure encodes info: hairlines separate days, numbered steps only in the
-   escalation ladder (it is genuinely sequential).
-3. Never show an image/video of the resident. Evidence is always a sentence.
-4. Empty states invite action ("No walks recorded yet today") — never mood copy.
-5. Buttons say what they do: "I've got her", "Call Eleanor", "This was expected".
+Screens read via hooks in `@/lib/hooks`, live state via `useLive`, session via
+`useSession`, care file via `useCareFile`; mutations via `api`. Never import the
+mock or http client directly. Evidence is always a sentence, never an image.

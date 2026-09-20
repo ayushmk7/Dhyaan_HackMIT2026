@@ -20,9 +20,6 @@ export default function Baseline() {
   return (
     <Screen>
       <Txt kind="title">Tell us about {residentName}</Txt>
-      <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
-        Dhyaan starts from your answers, then learns her real rhythm within a week.
-      </Txt>
 
       <Question label="When is she usually up?">
         {['5:30', '6:30', '7:30', 'Later'].map((w) => (

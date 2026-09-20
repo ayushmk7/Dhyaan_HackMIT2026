@@ -1,9 +1,8 @@
 // Turn the family group chat into a plan (Meta challenge: "synthesize a group
 // discussion into plans everyone would enjoy"). Paste the thread; Claude extracts
 // the consensus, commitments, and open questions, plus a reply ready to send back.
-import { router } from 'expo-router';
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, Share, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Btn, Card, Hairline, Row, Txt } from '@/components';
 import { Icon } from '@/components/icon';
@@ -31,49 +30,32 @@ export default function Plan() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{
-          paddingTop: insets.top + sp(3),
-          paddingHorizontal: sp(5),
+          paddingTop: sp(3),
+          paddingHorizontal: sp(4),
           paddingBottom: insets.bottom + sp(8),
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          onPress={() => router.back()}
-          style={{ paddingVertical: sp(2), alignSelf: 'flex-start' }}
-        >
-          <Row gap={1}>
-            <Icon name="chevron.left" size={14} color={palette.slate} />
-            <Txt kind="label" tone="slate">Ask</Txt>
-          </Row>
-        </Pressable>
-
-        <Txt kind="display">Make a plan from the family chat</Txt>
-        <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
-          Paste the group thread — the birthday chaos, the visit scheduling — and get
-          back who’s doing what, what’s still undecided, and a reply to send.
-        </Txt>
-
         <TextInput
           multiline
           value={thread}
           onChangeText={setThread}
-          placeholder="Paste the thread here"
+          placeholder="Paste the family group chat"
           placeholderTextColor={palette.inkMuted}
           style={{
             minHeight: 140, maxHeight: 240,
-            marginTop: sp(4), padding: sp(3),
+            padding: sp(3),
             backgroundColor: palette.raised,
             borderWidth: 1, borderColor: palette.line, borderRadius: radius.card,
             ...type.body, color: palette.ink, textAlignVertical: 'top',
           }}
         />
         <View style={{ gap: sp(2), marginTop: sp(3) }}>
-          <Btn label="Make the plan" onPress={make} busy={busy} disabled={!thread.trim()} />
+          <Btn label="Make a plan" onPress={make} busy={busy} disabled={!thread.trim()} />
           {!thread && (
-            <Btn label="Use an example thread" kind="quiet" onPress={() => setThread(EXAMPLE_THREAD)} />
+            <Btn label="Try an example" kind="quiet" onPress={() => setThread(EXAMPLE_THREAD)} />
           )}
         </View>
 
@@ -117,7 +99,7 @@ export default function Plan() {
                   <Txt kind="body" style={{ marginTop: sp(1.5) }}>{plan.reply_text}</Txt>
                 </Card>
                 <Btn
-                  label="Send it back to the thread"
+                  label="Send to the thread"
                   onPress={() => Share.share({ message: plan.reply_text })}
                 />
               </View>

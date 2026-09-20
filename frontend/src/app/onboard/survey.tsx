@@ -57,9 +57,8 @@ export default function Survey() {
   return (
     <Screen>
       <Txt kind="title">Walk each room with the band</Txt>
-      <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
-        Take the band to a room, press start, and walk around for 30 seconds. That is
-        how Dhyaan learns which room {residentName} is in.
+      <Txt kind="body" style={{ marginTop: sp(2) }}>
+        30 seconds per room teaches Dhyaan where {residentName} is.
       </Txt>
 
       <View style={{ marginTop: sp(5), gap: sp(3) }}>
@@ -76,13 +75,13 @@ export default function Survey() {
               </Row>
               {s.kind === 'surveying' && (
                 <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>
-                  Keep walking… {s.anchors} anchors heard
+                  {s.anchors} anchors heard
                 </Txt>
               )}
               {s.kind === 'idle' && (
                 <Btn
                   kind="quiet"
-                  label="Start 30-second walk"
+                  label="Map this room"
                   disabled={surveying}
                   onPress={() => start(z.id)}
                   style={{ marginTop: sp(3), minHeight: 44 }}
@@ -93,12 +92,7 @@ export default function Survey() {
         })}
       </View>
 
-      <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>
-        Three rooms is enough to start — Dhyaan keeps refining as she lives her days.
-        You can map the rest anytime from Settings.
-      </Txt>
-
-      <View style={{ marginTop: sp(5) }}>
+      <View style={{ marginTop: sp(6) }}>
         <Btn
           label={doneCount >= 3 ? 'Continue' : `Map ${3 - doneCount} more room${3 - doneCount === 1 ? '' : 's'}`}
           disabled={doneCount < 3}

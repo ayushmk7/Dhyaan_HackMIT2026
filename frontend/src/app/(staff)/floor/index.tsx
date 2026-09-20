@@ -5,7 +5,7 @@ import { Pressable, View } from 'react-native';
 import { ErrorState, LoadingState, Screen, Txt } from '@/components';
 import { useResidents } from '@/lib/hooks';
 import { useLive } from '@/store/live';
-import { palette, radius, sp, stateColor } from '@/theme/tokens';
+import { cardShadow, palette, radius, sp, stateColor } from '@/theme/tokens';
 
 export default function Floor() {
   const { data, isLoading, isError, refetch } = useResidents();
@@ -14,16 +14,14 @@ export default function Floor() {
 
   if (isLoading && !data) {
     return (
-      <Screen>
-        <Txt kind="display">Floor 2</Txt>
+      <Screen native>
         <LoadingState label="Loading rooms…" />
       </Screen>
     );
   }
   if (isError && !data) {
     return (
-      <Screen>
-        <Txt kind="display">Floor 2</Txt>
+      <Screen native>
         <ErrorState message="Couldn’t reach the floor list." onRetry={refetch} />
       </Screen>
     );
@@ -39,13 +37,8 @@ export default function Floor() {
     .sort((a, b) => (a.room ?? '').localeCompare(b.room ?? ''));
 
   return (
-    <Screen>
-      <Txt kind="display">Floor 2</Txt>
-      <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>
-        Tap a room to see the resident
-      </Txt>
-
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: sp(3), marginTop: sp(5) }}>
+    <Screen native>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: sp(3), marginTop: sp(1) }}>
         {rooms.map((r) => {
           const c = stateColor[r.state];
           const inOwnRoom = r.location?.zone === 'bedroom';
@@ -54,16 +47,17 @@ export default function Floor() {
               key={r.id}
               accessibilityRole="button"
               accessibilityLabel={`Room ${r.room}, ${r.display_name}`}
-              onPress={() => router.push(`/(staff)/resident/${r.id}`)}
+              onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
               style={({ pressed }) => [
                 {
                   width: '47.5%',
-                  backgroundColor: c.wash,
+                  backgroundColor: palette.raised,
                   borderRadius: radius.tile,
                   padding: sp(3.5),
                   minHeight: 108,
-                  borderWidth: r.state === 'alerting' ? 2 : 1,
-                  borderColor: r.state === 'alerting' ? palette.rust : palette.line,
+                  ...cardShadow,
+                  borderWidth: r.state === 'alerting' ? 2 : 0,
+                  borderColor: palette.rust,
                 },
                 pressed && { opacity: 0.7 },
               ]}
@@ -72,7 +66,7 @@ export default function Floor() {
               <Txt kind="label" style={{ marginTop: sp(1) }}>
                 {r.display_name.split(' ')[0]}
               </Txt>
-              <Txt kind="caption" tone="muted" style={{ marginTop: 2 }} numberOfLines={1}>
+              <Txt kind="caption" tone="muted" style={{ marginTop: 2 }} numberOfLines={1}>{/* voice-ok */}
                 {r.location ? (inOwnRoom ? 'In room' : r.location.label) : 'No signal'}
               </Txt>
             </Pressable>

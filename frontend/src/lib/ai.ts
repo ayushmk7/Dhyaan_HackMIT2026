@@ -67,8 +67,9 @@ export async function draftOpeners(eventSentences: string[]): Promise<string[] |
   const out = await ask(
     `These are today's observations about an 81-year-old woman named Eleanor, collected by an
 elder-care system her family uses. Her daughter is about to call her.
-Write exactly 3 short conversation openers for the daughter — warm, specific to these
+Write exactly 3 conversation openers for the daughter — warm, specific to these
 observations, never interrogating ("ask where she went, not whether she went").
+EACH OPENER 8 WORDS OR FEWER — these render as one-line list items.
 Reply with ONLY a JSON object: {"openers": [string, string, string]}
 
 OBSERVATIONS:

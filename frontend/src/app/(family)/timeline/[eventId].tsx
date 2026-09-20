@@ -1,21 +1,21 @@
 // Event detail: the evidence sentence, plainly. Never an image (§12.4).
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
 import { Btn, Card, ErrorState, Hairline, Row, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
-import { dayOf, eventTitle, timeOf, zoneLabel } from '@/lib/format';
+import { dayOf, displaySentence, eventTitle, timeOf, zoneLabel } from '@/lib/format';
 import { useEvent } from '@/lib/hooks';
 import type { KEvent } from '@/lib/types';
 import { sp } from '@/theme/tokens';
 
 function sensorSentence(e: KEvent): string {
   switch (e.source) {
-    case 'camera': return e.zone ? `Seen by the ${zoneLabel(e.zone).toLowerCase()} camera` : 'Seen by a camera';
-    case 'band': return 'Reported by her band';
-    case 'voice': return 'From a phone call';
-    case 'derived': return 'Worked out from the pattern of her day';
-    default: return 'Noted by a person';
+    case 'camera': return e.zone ? `${zoneLabel(e.zone)} camera` : 'Camera';
+    case 'band': return 'Her band';
+    case 'voice': return 'A phone call';
+    case 'derived': return 'Her daily pattern';
+    default: return 'A person';
   }
 }
 
@@ -31,15 +31,14 @@ export default function EventDetail() {
 
   if (!event) {
     return (
-      <Screen>
+      <Screen native>
         {isError ? (
           <ErrorState message="Couldn’t load that observation." onRetry={refetch} />
         ) : (
-          <Txt kind="body" tone="muted">
+          <Txt kind="body" tone="muted">{/* voice-ok */}
             {isLoading ? 'Looking that up…' : 'That observation isn’t here any more.'}
           </Txt>
         )}
-        <Btn label="Back" kind="quiet" onPress={() => router.back()} style={{ marginTop: sp(5) }} />
       </Screen>
     );
   }
@@ -51,43 +50,40 @@ export default function EventDetail() {
       await api.feedback(event.id, v);
       setVerdict(v);
     } catch {
-      setFeedbackError('Couldn’t save that — try again.');
+      setFeedbackError('Couldn’t save that. Try again.');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Screen>
+    <Screen native>
       <Txt kind="caption" tone="muted">{eventTitle(event.type)}</Txt>
-      <Txt kind="title" style={{ marginTop: sp(2) }}>{event.embedding_text}</Txt>
+      <Txt kind="title" style={{ marginTop: sp(2) }}>{displaySentence(event.embedding_text)}</Txt>
 
-      <Card style={{ marginTop: sp(6) }}>
+      <Card style={{ marginTop: sp(5) }}>
         <Row style={{ justifyContent: 'space-between' }}>
           <Txt kind="label">When</Txt>
           <Txt kind="body">{dayOf(event.ts)} · {timeOf(event.ts)}</Txt>
         </Row>
         <Hairline style={{ marginVertical: sp(3) }} />
         <Row style={{ justifyContent: 'space-between' }}>
-          <Txt kind="label">How Dhyaan knows</Txt>
+          <Txt kind="label">Source</Txt>
           <Txt kind="body" style={{ flexShrink: 1, textAlign: 'right' }}>{sensorSentence(event)}</Txt>
         </Row>
         <Hairline style={{ marginVertical: sp(3) }} />
         <Row style={{ justifyContent: 'space-between' }}>
-          <Txt kind="label">How certain</Txt>
+          <Txt kind="label">Certainty</Txt>
           <Txt kind="body">{confidenceWords(event.confidence)}</Txt>
         </Row>
       </Card>
 
       {verdict ? (
         <Txt kind="body" tone="ok" style={{ marginTop: sp(6) }}>
-          Got it — Dhyaan will weigh this differently next time.
+          Got it. Dhyaan will weigh this differently next time.
         </Txt>
       ) : (
         <View style={{ marginTop: sp(6), gap: sp(2) }}>
-          <Txt kind="caption" tone="muted">
-            Does this look right? Your answer teaches her baseline.
-          </Txt>
           <Btn label="This was expected" kind="quiet" busy={busy} onPress={() => give('expected')} />
           <Btn label="This didn’t happen" kind="quiet" busy={busy} onPress={() => give('false_positive')} />
           {feedbackError && <Txt kind="caption" tone="alert">{feedbackError}</Txt>}

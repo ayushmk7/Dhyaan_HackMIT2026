@@ -11,7 +11,7 @@ export async function registerForPush(): Promise<{ token: string | null; reason?
     const Constants = require('expo-constants').default;
     /* eslint-enable @typescript-eslint/no-require-imports */
     if (!Device.isDevice) {
-      return { token: null, reason: 'Push needs a real phone — the simulator can’t receive it.' };
+      return { token: null, reason: 'Push needs a real phone.' };
     }
     const { status } = await Notifications.requestPermissionsAsync();
     if (status !== 'granted') {
@@ -26,7 +26,7 @@ export async function registerForPush(): Promise<{ token: string | null; reason?
     return { token };
   } catch (e) {
     console.warn('push registration failed', e);
-    return { token: null, reason: 'Push needs the dev build — Expo Go can’t receive remote push.' };
+    return { token: null, reason: 'Push needs the dev build, not Expo Go.' };
   }
 }
 
@@ -37,7 +37,7 @@ export async function sendTestPush(token: string): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       to: token,
-      title: 'Possible fall — Eleanor',
+      title: 'Possible fall: Eleanor',
       body: 'Her band detected a fall at 3:42 PM. We’re calling her now.',
       sound: 'dhyaan-urgent.wav',
       priority: 'high',

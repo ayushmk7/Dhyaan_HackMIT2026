@@ -2,23 +2,25 @@
 // Palette from the bird: slate wing, rust back. Rust means "alert" — nothing else.
 
 export const palette = {
-  paper: '#F6F2E9',
-  raised: '#FDFBF5',
-  ink: '#221F19',
-  inkMuted: '#665E4D',
-  line: '#E4DCCA',
+  paper: '#F5F2EB',   // quiet warm ground (grouped-table background)
+  raised: '#FFFFFF',  // cards are pure white, borderless, soft shadow
+  ink: '#26221B',
+  inkMuted: '#6B6355',
+  line: '#ECE7DC',    // in-card separators only — never around cards
 
-  slate: '#46607A',
-  slateDeep: '#2E4257',
-  slateWash: '#E7ECF0',
+  // Brand: one confident, saturated green (care = growth = "she's okay").
+  // Washed-out palettes are the intern-firing offense; commit.
+  slate: '#1E7A5A',      // primary brand (name kept to avoid a repo-wide rename)
+  slateDeep: '#14573F',
+  slateWash: '#DDF2E7',
 
-  moss: '#5F7A46',
-  mossWash: '#E9EEDF',
-  ochre: '#B07E20',
-  ochreWash: '#F4EAD2',
-  rust: '#C0431F',
-  rustDeep: '#8F2F14',
-  rustWash: '#F6E2D9',
+  moss: '#2E9968',
+  mossWash: '#DFF4E8',
+  ochre: '#E08A00',
+  ochreWash: '#FCEED2',
+  rust: '#D2401E',
+  rustDeep: '#96290C',
+  rustWash: '#FBE5DC',
 
   night: '#10161D',
   nightRaised: '#1A232D',
@@ -37,21 +39,29 @@ export const stateColor: Record<ResidentState, { fg: string; wash: string; word:
   offline: { fg: palette.inkMuted, wash: palette.line, word: 'Band offline' },
 };
 
-// Calm, distinguishable zone hues for the room-time bar (not status colors).
+// Saturated, friendly zone hues — the day bar is a hero visual, not wallpaper.
 export const zoneColor: Record<string, string> = {
-  bedroom: '#7E93A8',
-  bathroom: '#A88BA0',
-  kitchen: '#C2A15B',
-  living_room: '#8FA37E',
-  dining_room: '#C2A15B',
-  hallway: '#B5AC97',
-  outside: '#6C87B0',
-  unknown: '#D8D1BF',
+  bedroom: '#6E8FD0',
+  bathroom: '#B77FC4',
+  kitchen: '#EFA93F',
+  living_room: '#63B07C',
+  dining_room: '#EFA93F',
+  hallway: '#CBBF9F',
+  outside: '#3E9BD6',
+  unknown: '#DAD3C2',
 };
 
 export const sp = (n: number) => n * 4;
 
-export const radius = { card: 14, pill: 999, tile: 10 } as const;
+export const radius = { card: 16, pill: 999, tile: 16, badge: 8 } as const;
+
+// One soft elevation for every white card — never borders.
+export const cardShadow = {
+  shadowColor: '#26221B',
+  shadowOpacity: 0.06,
+  shadowRadius: 12,
+  shadowOffset: { width: 0, height: 3 },
+} as const;
 
 export const font = {
   display: 'Fraunces_600SemiBold',
@@ -61,10 +71,14 @@ export const font = {
   serif: 'Fraunces_400Regular',
 } as const;
 
+// SF everywhere. Screen titles belong to the native navigation bar, not to us.
+// The serif exists for exactly one thing: Eleanor's own quoted words (content,
+// never chrome) — an app whose chrome speaks in a display serif is a website.
 export const type = {
-  display: { fontFamily: font.black, fontSize: 34, lineHeight: 40, letterSpacing: -0.5 },
-  title: { fontFamily: font.display, fontSize: 22, lineHeight: 28, letterSpacing: -0.3 },
-  stat: { fontFamily: font.black, fontSize: 28, lineHeight: 34 },
+  display: { fontSize: 30, lineHeight: 36, fontWeight: '800' as const, letterSpacing: -0.6 }, // alert headline only
+  title: { fontSize: 22, lineHeight: 28, fontWeight: '700' as const, letterSpacing: -0.4 },
+  heading: { fontSize: 20, lineHeight: 25, fontWeight: '700' as const, letterSpacing: -0.4 }, // in-screen section (Health-style)
+  stat: { fontSize: 22, lineHeight: 26, fontWeight: '700' as const, letterSpacing: -0.3 },
   body: { fontSize: 17, lineHeight: 24 }, // iOS body default (HIG)
   label: { fontSize: 15, lineHeight: 20, fontWeight: '600' as const },
   caption: { fontSize: 13, lineHeight: 18 },

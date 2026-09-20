@@ -2,12 +2,11 @@
 // Paste or photograph a care document; medications, appointments, and the
 // emergency card come out the other side and show up where they matter.
 import * as ImagePicker from 'expo-image-picker';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Btn, Card, Hairline, Row, SectionTitle, Txt } from '@/components';
-import { Icon } from '@/components/icon';
 import { EXAMPLE_DISCHARGE } from '@/lib/example-docs';
 import { ago } from '@/lib/format';
 import { useCareFile } from '@/store/carefile';
@@ -73,34 +72,21 @@ export default function CareFileScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{
-          paddingTop: insets.top + sp(3),
-          paddingHorizontal: sp(5),
+          paddingTop: sp(2),
+          paddingHorizontal: sp(4),
           paddingBottom: insets.bottom + sp(8),
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          onPress={() => router.back()}
-          style={{ paddingVertical: sp(2), alignSelf: 'flex-start' }}
-        >
-          <Row gap={1}>
-            <Icon name="chevron.left" size={14} color={palette.slate} />
-            <Txt kind="label" tone="slate">Back</Txt>
-          </Row>
-        </Pressable>
-
-        <Txt kind="display">Her care file</Txt>
-        <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
-          The paper folder — discharge summaries, med lists, appointment letters — read
-          by Dhyaan and put where it matters: her timeline, and the alert screen if the
-          worst happens.
-        </Txt>
-
         {(empty || adding) && (
-          <View style={{ marginTop: sp(4) }}>
+          <View style={{ marginTop: sp(2) }}>
+            {empty && (
+              <Txt kind="body" style={{ marginBottom: sp(3) }}>
+                Paste or photograph a care document.
+              </Txt>
+            )}
             <TextInput
               multiline
               value={draft}
@@ -109,17 +95,16 @@ export default function CareFileScreen() {
               placeholderTextColor={palette.inkMuted}
               style={{
                 minHeight: 120, maxHeight: 220, padding: sp(3),
-                backgroundColor: palette.raised,
-                borderWidth: 1, borderColor: palette.line, borderRadius: radius.card,
+                backgroundColor: palette.raised, borderRadius: radius.card,
                 ...type.body, color: palette.ink, textAlignVertical: 'top',
               }}
             />
             <View style={{ gap: sp(2), marginTop: sp(3) }}>
               <Btn label="Read it" onPress={addText} busy={file.busy} disabled={!draft.trim()} />
-              <Btn label="Add a photo of a document" kind="quiet" onPress={addPhoto} busy={file.busy} />
+              <Btn label="Add a photo" kind="quiet" onPress={addPhoto} busy={file.busy} />
               {!draft && (
                 <Btn
-                  label="Use an example discharge summary"
+                  label="Try an example"
                   kind="quiet"
                   onPress={() => setDraft(EXAMPLE_DISCHARGE)}
                 />
@@ -164,7 +149,7 @@ export default function CareFileScreen() {
                   onPress={() =>
                     Linking.openURL(
                       `sms:+16175550178&body=${encodeURIComponent(
-                        `Mom has ${a.title} on ${a.when} — can you drive her?`,
+                        `Mom has ${a.title} on ${a.when}. Can you drive her?`,
                       )}`,
                     )
                   }
@@ -180,13 +165,13 @@ export default function CareFileScreen() {
         {(file.emergency.allergies.length > 0 || file.emergency.conditions.length > 0 || file.emergency.doctor) && (
           <>
             <SectionTitle>In an emergency</SectionTitle>
-            <Card style={{ backgroundColor: palette.ochreWash, borderColor: palette.ochreWash }}>
+            <Card style={{ backgroundColor: palette.ochreWash }}>
               {file.emergency.allergies.length > 0 && (
                 <Txt kind="body">Allergic to {file.emergency.allergies.join(', ')}</Txt>
               )}
               {file.emergency.conditions.length > 0 && (
                 <Txt kind="body" style={{ marginTop: sp(1) }}>
-                  {file.emergency.conditions.join(' · ')}
+                  {file.emergency.conditions.join(', ')}
                 </Txt>
               )}
               {file.emergency.doctor && (
@@ -195,9 +180,6 @@ export default function CareFileScreen() {
                   {file.emergency.doctor.phone ? ` · ${file.emergency.doctor.phone}` : ''}
                 </Txt>
               )}
-              <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
-                This card also appears on the alert screen, next to the 911 guidance.
-              </Txt>
             </Card>
           </>
         )}
@@ -207,7 +189,7 @@ export default function CareFileScreen() {
             <SectionTitle>Documents read</SectionTitle>
             {file.sources.map((s) => (
               <Row key={s.id} style={{ paddingVertical: sp(1.5), justifyContent: 'space-between' }}>
-                <Txt kind="caption" tone="muted" style={{ flex: 1, paddingRight: sp(2) }}>
+                <Txt kind="caption" tone="muted" style={{ flex: 1, paddingRight: sp(2) }}>{/* voice-ok */}
                   {s.kind === 'photo' ? 'Photo' : 'Pasted'} · {s.summary}
                 </Txt>
                 <Txt kind="caption" tone="muted">{ago(s.added_at)}</Txt>

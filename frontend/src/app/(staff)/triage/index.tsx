@@ -5,8 +5,9 @@ import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 import {
-  Btn, ErrorState, Hairline, LoadingState, Row, Screen, StatusDot, Txt,
+  Btn, Card, ErrorState, Hairline, LoadingState, Row, Screen, Txt,
 } from '@/components';
+import { Avatar } from '@/components/avatar';
 import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
@@ -24,30 +25,37 @@ const TIER: Record<ResidentState, number> = {
 function TriageRow({ r, alert, acking, onPress, onAck }: {
   r: Resident; alert?: Alert; acking?: boolean; onPress: () => void; onAck?: () => void;
 }) {
+  const urgent = r.state === 'alerting';
   return (
-    <View style={{ paddingVertical: sp(3) }}>
+    <View style={{ paddingVertical: sp(2.5) }}>
       <Pressable
         accessibilityRole="button"
         onPress={onPress}
         style={({ pressed }) => [pressed && { opacity: 0.6 }]}
       >
-        <Row style={{ justifyContent: 'space-between' }}>
-          <Row gap={2}>
-            <StatusDot state={r.state} />
-            <Txt kind="label">{r.display_name}</Txt>
-          </Row>
-          <Txt kind="caption" tone="muted">{r.room ?? ''}</Txt>
-        </Row>
-        <Row style={{ justifyContent: 'space-between', marginTop: 2, paddingLeft: sp(4.5) }}>
-          <Txt
-            kind="caption"
-            tone={r.state === 'alerting' ? 'alert' : r.state === 'attention' ? 'warn' : 'muted'}
-            style={{ flex: 1, paddingRight: sp(2) }}
-            numberOfLines={2}
-          >
-            {r.attention_reason ?? 'Routine looks normal'}
-          </Txt>
-          <Txt kind="caption" tone="muted">{r.last_seen ? ago(r.last_seen) : 'no signal yet'}</Txt>
+        <Row gap={3}>
+          <Avatar
+            name={r.display_name}
+            size={40}
+            tone={r.state === 'attention' || urgent ? 'amber' : 'blue'}
+          />
+          <View style={{ flex: 1 }}>
+            <Row style={{ justifyContent: 'space-between' }}>
+              <Txt kind="label">{r.display_name}</Txt>
+              <Txt kind="caption" tone="muted">{r.room ?? ''}</Txt>
+            </Row>
+            <Row style={{ justifyContent: 'space-between', marginTop: 1 }}>
+              <Txt
+                kind="caption"
+                tone={urgent ? 'alert' : undefined}
+                style={urgent ? { flex: 1, paddingRight: sp(2) } : { flex: 1, paddingRight: sp(2), color: palette.ink, opacity: 0.9 }}
+                numberOfLines={2}
+              >
+                {r.attention_reason ?? 'Routine looks normal'}
+              </Txt>
+              <Txt kind="caption" tone="muted">{r.last_seen ? ago(r.last_seen) : 'no signal'}</Txt>
+            </Row>
+          </View>
         </Row>
       </Pressable>
       {alert && onAck && (
@@ -57,12 +65,12 @@ function TriageRow({ r, alert, acking, onPress, onAck }: {
           onPress={onAck}
           disabled={acking}
           style={({ pressed }) => [
-            { marginTop: sp(1.5), paddingLeft: sp(4.5) },
+            { marginTop: sp(1.5), marginLeft: sp(13) },
             pressed && { opacity: 0.6 },
           ]}
         >
           <Txt kind="label" tone="slate">
-            {acking ? 'Acknowledging…' : 'Acknowledge — I’ve got it'}
+            {acking ? 'Acknowledging…' : 'Acknowledge'}
           </Txt>
         </Pressable>
       )}
@@ -84,6 +92,7 @@ export default function Triage() {
   const liveLocations = useLive((s) => s.locations);
   const { setRole, finishOnboarding } = useSession();
   const [showOk, setShowOk] = useState(false);
+  const [showDemo, setShowDemo] = useState(false);
   const [ackingAlertId, setAckingAlertId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -99,16 +108,14 @@ export default function Triage() {
 
   if (isLoading && !data) {
     return (
-      <Screen refreshControl={refreshControl}>
-        <Txt kind="display">Tonight</Txt>
+      <Screen native refreshControl={refreshControl}>
         <LoadingState label="Loading tonight's list…" />
       </Screen>
     );
   }
   if (isError && !data) {
     return (
-      <Screen refreshControl={refreshControl}>
-        <Txt kind="display">Tonight</Txt>
+      <Screen native refreshControl={refreshControl}>
         <ErrorState message="Couldn’t reach the floor list." onRetry={refetch} />
       </Screen>
     );
@@ -147,73 +154,74 @@ export default function Triage() {
   const normal = residents.filter((r) => r.state === 'ok');
 
   return (
-    <Screen refreshControl={refreshControl}>
-      <Txt kind="display">Tonight</Txt>
-      <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>
-        {residents.length} residents · floor 2 · Marcus
-      </Txt>
-
-      <View style={{ marginTop: sp(5) }}>
-        {needsEyes.map((r, i) => (
-          <View key={r.id}>
-            {i > 0 && <Hairline />}
-            <TriageRow
-              r={r}
-              alert={alertByResident.get(r.id)}
-              acking={ackingAlertId === alertByResident.get(r.id)?.id}
-              onPress={() => router.push(`/(staff)/resident/${r.id}`)}
-              onAck={alertByResident.get(r.id) ? () => ack(alertByResident.get(r.id)!) : undefined}
-            />
-          </View>
-        ))}
-        {needsEyes.length === 0 && (
-          <Txt kind="body" tone="muted">Nobody needs a check right now.</Txt>
-        )}
-      </View>
+    <Screen native refreshControl={refreshControl}>
+      {/* Long-press the list to reveal demo controls; no visible demo chrome. */}
+      <Pressable onLongPress={() => setShowDemo((v) => !v)} delayLongPress={600}>
+        <Card style={{ paddingVertical: sp(1) }}>
+          {needsEyes.map((r, i) => (
+            <View key={r.id}>
+              {i > 0 && <Hairline />}
+              <TriageRow
+                r={r}
+                alert={alertByResident.get(r.id)}
+                acking={ackingAlertId === alertByResident.get(r.id)?.id}
+                onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
+                onAck={alertByResident.get(r.id) ? () => ack(alertByResident.get(r.id)!) : undefined}
+              />
+            </View>
+          ))}
+          {needsEyes.length === 0 && (
+            <Txt kind="body" tone="muted" style={{ paddingVertical: sp(3) }}>
+              Nobody needs a check right now.
+            </Txt>
+          )}
+        </Card>
+      </Pressable>
 
       {normal.length > 0 && (
-        <View style={{ marginTop: sp(5) }}>
+        <View style={{ marginTop: sp(4) }}>
           <Pressable
             accessibilityRole="button"
             onPress={() => setShowOk((v) => !v)}
-            style={{ paddingVertical: sp(2) }}
+            style={{ paddingVertical: sp(2), paddingHorizontal: sp(1) }}
           >
             <Row gap={1.5}>
               <Icon name={showOk ? 'chevron.down' : 'chevron.right'} size={12} color={palette.inkMuted} />
               <Txt kind="caption" tone="muted">
-                {showOk ? 'Hide the quiet ones' : `${normal.length} more look normal tonight`}
+                {showOk ? 'Hide' : `${normal.length} doing fine`}
               </Txt>
             </Row>
           </Pressable>
           {showOk && (
-            <View style={{ marginTop: sp(2) }}>
+            <Card style={{ marginTop: sp(1), paddingVertical: sp(1) }}>
               {normal.map((r, i) => (
                 <View key={r.id}>
                   {i > 0 && <Hairline />}
-                  <TriageRow r={r} onPress={() => router.push(`/(staff)/resident/${r.id}`)} />
+                  <TriageRow r={r} onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)} />
                 </View>
               ))}
-            </View>
+            </Card>
           )}
         </View>
       )}
 
-      <Hairline style={{ marginTop: sp(9), marginBottom: sp(4) }} />
-      <View style={{ gap: sp(2) }}>
-        <Btn
-          label="Simulate a fall in 214"
-          kind="quiet"
-          onPress={() => { api.simulate('fall', 'res_harold'); }}
-        />
-        <Txt kind="caption" tone="muted">
-          Plays the whole escalation for Harold, with simulated calls. Safe to press.
-        </Txt>
-        <Btn
-          label="Back to the family app"
-          kind="ghost"
-          onPress={() => { setRole('family'); finishOnboarding(); router.replace('/(family)'); }}
-        />
-      </View>
+      {showDemo && (
+        <Card style={{ marginTop: sp(5) }}>
+          <Txt kind="label">Demo</Txt>
+          <View style={{ gap: sp(2), marginTop: sp(2.5) }}>
+            <Btn
+              label="Simulate a fall in 214"
+              kind="quiet"
+              onPress={() => { api.simulate('fall', 'res_harold'); }}
+            />
+            <Btn
+              label="Family app"
+              kind="ghost"
+              onPress={() => { setRole('family'); finishOnboarding(); router.replace('/(family)/home'); }}
+            />
+          </View>
+        </Card>
+      )}
     </Screen>
   );
 }

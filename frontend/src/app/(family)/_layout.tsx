@@ -1,4 +1,4 @@
-// Family tabs: Home · Timeline · Ask · Settings (§10.2).
+// Family tabs. Each tab is its own native stack (real navigation bars).
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { ColorValue } from 'react-native';
@@ -15,6 +15,7 @@ const glyph = (name: string) => {
 export default function FamilyLayout() {
   return (
     <Tabs
+      initialRouteName="home"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: palette.slate,
@@ -23,16 +24,12 @@ export default function FamilyLayout() {
           backgroundColor: palette.paper,
           borderTopColor: palette.line,
         },
-        tabBarLabelStyle: { fontSize: 12 },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: glyph('house') }} />
-      <Tabs.Screen name="timeline/index" options={{ title: 'Timeline', tabBarIcon: glyph('calendar.day.timeline.left') }} />
+      <Tabs.Screen name="home" options={{ title: 'Home', tabBarIcon: glyph('house') }} />
+      <Tabs.Screen name="timeline" options={{ title: 'Timeline', tabBarIcon: glyph('calendar.day.timeline.left') }} />
       <Tabs.Screen name="chat" options={{ title: 'Ask', tabBarIcon: glyph('bubble.left') }} />
       <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: glyph('gearshape') }} />
-      <Tabs.Screen name="timeline/[eventId]" options={{ href: null }} />
-      <Tabs.Screen name="plan" options={{ href: null }} />
-      <Tabs.Screen name="carefile" options={{ href: null }} />
     </Tabs>
   );
 }

@@ -10,7 +10,7 @@ import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
 import type { ChatMessage } from '@/lib/types';
 import { useSession } from '@/store/session';
-import { font, palette, radius, sp, type } from '@/theme/tokens';
+import { palette, radius, sp, type } from '@/theme/tokens';
 
 const SUGGESTIONS = [
   'Has she been eating?',
@@ -41,7 +41,7 @@ export default function Chat() {
       const answer = await api.chat(q);
       setMessages((m) => [...m, answer]);
     } catch (e) {
-      setSendError(e instanceof Error ? e.message : 'Couldn’t reach Dhyaan — try again.');
+      setSendError(e instanceof Error ? e.message : 'Couldn’t reach Dhyaan. Try again.');
     } finally {
       setThinking(false);
     }
@@ -54,27 +54,23 @@ export default function Chat() {
     >
       <ScrollView
         ref={scrollRef}
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{
-          paddingTop: insets.top + sp(4),
-          paddingHorizontal: sp(5),
+          paddingTop: sp(2),
+          paddingHorizontal: sp(4),
           paddingBottom: sp(4),
         }}
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
         showsVerticalScrollIndicator={false}
       >
-        <Txt kind="display">Ask about {residentName}</Txt>
-        <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>
-          Answers come only from what Dhyaan observed, with the evidence attached.
-        </Txt>
-
         {messages.length === 0 && (
-          <View style={{ marginTop: sp(6), gap: sp(2) }}>
+          <View style={{ marginTop: sp(2), gap: sp(2) }}>
             {SUGGESTIONS.map((s) => (
               <Chip key={s} label={s} onPress={() => send(s)} />
             ))}
             <Chip
-              label="✦ Turn the family group chat into a plan"
-              onPress={() => router.push('/(family)/plan')}
+              label="Plan from group chat"
+              onPress={() => router.push('/(family)/chat/plan')}
             />
           </View>
         )}
@@ -103,8 +99,8 @@ export default function Chat() {
                 )}
                 <Text
                   style={{
-                    fontFamily: font.serif, fontSize: 17, lineHeight: 25,
-                    color: m.refused ? palette.inkMuted : palette.ink,
+                    fontSize: 17, lineHeight: 24,
+                    color: palette.ink, opacity: m.refused ? 0.75 : 1,
                   }}
                 >
                   {m.text}
@@ -171,13 +167,13 @@ export default function Chat() {
           accessibilityLabel="Send"
           onPress={() => send(draft)}
           style={({ pressed }) => ({
-            height: 44, paddingHorizontal: sp(4), borderRadius: radius.card,
+            width: 38, height: 38, borderRadius: 19,
             alignItems: 'center', justifyContent: 'center',
             backgroundColor: pressed ? palette.slateDeep : palette.slate,
             opacity: draft.trim() && !thinking ? 1 : 0.4,
           })}
         >
-          <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>Ask</Text>
+          <Icon name="arrow.up" size={17} color="#FFFFFF" weight="bold" />
         </Pressable>
       </View>
     </KeyboardAvoidingView>

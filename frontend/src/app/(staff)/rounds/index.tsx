@@ -9,7 +9,7 @@ import { Card, ErrorState, LoadingState, Row, StateChip, StatusDot, Txt } from '
 import { ago } from '@/lib/format';
 import { useResidents } from '@/lib/hooks';
 import { useLive } from '@/store/live';
-import { font, palette, sp } from '@/theme/tokens';
+import { palette, sp } from '@/theme/tokens';
 import type { ResidentState } from '@/theme/tokens';
 
 const SEVERITY: Record<ResidentState, number> = {
@@ -31,18 +31,14 @@ export default function Rounds() {
     <View style={{ flex: 1, backgroundColor: palette.night }}>
       <LinearGradient colors={[palette.night, '#0B1016']} style={StyleSheet.absoluteFill} />
       <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{
-          paddingTop: insets.top + sp(3),
-          paddingHorizontal: sp(5),
+          paddingTop: sp(2),
+          paddingHorizontal: sp(4),
           paddingBottom: insets.bottom + sp(6),
         }}
         showsVerticalScrollIndicator={false}
       >
-      <Txt kind="display" tone="nightInk">Night rounds</Txt>
-      <Txt kind="caption" tone="nightMuted" style={{ marginTop: sp(1) }}>
-        Only what changed tonight
-      </Txt>
-
       {isLoading && !data && <LoadingState label="Loading tonight's rounds…" night />}
       {isError && !data && (
         <ErrorState message="Couldn’t reach the floor list." onRetry={refetch} night />
@@ -53,7 +49,7 @@ export default function Rounds() {
           <Pressable
             key={r.id}
             accessibilityRole="button"
-            onPress={() => router.push(`/(staff)/resident/${r.id}`)}
+            onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
           >
             {({ pressed }) => (
               <Card night style={pressed ? { opacity: 0.7 } : undefined}>
@@ -76,12 +72,8 @@ export default function Rounds() {
           </Pressable>
         ))}
         {!isLoading && !isError && deviating.length === 0 && (
-          <Txt
-            kind="title"
-            tone="nightMuted"
-            style={{ fontFamily: font.serif, marginTop: sp(10), textAlign: 'center' }}
-          >
-            Nothing has deviated tonight. All quiet.
+          <Txt kind="body" tone="nightMuted" style={{ marginTop: sp(10), textAlign: 'center' }}>
+            All quiet tonight.
           </Txt>
         )}
       </View>

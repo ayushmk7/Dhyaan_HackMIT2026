@@ -5,7 +5,7 @@ import { useSession } from '@/store/session';
 
 export default function Index() {
   const { role, onboarded } = useSession();
-  if (role === 'staff') return <Redirect href="/(staff)" />;
-  if (role === 'family' && onboarded) return <Redirect href="/(family)" />;
+  if (role === 'staff') return <Redirect href="/(staff)/triage" />;
+  if (role === 'family' && onboarded) return <Redirect href="/(family)/home" />;
   return <Redirect href="/onboard/welcome" />;
 }

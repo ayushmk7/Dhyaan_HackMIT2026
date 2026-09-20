@@ -5,7 +5,7 @@ import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { palette, sp, radius, type, zoneColor } from '@/theme/tokens';
 import type { KEvent, LadderStep, LocationSegment } from '@/lib/types';
 import { displaySentence, eventTitle, mins, timeOf, zoneLabel } from '@/lib/format';
-import { eventSymbol, Icon } from './icon';
+import { eventColor, eventSymbol, IconBadge } from './icon';
 import { Txt, Row } from './ui';
 
 // ---- Timeline event row --------------------------------------------------------
@@ -17,13 +17,11 @@ export function EventRow({ event, onPress }: { event: KEvent; onPress?: () => vo
       accessibilityRole={onPress ? 'button' : undefined}
       style={({ pressed }) => [styles.eventRow, pressed && onPress ? { opacity: 0.6 } : null]}
     >
-      <View style={[styles.glyph, event.deviation && styles.glyphDeviation]}>
-        <Icon
-          name={eventSymbol(event.type)}
-          size={15}
-          color={event.deviation ? palette.ochre : palette.inkMuted}
-        />
-      </View>
+      <IconBadge
+        name={eventSymbol(event.type)}
+        color={event.deviation ? palette.ochre : eventColor(event.type)}
+        size={32}
+      />
       <View style={{ flex: 1 }}>
         <Row style={{ justifyContent: 'space-between' }}>
           <Txt kind="label">{eventTitle(event.type)}</Txt>

@@ -5,16 +5,19 @@ import {
   View, ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { palette, radius, sp, stateColor, type, ResidentState } from '@/theme/tokens';
+import { cardShadow, palette, radius, sp, stateColor, type, ResidentState } from '@/theme/tokens';
+import { IconBadge } from './icon';
 
 // ---- Screen -----------------------------------------------------------------
 
 export function Screen({
-  children, scroll = true, night = false, style, padded = true, refreshControl,
+  children, scroll = true, night = false, style, padded = true, refreshControl, native = false,
 }: {
   children: React.ReactNode; scroll?: boolean; night?: boolean;
   style?: ViewStyle; padded?: boolean;
   refreshControl?: React.ReactElement<RefreshControlProps>;
+  /** Screen sits under a native-stack header: let iOS manage the top inset. */
+  native?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const base: ViewStyle = {
@@ -22,15 +25,16 @@ export function Screen({
     backgroundColor: night ? palette.night : palette.paper,
   };
   const pad: ViewStyle = padded
-    ? { paddingHorizontal: sp(5), paddingBottom: insets.bottom + sp(6) }
+    ? { paddingHorizontal: sp(4), paddingBottom: insets.bottom + sp(6) }
     : {};
-  const top = { paddingTop: insets.top + sp(3) };
+  const top = { paddingTop: native ? sp(2) : insets.top + sp(3) };
   if (!scroll) {
     return <View style={[base, top, pad, style]}>{children}</View>;
   }
   return (
     <View style={base}>
       <ScrollView
+        contentInsetAdjustmentBehavior={native ? 'automatic' : 'never'}
         contentContainerStyle={[top, pad, style]}
         showsVerticalScrollIndicator={false}
         refreshControl={refreshControl}
@@ -69,7 +73,7 @@ export function ErrorState({
 
 // ---- Typography ---------------------------------------------------------------
 
-type TxtKind = 'display' | 'title' | 'stat' | 'body' | 'label' | 'caption';
+type TxtKind = 'display' | 'title' | 'heading' | 'stat' | 'body' | 'label' | 'caption';
 type Tone = 'ink' | 'muted' | 'ok' | 'warn' | 'alert' | 'slate' | 'paper' | 'nightInk' | 'nightMuted';
 
 const toneColor: Record<Tone, string> = {
@@ -98,12 +102,19 @@ export function Btn({
   label: string; onPress: () => void; kind?: 'primary' | 'quiet' | 'danger' | 'ghost';
   disabled?: boolean; busy?: boolean; night?: boolean; style?: ViewStyle;
 }) {
-  const bg = { primary: palette.slate, danger: palette.rust, quiet: 'transparent', ghost: 'transparent' }[kind];
-  const pressedBg = { primary: palette.slateDeep, danger: palette.rustDeep, quiet: palette.line, ghost: 'transparent' }[kind];
+  // quiet = iOS "tonal": filled wash, no border. Borders read as wireframe.
+  const bg = {
+    primary: palette.slate, danger: palette.rust,
+    quiet: night ? palette.nightRaised : palette.slateWash, ghost: 'transparent',
+  }[kind];
+  const pressedBg = {
+    primary: palette.slateDeep, danger: palette.rustDeep,
+    quiet: night ? palette.nightLine : '#DAE4EE', ghost: 'transparent',
+  }[kind];
   const fg =
     kind === 'primary' || kind === 'danger'
       ? '#FFFFFF'
-      : night ? palette.nightInk : kind === 'quiet' ? palette.ink : palette.slate;
+      : night ? palette.nightInk : palette.slate;
   return (
     <Pressable
       accessibilityRole="button"
@@ -113,7 +124,6 @@ export function Btn({
       style={({ pressed }) => [
         styles.btn,
         { backgroundColor: pressed ? pressedBg : bg, opacity: disabled ? 0.45 : 1 },
-        kind === 'quiet' && { borderWidth: 1, borderColor: night ? palette.nightLine : palette.line },
         style,
       ]}
     >
@@ -134,27 +144,25 @@ export const Hairline = ({ night = false, style }: { night?: boolean; style?: Vi
   <View style={[{ height: StyleSheet.hairlineWidth, backgroundColor: night ? palette.nightLine : palette.line }, style]} />
 );
 
+// SF semibold section header — Fraunces stays reserved for the screen's one hero.
 export const SectionTitle = ({ children, night = false }: { children: React.ReactNode; night?: boolean }) => (
-  <Txt kind="title" tone={night ? 'nightInk' : 'ink'} style={{ marginTop: sp(7), marginBottom: sp(3) }}>
+  <Txt kind="heading" tone={night ? 'nightInk' : 'ink'} style={{ marginTop: sp(7), marginBottom: sp(2.5) }}>
     {children}
   </Txt>
 );
 
+// Borderless white card on the warm ground — the grouped-table look. Never add
+// a border to a card; separators live INSIDE cards as <Hairline/>.
 export const Card = ({ children, style, night = false }: { children: React.ReactNode; style?: ViewStyle; night?: boolean }) => (
   <View
     style={[
       {
         backgroundColor: night ? palette.nightRaised : palette.raised,
         borderRadius: radius.card,
-        borderWidth: 1,
-        borderColor: night ? palette.nightLine : palette.line,
         padding: sp(4),
       },
-      // HIG-style gentle elevation; borders alone read as wireframe.
-      !night && {
-        shadowColor: palette.ink, shadowOpacity: 0.05, shadowRadius: 10,
-        shadowOffset: { width: 0, height: 3 },
-      },
+      !night && cardShadow,
+      night && { borderWidth: 1, borderColor: palette.nightLine },
       style,
     ]}
   >
@@ -193,29 +201,35 @@ export function Chip({
       style={({ pressed }) => [
         styles.chip,
         {
-          backgroundColor: selected ? palette.slate : pressed ? palette.line : night ? palette.nightRaised : palette.raised,
-          borderWidth: 1,
-          borderColor: selected ? palette.slate : night ? palette.nightLine : palette.line,
+          backgroundColor: selected
+            ? palette.slate
+            : pressed ? '#DAE4EE' : night ? palette.nightRaised : palette.slateWash,
         },
       ]}
     >
-      <Text style={[type.caption, { color: selected ? '#fff' : night ? palette.nightInk : palette.ink }]}>
+      <Text style={[type.caption, { fontWeight: '600', color: selected ? '#fff' : night ? palette.nightInk : palette.slate }]}>
         {label}
       </Text>
     </Pressable>
   );
 }
 
-// ---- ADL tile --------------------------------------------------------------------
+// ---- ADL stat tile ------------------------------------------------------------
+// White card, tinted icon badge, BIG value, tiny label — the Health-app grammar.
+// Color lives in the badge; the card stays white (washes read as murk).
 
-export function Tile({ title, state, detail }: { title: string; state: 'ok' | 'warn' | 'unknown'; detail: string }) {
-  const fg = state === 'ok' ? palette.moss : state === 'warn' ? palette.ochre : palette.inkMuted;
-  const wash = state === 'ok' ? palette.mossWash : state === 'warn' ? palette.ochreWash : palette.line;
+export function StatTile({
+  icon, state, value, label,
+}: { icon: string; state: 'ok' | 'warn' | 'unknown'; value: string; label: string }) {
+  const badge = state === 'ok' ? palette.moss : state === 'warn' ? palette.ochre : '#A9A192';
   return (
-    <View style={[styles.tile, { backgroundColor: wash }]}>
-      <Text style={[type.label, { color: fg }]}>{title}</Text>
-      <Text style={[type.caption, { color: palette.ink, marginTop: sp(1) }]} numberOfLines={2}>
-        {detail === '' && state === 'unknown' ? 'No observations yet' : detail}
+    <View style={[styles.tile, cardShadow]}>
+      <IconBadge name={icon} color={badge} size={30} />
+      <Text style={[type.stat, { color: palette.ink, marginTop: sp(2.5) }]} numberOfLines={1}>
+        {value}
+      </Text>
+      <Text style={[type.caption, { color: palette.inkMuted, marginTop: 1 }]} numberOfLines={1}>
+        {label}
       </Text>
     </View>
   );
@@ -241,8 +255,8 @@ const styles = StyleSheet.create({
   },
   tile: {
     flex: 1,
-    minHeight: 84,
+    backgroundColor: palette.raised,
     borderRadius: radius.tile,
-    padding: sp(3),
+    padding: sp(3.5),
   },
 });

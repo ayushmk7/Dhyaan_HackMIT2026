@@ -1,10 +1,10 @@
-// Timeline: reverse-chron day sections — room-time bar, the day's story, then events.
+// Timeline: reverse-chron day sections. The native header owns the title.
 import { useQueryClient } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, Share, View } from 'react-native';
 import {
-  Chip, ErrorState, EventRow, Hairline, LoadingState, RoomTimeBar, Row, Screen, SectionTitle, Txt,
+  Card, Chip, ErrorState, EventRow, Hairline, LoadingState, RoomTimeBar, Row, Screen, SectionTitle, Txt,
 } from '@/components';
 import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
@@ -21,9 +21,9 @@ const dateKeyOf = (isoTs: string) => {
 };
 
 // ponytail: the facade's getEvents(residentId) has no `types` param yet (PRD
-// §10.5 shows one on the wire — `?types=`), so this filters client-side over
-// whatever's already fetched. Wire it through as a query param once the API
-// facade exposes it — no screen change needed then, just fewer rows over the network.
+// §10.5 shows one on the wire), so this filters client-side over whatever's
+// already fetched. Wire it through as a query param once the API facade
+// exposes it. No screen change needed then, just fewer rows over the network.
 const KIND_FILTERS: { label: string; match: (t: string) => boolean }[] = [
   { label: 'All', match: () => true },
   { label: 'Falls', match: (t) => t.startsWith('fall') },
@@ -40,13 +40,18 @@ function DaySection({ label, dateKey, events, summary }: {
   return (
     <View>
       <SectionTitle>{label}</SectionTitle>
-      <RoomTimeBar segments={segments ?? []} />
-      {summary && (
-        <Txt kind="body" tone="muted" style={{ marginTop: sp(3), fontStyle: 'italic' }}>
-          {summary.narrative}
-        </Txt>
-      )}
-      <View style={{ marginTop: sp(2) }}>
+      <Card>
+        <RoomTimeBar segments={segments ?? []} />
+        {summary && (
+          <>
+            <Hairline style={{ marginTop: sp(3), marginBottom: sp(3) }} />
+            <Txt style={{ fontSize: 15, lineHeight: 21, color: palette.ink }}>
+              {summary.narrative}
+            </Txt>
+          </>
+        )}
+      </Card>
+      <Card style={{ marginTop: sp(2.5), paddingVertical: sp(1) }}>
         {events.map((e, i) => (
           <View key={e.id}>
             {i > 0 && <Hairline />}
@@ -58,7 +63,7 @@ function DaySection({ label, dateKey, events, summary }: {
             />
           </View>
         ))}
-      </View>
+      </Card>
     </View>
   );
 }
@@ -81,25 +86,40 @@ export default function Timeline() {
   );
 
   const [sharing, setSharing] = useState(false);
-  const shareWeek = async () => {
+  const shareWeek = useCallback(async () => {
     setSharing(true);
     const letter = await api.sundayLetter();
     setSharing(false);
     if (letter) Share.share({ message: letter });
-  };
+  }, []);
+
+  const headerRight = useCallback(
+    () => (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Share her week"
+        onPress={shareWeek}
+        disabled={sharing}
+        style={{ opacity: sharing ? 0.4 : 1, padding: sp(1) }}
+      >
+        <Icon name="square.and.arrow.up" size={20} color={palette.slate} />
+      </Pressable>
+    ),
+    [shareWeek, sharing],
+  );
 
   if (isLoading && !events) {
     return (
-      <Screen refreshControl={refreshControl}>
-        <Txt kind="display">Her week</Txt>
+      <Screen native refreshControl={refreshControl}>
+        <Stack.Screen options={{ headerRight }} />
         <LoadingState label="Loading her week…" />
       </Screen>
     );
   }
   if (isError && !events) {
     return (
-      <Screen refreshControl={refreshControl}>
-        <Txt kind="display">Her week</Txt>
+      <Screen native refreshControl={refreshControl}>
+        <Stack.Screen options={{ headerRight }} />
         <ErrorState message="Couldn’t load her timeline." onRetry={refetch} />
       </Screen>
     );
@@ -119,34 +139,20 @@ export default function Timeline() {
   const summaryByDate = new Map((summaries ?? []).map((s) => [s.date_local, s]));
 
   return (
-    <Screen refreshControl={refreshControl}>
-      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <Txt kind="display">Her week</Txt>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Share her week with the family"
-          onPress={shareWeek}
-          disabled={sharing}
-          style={{ paddingVertical: sp(2), opacity: sharing ? 0.5 : 1 }}
-        >
-          <Row gap={1}>
-            <Icon name="square.and.arrow.up" size={16} color={palette.slate} />
-            <Txt kind="label" tone="slate">{sharing ? 'Writing…' : 'Share'}</Txt>
-          </Row>
-        </Pressable>
-      </Row>
+    <Screen native refreshControl={refreshControl}>
+      <Stack.Screen options={{ headerRight }} />
 
-      <Row style={{ marginTop: sp(4), flexWrap: 'wrap' }} gap={2}>
+      <Row style={{ flexWrap: 'wrap' }} gap={2}>
         {KIND_FILTERS.map((f, i) => (
           <Chip key={f.label} label={f.label} selected={i === filterIdx} onPress={() => setFilterIdx(i)} />
         ))}
       </Row>
 
       {sections.length === 0 && (
-        <Txt kind="body" tone="muted" style={{ marginTop: sp(4) }}>
+        <Txt kind="body" tone="muted" style={{ marginTop: sp(4) }}>{/* voice-ok */}
           {(events ?? []).length === 0
-            ? 'Nothing observed yet — the timeline fills in as Dhyaan notices meals, walks and rooms.'
-            : `Nothing filed under “${filter.label}” yet.`}
+            ? 'Nothing here yet. The timeline fills in as Dhyaan notices meals, walks and rooms.'
+            : `No ${filter.label.toLowerCase()} this week.`}
         </Txt>
       )}
       {sections.map((s) => (

@@ -4,9 +4,12 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Btn, Card, Hairline, Row, Screen, Txt } from '@/components';
+import { Avatar } from '@/components/avatar';
 import { api } from '@/lib/api';
 import { palette, radius, sp, type } from '@/theme/tokens';
 import { useSession } from '@/store/session';
+
+const AVATAR_TONES = ['green', 'amber', 'blue'] as const;
 
 type Draft = { name: string; phone: string; relationship: string };
 const emptyDraft: Draft = { name: '', phone: '', relationship: '' };
@@ -39,14 +42,14 @@ export default function Contacts() {
     setBusy(true);
     await api.saveContacts(contacts.map((c, i) => ({ ...c, ladder_order: i + 1 })));
     finishOnboarding();
-    router.replace('/(family)');
+    router.replace('/(family)/home');
   };
 
   return (
     <Screen>
       <Txt kind="title">Who should Dhyaan call?</Txt>
-      <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
-        If {residentName} doesn’t answer, Dhyaan calls these people — in this order.
+      <Txt kind="body" style={{ marginTop: sp(2) }}>
+        Called in order if {residentName} doesn’t answer.
       </Txt>
 
       <View style={{ marginTop: sp(5), gap: sp(3) }}>
@@ -54,9 +57,7 @@ export default function Contacts() {
           <Card key={`${c.name}-${i}`}>
             <Row style={{ justifyContent: 'space-between' }}>
               <Row gap={3} style={{ flex: 1 }}>
-                <Txt kind="stat" tone="slate" style={{ fontSize: 20, lineHeight: 24 }}>
-                  {String(i + 1).padStart(2, '0')}
-                </Txt>
+                <Avatar name={c.name} size={34} tone={AVATAR_TONES[i % AVATAR_TONES.length]} />
                 <View style={{ flex: 1 }}>
                   <Txt kind="label">{c.name}</Txt>
                   <Txt kind="caption" tone="muted">{c.relationship} · {c.phone}</Txt>
@@ -82,12 +83,6 @@ export default function Contacts() {
         ))}
       </View>
 
-      {contacts.length === 1 && !adding && (
-        <Txt kind="caption" tone="warn" style={{ marginTop: sp(3) }}>
-          If {contacts[0].name.split(' ')[0]} doesn’t pick up, who should we call?
-        </Txt>
-      )}
-
       {adding ? (
         <Card style={{ marginTop: sp(4) }}>
           <TextInput
@@ -100,7 +95,7 @@ export default function Contacts() {
             value={draft.phone} onChangeText={(phone) => setDraft((d) => ({ ...d, phone }))}
           />
           <TextInput
-            style={[styles.input, { marginTop: sp(2) }]} placeholder="Relationship — daughter, neighbor…"
+            style={[styles.input, { marginTop: sp(2) }]} placeholder="Relationship"
             placeholderTextColor={palette.inkMuted}
             value={draft.relationship} onChangeText={(relationship) => setDraft((d) => ({ ...d, relationship }))}
           />
@@ -116,7 +111,7 @@ export default function Contacts() {
       <Hairline style={{ marginVertical: sp(6) }} />
 
       <Btn
-        label="Finish — start watching over her"
+        label="Finish"
         busy={busy}
         disabled={contacts.length < 1}
         onPress={finish}

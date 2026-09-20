@@ -67,8 +67,8 @@ export const useCareFile = create<CareFileStore>((set, get) => ({
       if (!extract) {
         return {
           error: hasAI
-            ? 'Couldn’t read that as a care document — try a clearer copy.'
-            : 'Live reading needs the AI key — the example document works without it.',
+            ? 'Couldn’t read that as a care document. Try a clearer copy.'
+            : 'Live reading needs the AI key. The example document works without it.',
         };
       }
 
@@ -113,5 +113,5 @@ export const emergencyLine = (f: Pick<CareFile, 'medications' | 'emergency'>): s
   if (f.emergency.doctor) {
     parts.push(`${f.emergency.doctor.name}${f.emergency.doctor.phone ? ` · ${f.emergency.doctor.phone}` : ''}`);
   }
-  return parts.length ? parts.join(' — ') : null;
+  return parts.length ? parts.join(' · ') : null;
 };

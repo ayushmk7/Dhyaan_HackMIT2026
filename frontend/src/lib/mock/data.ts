@@ -157,7 +157,7 @@ export function generateEleanor(now: number) {
         date_local: dayKey(ds),
         narrative:
           `Eleanor was up at ${clock(wakeT)} and ate ${meals === 3 ? 'all three meals' : 'breakfast and lunch'}.` +
-          ` She ${walks === 2 ? 'walked twice' : 'walked once'}${dinnerSkipped ? '. No dinner was observed — that is the ' +
+          ` She ${walks === 2 ? 'walked twice' : 'walked once'}${dinnerSkipped ? '. No dinner was observed, the ' +
           (d === -1 ? 'second' : 'first') + ' evening in a row' : ''}.` +
           (d === -3 ? ' She was briefly up at 3 AM, which is unusual for her.' : ''),
         tiles: {
@@ -165,7 +165,7 @@ export function generateEleanor(now: number) {
             ? { state: 'warn', detail: '2 of 3 meals' }
             : { state: 'ok', detail: '3 meals' },
           walked: fewWalks
-            ? { state: 'warn', detail: '1 walk — she usually takes 2' }
+            ? { state: 'warn', detail: '1 walk, usually 2' }
             : { state: 'ok', detail: '2 walks' },
           night: d === -3
             ? { state: 'warn', detail: 'Up at 3:12 AM' }
@@ -173,7 +173,7 @@ export function generateEleanor(now: number) {
           location: { state: 'ok', detail: 'Home all day' },
         },
         deviations: dinnerSkipped
-          ? [{ feature: 'meal_count', severity: 'warn', text: 'Dinner not observed — usually eats at about 6:20 PM' }]
+          ? [{ feature: 'meal_count', severity: 'warn', text: 'Dinner not observed. She usually eats at 6:20 PM' }]
           : [],
       });
     }
@@ -191,7 +191,7 @@ export const facilityResidents: Resident[] = [
     last_seen: iso(Date.now() - 4 * MIN), band_battery_pct: 58,
     location: { zone: 'bedroom', label: 'Room 214', since: iso(Date.now() - 50 * MIN), confidence: 0.91, method: 'ble' },
     open_alerts: 0, baseline_ready: true,
-    attention_reason: 'Up at 3 AM two nights running — new for him',
+    attention_reason: 'Up at 3 AM two nights running, new for him',
   },
   {
     id: 'res_marguerite', display_name: 'Marguerite Cole', room: '203', state: 'attention',
@@ -217,7 +217,7 @@ export const facilityResidents: Resident[] = [
     last_seen: iso(Date.now() - 8 * MIN), band_battery_pct: 92,
     location: { zone: 'bedroom', label: 'Room 201', since: iso(Date.now() - 65 * MIN), confidence: 0.88, method: 'ble' },
     open_alerts: 0, baseline_ready: false,
-    attention_reason: 'Moved in 3 days ago — baseline still learning',
+    attention_reason: 'Moved in 3 days ago, still learning his routine',
   },
   {
     id: 'res_walter', display_name: 'Walter Osei', room: '212', state: 'ok',

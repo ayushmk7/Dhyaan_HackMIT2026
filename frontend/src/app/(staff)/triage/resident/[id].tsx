@@ -7,6 +7,7 @@ import {
   Btn, Card, Chip, ErrorState, EventRow, Hairline, LoadingState, Row, Screen, SectionTitle,
   Sparkline, StateChip, Txt,
 } from '@/components';
+import { Avatar } from '@/components/avatar';
 import { api } from '@/lib/api';
 import { ago, dayOf, timeOf } from '@/lib/format';
 import { useBaselines, useResident, useTimeline } from '@/lib/hooks';
@@ -33,12 +34,12 @@ export default function ResidentDetail() {
 
   if (!resident) {
     if (isError) {
-      return <Screen><ErrorState message="Couldn’t load this resident." onRetry={refetch} /></Screen>;
+      return <Screen native><ErrorState message="Couldn’t load this resident." onRetry={refetch} /></Screen>;
     }
     if (isLoading) {
-      return <Screen><LoadingState label="Loading…" /></Screen>;
+      return <Screen native><LoadingState label="Loading…" /></Screen>;
     }
-    return <Screen><Txt kind="body" tone="muted">Resident not found.</Txt></Screen>;
+    return <Screen native><Txt kind="body" tone="muted">Resident not found.</Txt></Screen>;
   }
 
   const state = liveStates[resident.id] ?? resident.state;
@@ -55,24 +56,35 @@ export default function ResidentDetail() {
     try {
       setAnswer(await api.chat(q));
     } catch (e) {
-      setAskError(e instanceof Error ? e.message : 'Couldn’t reach Dhyaan — try again.');
+      setAskError(e instanceof Error ? e.message : 'Couldn’t reach Dhyaan. Try again.');
     } finally {
       setAsking(false);
     }
   };
 
   return (
-    <Screen>
-      <Txt kind="display">{resident.display_name}</Txt>
-      <Row gap={2} style={{ marginTop: sp(2), flexWrap: 'wrap' }}>
-        <StateChip state={state} />
-        {resident.room && <Txt kind="caption" tone="muted">Room {resident.room}</Txt>}
-      </Row>
-      <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
-        {location
-          ? `In the ${location.label.toLowerCase()} since ${timeOf(location.since)}`
-          : `No location signal — last seen ${resident.last_seen ? ago(resident.last_seen) : 'never'}`}
-      </Txt>
+    <Screen native>
+      <Card style={{ paddingVertical: sp(3.5) }}>
+        <Row gap={3}>
+          <Avatar
+            name={resident.display_name}
+            size={48}
+            tone={state === 'attention' || state === 'alerting' ? 'amber' : 'blue'}
+          />
+          <View style={{ flex: 1 }}>
+            <Txt kind="heading">{resident.display_name}</Txt>
+            <Txt kind="label" style={{ marginTop: 2 }}>
+              {location
+                ? `${location.label} · since ${timeOf(location.since)}`
+                : `No signal · ${resident.last_seen ? ago(resident.last_seen) : 'never seen'}`}
+            </Txt>
+            {resident.room && (
+              <Txt kind="caption" tone="muted" style={{ marginTop: 1 }}>Room {resident.room}</Txt>
+            )}
+          </View>
+          <StateChip state={state} />
+        </Row>
+      </Card>
 
       {alertHere && (
         <Btn
@@ -84,12 +96,12 @@ export default function ResidentDetail() {
       )}
 
       {resident.attention_reason && (
-        <Card style={{ backgroundColor: palette.ochreWash, borderColor: palette.ochre, marginTop: sp(4) }}>
+        <Card style={{ backgroundColor: palette.ochreWash, marginTop: sp(3) }}>
           <Txt kind="body">{resident.attention_reason}</Txt>
         </Card>
       )}
 
-      <SectionTitle>Their routine, 14 days</SectionTitle>
+      <SectionTitle>Routine</SectionTitle>
       <View style={{ gap: sp(4) }}>
         {(baselines ?? []).map((b) => {
           const last = b.series[b.series.length - 1];
@@ -103,7 +115,7 @@ export default function ResidentDetail() {
                 <Sparkline series={b.series} tone={deviating ? palette.ochre : palette.slate} />
               </View>
               <Txt kind="caption" tone="muted" style={{ width: 88, textAlign: 'right' }}>
-                usually {b.mu} {b.unit}
+                avg {b.mu} {b.unit}
               </Txt>
             </Row>
           );
@@ -112,7 +124,7 @@ export default function ResidentDetail() {
 
       <SectionTitle>Today</SectionTitle>
       {today.length === 0 && notes.length === 0 && (
-        <Txt kind="body" tone="muted">No observations yet today — cameras and band are quiet.</Txt>
+        <Txt kind="body" tone="muted">Nothing yet today.</Txt>
       )}
       {notes.map((n, i) => (
         <View key={i} style={{ paddingVertical: sp(2) }}>
@@ -176,7 +188,7 @@ export default function ResidentDetail() {
       )}
       {answer && (
         <Card style={{ marginTop: sp(3) }}>
-          <Txt kind="body" style={{ fontFamily: 'Fraunces_400Regular' }}>{answer.text}</Txt>
+          <Txt kind="body">{answer.text}</Txt>
           {!!answer.citations?.length && (
             <Row gap={2} style={{ marginTop: sp(3), flexWrap: 'wrap' }}>
               {answer.citations.map((c) => <Chip key={c.id} label={c.label} />)}

@@ -69,10 +69,10 @@ class MockDhyaan {
     a.acked_by = by;
     a.closed_at = iso(Date.now());
     a.resolution = 'ok';
-    this.pushLadder(a, { step: 'acknowledged', at: iso(Date.now()), detail: `${by} is on it — ladder stopped` });
+    this.pushLadder(a, { step: 'acknowledged', at: iso(Date.now()), detail: `${by} is on it. Ladder stopped` });
     this.setResidentState(a.resident_id, 'ok');
     // She gets the last word — the scary call ends as a human moment.
-    this.message = { text: 'Tell Priya not to fuss — I’m alright, just clumsy.', at: iso(Date.now()) };
+    this.message = { text: 'Tell Priya not to fuss. I’m alright, just clumsy.', at: iso(Date.now()) };
     this.emit({ t: 'alert.closed', alert_id: a.id, resolution: 'ok', acked_by: by });
   }
 
@@ -121,8 +121,8 @@ class MockDhyaan {
     this.pushLadder(alert, {
       step: 'suspected', at: iso(now),
       detail: kind === 'fall'
-        ? `${name}'s band detected a possible fall — peak 3.4 g, then stillness`
-        : `${name} has been in the bathroom 40 minutes — her usual is about 6`,
+        ? `${name}'s band detected a possible fall: 3.4 g impact, then stillness`
+        : `${name} has been in the bathroom 40 minutes. Her usual is 6`,
     });
 
     // Compressed §4.2 ladder.
@@ -150,7 +150,7 @@ class MockDhyaan {
     });
     this.after(secs(135), () => {
       alert.state = 'calling_contact_2';
-      this.pushLadder(alert, { step: 'calling_contact_2', at: iso(Date.now()), detail: 'No response — also calling Dev (son)' });
+      this.pushLadder(alert, { step: 'calling_contact_2', at: iso(Date.now()), detail: 'No response. Also calling Dev (son)' });
     });
     this.after(secs(195), () => {
       alert.state = 'escalated_final';
@@ -174,22 +174,22 @@ class MockDhyaan {
     const evs = this.world.events;
     const out: string[] = [];
     if (evs.find((e) => e.type === 'walk_completed')) {
-      out.push('She was out for her morning walk today — ask where she went, not whether she went.');
+      out.push('Ask where her morning walk went');
     }
     if (evs.filter((e) => e.type === 'meal_skipped').length >= 2) {
-      out.push('Dinner hasn’t happened the last two evenings. Suggesting Sunday dinner together will land better than asking why.');
+      out.push('Suggest Sunday dinner together');
     }
     if (evs.find((e) => e.type === 'night_activity')) {
-      out.push('She was up once in the night this week — a gentle “sleeping okay?” goes further than a checklist.');
+      out.push('A gentle “sleeping okay?”');
     }
-    out.push('She spent most of this afternoon in the living room — a good time to just call and chat.');
+    out.push('Afternoons are a good time to call');
     return out.slice(0, 3);
   }
 
   // Canned plan for when no Claude key is configured — same shape as ai.planFromThread.
   planFromThread(_thread: string) {
     return {
-      headline: 'Mom’s birthday lunch — Sunday the 12th at her place.',
+      headline: 'Mom’s birthday lunch, Sunday the 12th at her place.',
       when: 'Sunday Oct 12, noon',
       tasks: [
         { who: 'Priya', what: 'Brings the cake and picks up flowers' },
@@ -197,11 +197,11 @@ class MockDhyaan {
         { who: 'Nisha', what: 'Cooks the biryani, arrives at 10' },
       ],
       open_questions: [
-        'Nobody answered whether Uncle Raj is invited — someone text him?',
+        'Is Uncle Raj invited? Nobody answered.',
         'Gluten-free or regular cake? Two people asked, no one decided.',
       ],
       reply_text:
-        'Locking it in: Sunday the 12th, noon, at Mom’s. Priya: cake + flowers. Dev: driving Mom + groceries. Nisha: biryani. Still open — is Raj coming, and GF or regular cake?',
+        'Locking it in: Sunday the 12th, noon, at Mom’s. Priya: cake + flowers. Dev: driving Mom + groceries. Nisha: biryani. Still open: is Raj coming, and GF or regular cake?',
     };
   }
 
@@ -210,7 +210,7 @@ class MockDhyaan {
   }
 
   private message: { text: string; at: string } | null = {
-    text: 'Tell Priya I’m fine — and that I found her grandmother’s recipe box in the attic.',
+    text: 'Tell Priya I’m fine. And that I found her grandmother’s recipe box in the attic.',
     at: iso(Date.now() - 3 * 3_600_000),
   };
   latestMessage() { return this.message; }
@@ -230,20 +230,20 @@ class MockDhyaan {
     if (/eat|meal|food|dinner|lunch|breakfast|appetite/.test(q)) {
       const meals = evs.filter((e) => e.type === 'meal_observed');
       const skipped = evs.filter((e) => e.type === 'meal_skipped');
-      text = `Eleanor ate ${meals.length} recorded meals over the last week — breakfast and lunch every day. ` +
+      text = `Eleanor ate ${meals.length} recorded meals this week, breakfast and lunch every day. ` +
         `But no dinner was observed on ${skipped.length} of the last 3 evenings, which is new for her. ` +
         `Her usual dinner time is about 6:20 PM.`;
       citations = cite([...skipped, ...meals]);
     } else if (/walk|exercise|active|moving/.test(q)) {
       const walks = evs.filter((e) => e.type === 'walk_completed');
       text = `She's walking less this week: one walk a day for the last three days, down from her usual two. ` +
-        `Her morning walk is intact — it's the afternoon walk she's dropped.`;
+        `Her morning walk is intact. It's the afternoon walk she's dropped.`;
       citations = cite(walks);
     } else if (/sleep|night|up at|3 ?am|wake/.test(q)) {
       const night = evs.filter((e) => e.type === 'night_activity');
       text = night.length
         ? `Mostly normal. She was up once at 3:12 AM on ${citationsLabel(night[0])} for about 9 minutes, ` +
-          `which is unusual — otherwise she's slept through and woken near her usual 6:40 AM.`
+          `which is unusual for her. Otherwise she's slept through and woken near her usual 6:40 AM.`
         : `She's slept through every night this week, waking near her usual 6:40 AM.`;
       citations = cite(night);
     } else if (/outside|out of|left home|garden/.test(q)) {
@@ -254,10 +254,10 @@ class MockDhyaan {
     } else if (/fall|fell|hurt|alert/.test(q)) {
       const open = this.listOpenAlerts()[0];
       text = open
-        ? `There is an active alert right now — open it from the home screen for the live ladder.`
+        ? `There is an active alert right now. Open it from the home screen to follow it live.`
         : `No falls this week. Her band has raised no alerts, and I have no observations that suggest one.`;
     } else {
-      text = `I can only answer from what Dhyaan observed. I don't have observations that answer that — ` +
+      text = `I can only answer from what Dhyaan observed, and nothing I have answers that. ` +
         `try asking about her meals, walks, sleep, or time outside.`;
       refused = true;
     }

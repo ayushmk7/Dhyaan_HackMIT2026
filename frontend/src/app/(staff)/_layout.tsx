@@ -1,4 +1,4 @@
-// Staff tabs: Triage · Floor · Rounds (§10.1 S1–S5). Same quiet bar as family.
+// Staff tabs: Triage · Floor · Rounds. Each tab is its own native stack.
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { ColorValue } from 'react-native';
@@ -15,6 +15,7 @@ const glyph = (name: string) => {
 export default function StaffLayout() {
   return (
     <Tabs
+      initialRouteName="triage"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: palette.slate,
@@ -25,10 +26,9 @@ export default function StaffLayout() {
         },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Triage', tabBarIcon: glyph('list.bullet') }} />
+      <Tabs.Screen name="triage" options={{ title: 'Triage', tabBarIcon: glyph('list.bullet') }} />
       <Tabs.Screen name="floor" options={{ title: 'Floor', tabBarIcon: glyph('square.grid.2x2') }} />
       <Tabs.Screen name="rounds" options={{ title: 'Rounds', tabBarIcon: glyph('moon.stars') }} />
-      <Tabs.Screen name="resident/[id]" options={{ href: null }} />
     </Tabs>
   );
 }
