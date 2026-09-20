@@ -121,6 +121,13 @@ class Uplink:
                     n += 1
                     self.uplink_ok = True
                 elif r.status_code >= 500:
+                    # [claude] F6: a stale cancel 500s forever (hub FSM rejects
+                    # cancel outside LOCAL_CANCEL) and, sorted first, would wedge
+                    # every fall behind it. A cancel older than one heartbeat is
+                    # dead anyway — drop it and keep draining.
+                    if doc["path"].endswith("/cancel"):
+                        f.unlink(missing_ok=True)
+                        continue
                     self.uplink_ok = False
                     break
             except Exception as e:

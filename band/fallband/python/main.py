@@ -75,6 +75,9 @@ except ImportError:
                     time.sleep(0.05)
 
     Bridge = _StubBridge  # type: ignore
+    if os.path.exists("/.dockerenv"):
+        logging.getLogger("fallband").error(
+            "RUNNING WITH STUB BRIDGE ON DEVICE — falls will NOT be forwarded")
     App = _StubApp  # type: ignore
 
 
@@ -103,7 +106,7 @@ class FallbandAgent:
         self.uplink = Uplink(
             hub_url=cfg["hub_url"],
             band_key=cfg.get("band_key") or os.environ.get("BAND_KEY", ""),
-            spool_dir=os.environ.get("FALLBAND_SPOOL", "/tmp/fallband_spool"),
+            spool_dir=os.environ.get("FALLBAND_SPOOL", str(_HERE.parent / "spool")),
         )
         self.t0 = time.time()
         self.lock = threading.Lock()
@@ -199,6 +202,13 @@ class FallbandAgent:
         log.info("IMPACT->FALL seq=%s peak_g=%.2f orient=%.1f reason=%s → POST /band",
                  seq, float(peak_g), float(orient_deg), reason)
         self._post_fall(int(seq), body)
+        # [claude] audible feedback: impact-path falls never enter the MCU's
+        # grace state, so without this the wearer gets zero on-body signal.
+        # Code 2 = long low tone + LED, "a call is going out".
+        try:
+            Bridge.call("signal", 2)
+        except Exception as e:
+            log.warning("escalation buzz failed: %s", e)
 
     def on_cancel(self, seq, age_ms):
         seq = int(seq)
@@ -281,7 +291,7 @@ class FallbandAgent:
         }
         cal = self.cfg.get("calibration") or {}
         if cal.get("f_min"):
-            mapping["f_min"] = cal["f_min"]
+            mapping["f_min_g"] = cal["f_min"]
         bias = imu.get("accel_bias") or [0, 0, 0]
         gain = imu.get("accel_gain") or [1, 1, 1]
         mapping.update({
@@ -336,6 +346,17 @@ class FallbandAgent:
         if now - self._last_hb < period:
             return
         self._last_hb = now
+        # [claude] F2: a power cycle silently reverts the MCU to compiled
+        # thresholds (ff_max_ms=400 etc). Verify the rev every heartbeat and
+        # repush on drift — turns "running stale thresholds" into a 30s blip.
+        try:
+            st = str(Bridge.call("get_status")).split(",")
+            if len(st) > 6 and int(st[6]) != int(self.cfg.get("thresholds_rev", 0)):
+                log.warning("MCU rev %s != config rev %s — repushing thresholds",
+                            st[6], self.cfg.get("thresholds_rev"))
+                self.push_config_to_mcu()
+        except Exception as e:
+            log.warning("rev check failed: %s", e)
         activity = None
         if self.step_buf:
             peaks = [s["peak_g"] for s in self.step_buf]
@@ -398,7 +419,10 @@ class FallbandAgent:
             beacons = []
         # Strip helper `n` before wire (fixture shape is uuid/major/minor/rssi).
         wire_beacons = [
-            {"uuid": b["uuid"], "major": b["major"], "minor": b["minor"], "rssi": b["rssi"]}
+            # [claude] F7: hub validates rssi >= -100; one -103 dBm row would
+            # 422 the entire scan and kill localization silently.
+            {"uuid": b["uuid"], "major": b["major"], "minor": b["minor"],
+             "rssi": max(-100, int(b["rssi"]))}
             for b in beacons
         ]
         body = rf_payload(

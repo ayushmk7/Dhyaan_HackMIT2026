@@ -3,7 +3,7 @@
   "band_id": "band_unoq01",
   "device_id": "band_unoq01",
   "user_id": "res_eleanor",
-  "hub_url": "http://127.0.0.1:8000",
+  "hub_url": "https://subsystem-mushroom-grooving.ngrok-free.dev",
   "band_key": "band-dev-key",
   "compat": {
     "battery_pct_placeholder": true,
