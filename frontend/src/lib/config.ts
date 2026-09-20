@@ -37,11 +37,18 @@ export const API_BASE =
   process.env.EXPO_PUBLIC_API_BASE
   ?? (devHost() ? `http://${devHost()}:8000/v1` : 'http://localhost:8000/v1');
 
-// No API key, no login, no token. The backend has no authentication at all
-// (see the notice at the top of backend/app/main.py): every request and the
-// websocket go out bare. Demo build for one LAN.
+// The HEAD backend has no authentication, but the backend PROCESS serving the
+// demo predates that change and still 401s any request without this shared
+// key (and closes a websocket without the token param). Sending both is
+// harmless against a no-auth server — an unused header and an unused query
+// param — and required against the one that is actually running, so the app
+// sends them unconditionally rather than betting the demo on which build is
+// behind port 8000.
+export const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? 'dev-key-change-me';
 const wsBase = API_BASE.replace(/^http/, 'ws'); // http->ws, https->wss
-export const WS_URL = `${wsBase}/live`;
+export const WS_URL = `${wsBase}/live?token=${encodeURIComponent(API_KEY)}`;
 
 // Client-side Claude key for the connection layer (demo only — see src/lib/ai.ts).
 export const ANTHROPIC_KEY = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '';
+export const OPENAI_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY ?? '';
+export const OPENAI_MODEL = process.env.EXPO_PUBLIC_OPENAI_MODEL ?? 'gpt-5-mini';
