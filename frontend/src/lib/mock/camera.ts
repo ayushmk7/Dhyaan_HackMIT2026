@@ -12,7 +12,8 @@
 // Upgrade: none needed — the real backend replaces this wholesale.
 import type {
   ActivityDay, ActivityItem, ChatCitation, ChatMessage, Fact, MemoryDeleted,
-  MemoryScope, Presence, Profile, ProfilePatch, SourceKind,
+  CameraMonitorTick, CameraSummary, MemoryScope, Presence, Profile, ProfilePatch,
+  SourceKind,
 } from '../types';
 
 const iso = (t: number) => new Date(t).toISOString();
@@ -201,6 +202,71 @@ class MockCamera {
       },
       items: [...this.items],
     };
+  }
+
+  // ---- the camera console ---------------------------------------------------
+  // Derived from the same script the presence hero reads, so the console and
+  // Today can never disagree about whether she is in view. Boxes are a lazy
+  // lissajous wander rather than a replayed track — the console's job is to
+  // prove the pipeline is alive, and a box that moves does that.
+
+  listCameras(): CameraSummary[] {
+    const cam = this.profile.camera;
+    if (!cam) return [];
+    const consent = this.profile.consent.camera;
+    return [{
+      id: cam.camera_id,
+      resident_id: 'res_eleanor',
+      state: consent ? 'watching' : 'no_consent',
+      consent,
+      paused_until: cam.paused_until ?? null,
+      last_heartbeat_at: consent ? iso(Date.now()) : null,
+      online: consent,
+    }];
+  }
+
+  getMonitor(cameraId: string): CameraMonitorTick | null {
+    const cam = this.profile.camera;
+    if (!cam || cam.camera_id !== cameraId || !this.profile.consent.camera) return null;
+    this.advance();
+    const beat = SCRIPT[this.beatIdx];
+    const present = beat.presence.status === 'in_view';
+    const t = Date.now() / 1000;
+    // One drifting box when she is in view, a second one when someone visited.
+    const wander = (phase: number, w: number, h: number) => {
+      const cx = 0.5 + 0.22 * Math.sin(t * 0.21 + phase);
+      const cy = 0.55 + 0.10 * Math.sin(t * 0.13 + phase * 1.7);
+      return [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2] as [number, number, number, number];
+    };
+    const boxes = !present ? []
+      : beat.presence.activity === 'with_visitor'
+        ? [wander(0, 0.2, 0.5), wander(2.4, 0.17, 0.44)]
+        : [wander(0, 0.2, 0.5)];
+    return {
+      camera_id: cameraId,
+      ts: iso(Date.now()),
+      fps: present ? 11.8 : 12.4,
+      person_count: boxes.length,
+      boxes,
+      gate: !present ? 'idle' : boxes.length ? 'person' : 'motion',
+      model: 'qwen2.5vl:3b',
+      latency_ms: present ? 18 : null,
+      batch_frames: present ? 4 : 0,
+      activity: beat.presence.activity,
+      sentence: beat.presence.sentence.replace('{since}', clock(this.beatAt)),
+      confidence: present ? 0.82 : null,
+      simulated: true,
+    };
+  }
+
+  pauseCamera(hours: number) {
+    if (this.profile.camera) {
+      this.profile.camera.paused_until = iso(Date.now() + hours * 3600_000);
+    }
+  }
+
+  resumeCamera() {
+    if (this.profile.camera) this.profile.camera.paused_until = null;
   }
 
   /** One activity item by id, for the mock event-detail lookup. */

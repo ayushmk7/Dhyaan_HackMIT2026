@@ -35,9 +35,9 @@ It starts mongo (docker), `ollama serve` if it isn't already up, pulls
 Re-running it is safe: it skips whatever is already running and never reseeds
 a DB that has data. Ctrl-C stops whatever that run started.
 
-It prints your Mac's LAN URL and the exact command to start Expo against the
-real backend instead of mocks — a phone in Expo Go can't resolve `localhost`
-to your Mac, so `frontend/src/lib/config.ts` needs the LAN IP explicitly:
+It prints your Mac's LAN URL and the exact command to start Expo against that
+backend — a phone in Expo Go can't resolve `localhost` to your Mac, so
+`frontend/src/lib/config.ts` needs the LAN IP explicitly:
 
 ```bash
 cd frontend
@@ -47,7 +47,10 @@ EXPO_PUBLIC_USE_MOCKS=false EXPO_PUBLIC_API_BASE=http://<mac-ip>:8000/v1 \
 
 (`cd backend && make ip` prints `<mac-ip>` any time. The iOS Simulator, unlike
 a phone, is fine with the `localhost` default — just `npx expo start` and
-press `i`.)
+press `i`.) `EXPO_PUBLIC_USE_MOCKS` now defaults to `false` — the app talks to
+a live backend out of the box — so that flag is printed for clarity, not
+because it's required. To demo the app with no backend running at all, set
+`EXPO_PUBLIC_USE_MOCKS=true` instead.
 
 Tests don't need `dev.sh` running (they spin up their own things via
 `conftest.py`), just mongo:

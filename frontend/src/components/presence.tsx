@@ -12,7 +12,7 @@ import { Icon } from '@/components/icon';
 import { Row, Txt } from '@/components/ui';
 import { useReducedMotion } from '@/components/entrance';
 import type { ChatCitation, Fact, SourceKind } from '@/lib/types';
-import { palette, radius, sp, type } from '@/theme/tokens';
+import { cardShadow, palette, radius, sp, type } from '@/theme/tokens';
 
 // ---- KindTag -----------------------------------------------------------------
 
@@ -166,12 +166,14 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignSelf: 'flex-start',
   },
+  // A citation is a small raised plate, not a wireframe box. Cards in this app
+  // are separated by elevation; a border around one is the look the whole
+  // design system exists to avoid.
   citation: {
     backgroundColor: palette.raised,
-    borderWidth: 1,
-    borderColor: palette.line,
     borderRadius: radius.tile,
     padding: sp(2.5),
+    ...cardShadow,
   },
   fact: {
     flexDirection: 'row',

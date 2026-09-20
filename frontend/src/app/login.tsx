@@ -2,18 +2,17 @@
 // is honest about what it is. The backend's /auth/login validates an email
 // shape and a non-empty password and hands back the shared demo key — there is
 // no password store behind it, so this screen never claims your password was
-// checked. It just gates the app, holds a session, and signs out.
+// checked, and now says so on the screen rather than only in this comment. It
+// gates the app, holds a session, and signs out.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Btn, Field, Txt } from '@/components';
+import { Btn, Entrance, Field, Glass, Rule, Txt } from '@/components';
 import { Icon } from '@/components/icon';
-import { Entrance } from '@/components/entrance';
 import { Wash } from '@/components/wash';
 import { api } from '@/lib/api';
-import { palette, sp, type } from '@/theme/tokens';
+import { palette, radius, sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
 
 const DEMO_EMAIL = 'priya@dhyaan.demo';
@@ -47,7 +46,7 @@ export default function Login() {
       style={{ flex: 1, backgroundColor: palette.paper }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <Wash height={420} />
+      <Wash height="100%" />
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
@@ -59,49 +58,55 @@ export default function Login() {
         showsVerticalScrollIndicator={false}
       >
         <Entrance index={0} style={{ alignItems: 'center' }}>
-          <LinearGradient
-            colors={['#35B27A', '#1E7A5A']}
-            start={{ x: 0.2, y: 0 }}
-            end={{ x: 0.8, y: 1 }}
+          {/* Black plate, white mark: the one uncompromising note on a screen
+              that is otherwise glass over atmosphere. */}
+          <View
             style={{
-              width: 96, height: 96, borderRadius: 48,
+              width: 88, height: 88, borderRadius: radius.glass,
               alignItems: 'center', justifyContent: 'center',
-              shadowColor: '#1E7A5A', shadowOpacity: 0.3, shadowRadius: 18,
-              shadowOffset: { width: 0, height: 8 },
+              backgroundColor: palette.ink,
             }}
           >
-            <Icon name="figure.2.arms.open" size={46} color="#FFFFFF" weight="semibold" />
-          </LinearGradient>
-          <Txt style={[type.hero, { marginTop: sp(5) }]} accessibilityRole="header">
+            <Icon name="figure.2.arms.open" size={44} color={palette.raised} weight="semibold" />
+          </View>
+          <Txt kind="hero" style={{ marginTop: sp(5) }} accessibilityRole="header">
             Dhyaan
           </Txt>
+          <Rule style={{ alignSelf: 'stretch', marginTop: sp(3), marginHorizontal: sp(10) }} />
         </Entrance>
 
-        <View style={{ flex: 1 }} />
+        <View style={{ flex: 1, minHeight: sp(8) }} />
 
-        <Entrance index={1} style={{ gap: sp(3) }}>
-          <Field
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <Field
-            label="Password"
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Your password"
-            secureTextEntry
-            autoCapitalize="none"
-            onSubmitEditing={() => submit()}
-          />
-          {!!error && (
-            <Txt kind="caption" tone="alert" accessibilityLiveRegion="polite">{error}</Txt>
-          )}
-          <Btn label="Sign in" busy={busy} onPress={() => submit()} />
+        {/* The door floats over the wash — the one glass surface here. */}
+        <Entrance index={1}>
+          <Glass radius={radius.sheet} lift="float" style={{ padding: sp(5), gap: sp(3) }}>
+            <Field
+              label="Email"
+              value={email}
+              onChangeText={setEmail}
+              placeholder="you@example.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Field
+              label="Password"
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Your password"
+              secureTextEntry
+              autoCapitalize="none"
+              onSubmitEditing={() => submit()}
+            />
+            {!!error && (
+              <Txt kind="caption" tone="alert" accessibilityLiveRegion="polite">{error}</Txt>
+            )}
+            <Btn label="Sign in" busy={busy} onPress={() => submit()} />
+            <Txt kind="caption" tone="muted">{/* voice-ok */}
+              This sign-in checks that your email looks like an email. There is no
+              password store behind it yet, so it is a door, not a lock.
+            </Txt>
+          </Glass>
         </Entrance>
 
         <Entrance index={2} style={{ marginTop: sp(5), alignItems: 'center', gap: sp(2) }}>
@@ -114,7 +119,7 @@ export default function Login() {
               submit(DEMO_EMAIL, 'demo');
             }}
           >
-            <Txt kind="label" tone="slate">Use the demo account</Txt>
+            <Txt kind="label">Use the demo account</Txt>
           </Pressable>
         </Entrance>
       </ScrollView>

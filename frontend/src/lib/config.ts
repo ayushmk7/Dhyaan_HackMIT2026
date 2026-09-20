@@ -8,7 +8,10 @@
 //   EXPO_PUBLIC_API_KEY=dev-key-change-me npx expo start
 // The iOS Simulator (not a phone) can still use `localhost`, which is why
 // that's the default below.
-export const USE_MOCKS = process.env.EXPO_PUBLIC_USE_MOCKS !== 'false';
+// Defaults to the REAL backend: `./dev.sh` brings mongo, ollama and the API up
+// in one command, so "connected" is the normal state of this repo now. Set
+// EXPO_PUBLIC_USE_MOCKS=true to demo with nothing running behind the app.
+export const USE_MOCKS = process.env.EXPO_PUBLIC_USE_MOCKS === 'true';
 
 // Real backend mounts every route under /v1 (see backend/app/main.py) — keep
 // that suffix here so http.ts's paths ('/residents', '/alerts', ...) don't

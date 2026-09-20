@@ -4,6 +4,7 @@ One HTTP call, to loopback, to Ollama. This is the only socket a pixel ever
 crosses (VLM_PLAN §2, §5.3).
 """
 
+import os
 import time
 from typing import Literal
 
@@ -14,6 +15,24 @@ from . import OLLAMA_HOST, VLM_MODEL
 
 # §3.5's enum, and the one extra value the wire carries (§6.1): "absent" is set
 # by a post-rule or by the keyframe selector, never by the model.
+# Visitor detection off by default. In a real home a second person is the
+# most important fact on screen; in a hall or an office it is true of every
+# frame and swallows eating, walking and everything else worth saying.
+# Set VISITOR_DETECTION=1 to restore it.
+VISITORS = os.getenv("VISITOR_DETECTION", "0") == "1"
+
+def _occupants(n):
+    """People, as this product counts them.
+
+    With VISITOR_DETECTION off (the default) the answer is only ever "she is
+    there" or "she is not". A hall, an office or a hackathon table puts three
+    strangers in every frame, and reporting that as "Eleanor has someone
+    visiting" every 20 seconds drowns eating, walking and everything else worth
+    saying. The detector still sees them; we just stop treating the room as the
+    subject.
+    """
+    return min(n, 1) if not VISITORS else n
+
 ACTIVITIES = (
     "eating", "drinking", "sitting", "reading", "watching_tv", "using_phone",
     "standing", "walking", "exercising", "lying_down", "on_floor",
@@ -162,12 +181,12 @@ def from_scene(scene, posture_hint=None):
     problem. The VLM is only needed for the sentence, so it runs on its own
     slower cadence and this carries the rest.
     """
-    n = scene["person_count"]
+    n = _occupants(scene["person_count"])
     posture = {"tall": "upright", "mid": "seated", "wide": "on_floor"}.get(posture_hint, "unclear")
     items = scene["food"] + scene["dishes"]
     if n == 0:
         activity, evidence = "absent", "no one in view"
-    elif n >= 2:
+    elif VISITORS and n >= 2:
         activity, evidence = "with_visitor", f"{n} people in view"
     elif scene["food"]:
         activity, evidence = "eating", f"one person, {', '.join(scene['food'][:2])} in view"
@@ -213,7 +232,7 @@ def post_rules(obs):
         o["person_count"] = 1
     if o.get("person_count", 0) == 0:
         o["activity"] = "absent"
-    elif o.get("person_count", 0) >= 2:
+    elif VISITORS and o.get("person_count", 0) >= 2:
         o["activity"] = "with_visitor"
     elif o.get("hand_to_mouth_observed") and (
         o.get("food_visible") or o.get("plate_or_cup_present")
@@ -241,7 +260,7 @@ def merge_scene(obs, scene):
     if not scene:
         return dict(obs)
     o = dict(obs)
-    o["person_count"] = scene["person_count"]
+    o["person_count"] = _occupants(scene["person_count"])
     o["food_visible"] = bool(obs.get("food_visible")) or bool(scene["food"])
     o["plate_or_cup_present"] = bool(obs.get("plate_or_cup_present")) or bool(scene["dishes"])
     seen = (scene["food"] + scene["dishes"])[:3]

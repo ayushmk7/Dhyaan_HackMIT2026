@@ -9,7 +9,7 @@
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
-import { Btn, Card, Chip, Field, Row, Screen, Txt } from '@/components';
+import { Btn, Card, Chip, DataLabel, Entrance, Field, Row, Rule, Screen, Txt } from '@/components';
 import { sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
 
@@ -163,47 +163,59 @@ export default function About() {
   const answered = factDrafts.filter((f) => f.text.length > 0).length;
 
   return (
-    <Screen>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Txt kind="label" tone="muted">Question {idx + 1} of {QUESTIONS.length}</Txt>
-        <Txt kind="label" tone="muted">{answered} answered</Txt>
-      </Row>
-
-      <Txt kind="display" style={{ marginTop: sp(4) }} accessibilityRole="header">
-        {q.prompt}
-      </Txt>
-      {!!q.hint && (
-        <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>{q.hint}</Txt>
-      )}
-
-      <Card style={{ marginTop: sp(5) }}>
-        <Txt kind="label" tone="muted">Tap one, then make it hers</Txt>
-        <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(3) }}>
-          {q.chips(residentName).map((c) => (
-            <Chip key={c.label} label={c.label} selected={text === c.text} onPress={() => setText(c.text)} />
-          ))}
-        </Row>
-        <Field
-          label="What Dhyaan should remember"
-          value={text}
-          onChangeText={setText}
-          placeholder={q.placeholder}
-          multiline
-          maxLength={q.maxLength ?? 300}
-          hint={
-            q.maxLength
-              ? `${text.length} of ${q.maxLength} characters`
-              : 'This is stored as a sentence and read back to you when it’s used.'
-          }
-          style={{ marginTop: sp(4) }}
-        />
-      </Card>
-
-      <View style={{ marginTop: sp(6), gap: sp(2) }}>
+    <Screen
+      wash
+      floatingBar={
         <Btn
           label={idx === QUESTIONS.length - 1 ? 'Save what you told us' : 'Next'}
           onPress={() => go(1)}
         />
+      }
+    >
+      {/* Machine counters, in the machine face — the only caps on this screen. */}
+      <Entrance index={0}>
+        <Row style={{ justifyContent: 'space-between' }}>
+          <DataLabel value={`${idx + 1}/${QUESTIONS.length}`}>Question</DataLabel>
+          <DataLabel value={String(answered)}>Answered</DataLabel>
+        </Row>
+        <Rule style={{ marginTop: sp(2) }} />
+      </Entrance>
+
+      <Entrance index={1}>
+        <Txt kind="display" style={{ marginTop: sp(5) }} accessibilityRole="header">
+          {q.prompt}
+        </Txt>
+        {!!q.hint && (
+          <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>{q.hint}</Txt>
+        )}
+      </Entrance>
+
+      <Entrance index={2}>
+        <Card style={{ marginTop: sp(5) }}>
+          <Txt kind="label" tone="muted">Tap one, then make it hers</Txt>
+          <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(3) }}>
+            {q.chips(residentName).map((c) => (
+              <Chip key={c.label} label={c.label} selected={text === c.text} onPress={() => setText(c.text)} />
+            ))}
+          </Row>
+          <Field
+            label="What Dhyaan should remember"
+            value={text}
+            onChangeText={setText}
+            placeholder={q.placeholder}
+            multiline
+            maxLength={q.maxLength ?? 300}
+            hint={
+              q.maxLength
+                ? `${text.length} of ${q.maxLength} characters`
+                : 'This is stored as a sentence and read back to you when it’s used.'
+            }
+            style={{ marginTop: sp(4) }}
+          />
+        </Card>
+      </Entrance>
+
+      <Entrance index={3} style={{ marginTop: sp(5) }}>
         <Row gap={2}>
           <Btn kind="quiet" label="Back" onPress={() => go(-1)} style={{ flex: 1 }} />
           <Btn
@@ -213,7 +225,7 @@ export default function About() {
             style={{ flex: 1 }}
           />
         </Row>
-      </View>
+      </Entrance>
     </Screen>
   );
 }

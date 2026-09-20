@@ -63,9 +63,20 @@ async def _on_event(doc: dict) -> None:
 
 
 async def broadcast_alert(alert: dict) -> None:
-    """Called by residents.py after ack/resolve — state transitions the ladder
-    itself doesn't necessarily emit as an Event."""
-    await broadcast({"t": "alert.update", "alert": _ser(alert)}, alert.get("resident_id"))
+    """Called by alerts.py on every FSM transition and by residents.py after
+    ack/resolve.
+
+    It sends the SAME shape `GET /alerts/{id}` returns, via residents.py's
+    `alert_response`. That is the whole point: this used to push the raw Mongo
+    doc, which has no `closed_at`, and the app dismisses its full-screen
+    takeover by reading `closed_at`. So resolving an alert closed it on the REST
+    path and left it stuck on screen on the socket. One shaper, no drift.
+    Lazy import because residents.py imports this module.
+    """
+    from .residents import alert_response
+
+    await broadcast({"t": "alert.update", "alert": await alert_response(alert)},
+                    alert.get("resident_id"))
 
 
 @router.websocket("/live")

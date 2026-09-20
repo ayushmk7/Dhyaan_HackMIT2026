@@ -22,7 +22,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .. import memory, presence, rag
 from ..config import API_KEY
@@ -84,25 +84,38 @@ class ObservationIn(BaseModel):
     simulated: bool = False
 
 
+def _is_paused(camera: dict) -> bool:
+    pu = camera.get("paused_until")
+    return bool(pu) and _aware(datetime.fromisoformat(pu)) > datetime.now(timezone.utc)
+
+
+async def _live_camera(camera_id: str, resident_id: str | None = None) -> tuple[dict, dict]:
+    """The fail-closed check, shared by every device route that writes anything.
+
+    §5.6, belt and braces: the worker already gates on consent and the pause,
+    and so do we. A rogue or stale worker cannot create an observation — or a
+    console tick, which is the same promise one layer thinner.
+    """
+    d = db()
+    camera = await d.cameras.find_one({"_id": camera_id})
+    if not camera:
+        raise HTTPException(404, f"unknown camera_id {camera_id!r}")
+    if resident_id and camera["resident_id"] != resident_id:
+        raise HTTPException(404, "camera is not registered to that resident")
+    resident = await d.residents.find_one({"_id": camera["resident_id"]})
+    if not resident:
+        raise HTTPException(404, "resident not found")
+    if not resident.get("consent_camera"):
+        raise HTTPException(403, "camera consent is off for this resident")
+    if _is_paused(camera):
+        raise HTTPException(403, "the camera is paused")
+    return camera, resident
+
+
 @device.post("/ingest/camera", status_code=201)
 async def ingest_camera(body: ObservationIn):
     d = db()
-    camera = await d.cameras.find_one({"_id": body.camera_id})
-    if not camera:
-        raise HTTPException(404, f"unknown camera_id {body.camera_id!r}")
-    if camera["resident_id"] != body.resident_id:
-        raise HTTPException(404, "camera is not registered to that resident")
-
-    resident = await d.residents.find_one({"_id": body.resident_id})
-    if not resident:
-        raise HTTPException(404, "resident not found")
-
-    # §5.6, belt and braces: the worker already gates on this, and so do we.
-    if not resident.get("consent_camera"):
-        raise HTTPException(403, "camera consent is off for this resident")
-    paused_until = camera.get("paused_until")
-    if paused_until and _aware(datetime.fromisoformat(paused_until)) > datetime.now(timezone.utc):
-        raise HTTPException(403, "the camera is paused")
+    camera, resident = await _live_camera(body.camera_id, body.resident_id)
 
     ts = _aware(body.ts)
     obs = presence.new_observation_doc(body.model_dump(), body.resident_id, ts)
@@ -117,6 +130,80 @@ async def ingest_camera(body: ObservationIn):
 
     p = await _push_presence(body.resident_id)
     return {"observation_id": obs["_id"], "presence": p, "event_ids": event_ids}
+
+
+# ---------------------------------------------------------------------------
+# The monitor channel: a live console for the hub, in RAM, never in Mongo.
+#
+# Family-visible, decided deliberately: a tick carries counts, normalised box
+# geometry and the same activity/spot sentence `GET /presence` already returns.
+# It carries no zone, no evidence, no posture, no movement quality and no pixel,
+# and `MonitorIn` is what enforces that — a Pydantic model IS an allowlist,
+# because a field it does not declare simply vanishes. A worker that starts
+# sending `evidence` therefore cannot leak it by accident; someone would have to
+# add the field here, next to this paragraph.
+#
+# `sentence` still goes through `rag.scrub_rooms`, the same filter `_family_item`
+# uses, because it is prose and prose is where a room name gets in.
+#
+# Not in MongoDB on purpose: this is telemetry at 1 Hz with a useful life of one
+# second. ponytail: a module-level dict, the same shortcut `location.py` and
+# `setup.py` take. Ceiling: it resets on restart and is per-worker. Upgrade: the
+# day there is more than one API worker this becomes the same Redis the
+# websocket fan-out would need.
+# ---------------------------------------------------------------------------
+
+_MONITOR: dict[str, dict] = {}
+
+# A tick older than this is not a live console, it is a photograph of one.
+MONITOR_STALE_S = 15
+
+
+class MonitorIn(BaseModel):
+    camera_id: str = Field(min_length=1)
+    ts: datetime
+    fps: float = Field(default=0.0, ge=0, le=120)
+    person_count: int = Field(default=0, ge=0, le=6)
+    # Normalised 0..1, never pixels — the app must not be able to reconstruct a
+    # frame geometry from this, and a box in a 448x252 buffer is one step closer
+    # to that than a fraction is.
+    boxes: list[list[float]] = Field(default_factory=list, max_length=6)
+    gate: Literal["idle", "motion", "person", "thinking"] = "idle"
+    model: str = ""
+    latency_ms: int = Field(default=0, ge=0)
+    batch_frames: int = Field(default=0, ge=0, le=16)
+    activity: Literal[ACTIVITIES] | None = None
+    # None is a worker that has nothing to say yet, not a validation error —
+    # a blank console beats a 422 nobody reads.
+    sentence: str | None = Field(default="", max_length=180)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    simulated: bool = False
+
+    @field_validator("boxes")
+    @classmethod
+    def _normalised(cls, v):
+        for b in v:
+            if len(b) != 4 or not all(0.0 <= c <= 1.0 for c in b):
+                raise ValueError("each box is four normalised 0..1 numbers, x0,y0,x1,y1")
+        return v
+
+
+@device.post("/ingest/camera/monitor", status_code=204)
+async def ingest_camera_monitor(body: MonitorIn):
+    """Fails closed exactly as `/ingest/camera` does. A paused camera that kept
+    streaming its console would be the pause not meaning anything."""
+    camera, _ = await _live_camera(body.camera_id)
+    tick = body.model_dump()
+    tick["ts"] = _aware(body.ts).isoformat()
+    tick["sentence"] = rag.scrub_rooms(body.sentence or "")
+    
+    tick["resident_id"] = camera["resident_id"]
+    _MONITOR[body.camera_id] = tick
+
+    from .live import broadcast  # lazy: live.py imports events, events imports db
+
+    await broadcast({"t": "camera.monitor", **tick}, camera["resident_id"])
+    return Response(status_code=204)
 
 
 class HeartbeatIn(BaseModel):
@@ -349,6 +436,109 @@ async def delete_memory(resident_id: str, body: MemoryDeleteIn):
     deleted = await memory.delete_memory(resident_id, body.scope, body.confirm)
     await _push_presence(resident_id)
     return {"deleted": deleted}
+
+
+# ---------------------------------------------------------------------------
+# Cameras: the console's own surface
+# ---------------------------------------------------------------------------
+
+def _camera_row(camera: dict, resident: dict) -> dict:
+    """Installer config and liveness. The camera's own room is the one place a
+    room name is allowed on a family surface (§5.2) — it is where the family
+    pointed the camera, not where she is — and even that is not returned here,
+    because nothing on this screen needs it. `GET /profile` has it."""
+    hb = camera.get("last_heartbeat_at")
+    fresh = bool(hb) and (datetime.now(timezone.utc) - _aware(datetime.fromisoformat(hb))
+                          ).total_seconds() < HEARTBEAT_STALE_S
+    return {
+        "id": camera["_id"], "resident_id": camera["resident_id"],
+        "state": camera.get("state") or "offline",
+        "consent": bool(resident.get("consent_camera")),
+        "paused_until": camera.get("paused_until") if _is_paused(camera) else None,
+        "last_heartbeat_at": hb,
+        "online": fresh and camera.get("state") == "watching",
+    }
+
+
+# The worker heartbeats every 30 s (vision/__init__.py TUNING), so two missed
+# beats is dead. A worker killed with -9 never sends `offline`; without this the
+# console would show "watching" forever.
+HEARTBEAT_STALE_S = 75
+
+
+@family.get("/cameras")
+async def list_cameras(resident_id: str | None = Query(None)):
+    """ponytail: `resident_id` is optional because this demo has one home. Left
+    off it lists every camera, which is what the debug panel wants. Upgrade: a
+    required scope the day a login maps to more than one resident."""
+    q = {"resident_id": resident_id} if resident_id else {}
+    cameras = await db().cameras.find(q).to_list(length=50)
+    residents = {r["_id"]: r for r in await db().residents.find(
+        {"_id": {"$in": [c["resident_id"] for c in cameras]}}).to_list(length=50)}
+    return [_camera_row(c, residents.get(c["resident_id"], {})) for c in cameras]
+
+
+@family.get("/cameras/{camera_id}/monitor")
+async def get_camera_monitor(camera_id: str):
+    """The latest tick, or an honest empty shape. Never a fabricated tick: a
+    console that invents a frame count is worse than a console that says it has
+    not heard anything, because only one of the two can be trusted at 3 am."""
+    camera = await db().cameras.find_one({"_id": camera_id})
+    if not camera:
+        raise HTTPException(404, f"unknown camera_id {camera_id!r}")
+    resident = await db().residents.find_one({"_id": camera["resident_id"]}) or {}
+    row = _camera_row(camera, resident)
+    tick = _MONITOR.get(camera_id)
+    if tick:
+        age = (datetime.now(timezone.utc) - _aware(datetime.fromisoformat(tick["ts"]))
+               ).total_seconds()
+        if age > MONITOR_STALE_S:
+            tick = None
+    # `online` here means "the console is live", which a fresh tick proves better
+    # than the heartbeat does: ticks arrive at 1 Hz, heartbeats every 30 s. The
+    # camera row's own `online` stays heartbeat-based — it answers a different
+    # question ("is the worker running at all").
+    return {"camera": row, "online": tick is not None, "tick": tick}
+
+
+class PauseIn(BaseModel):
+    hours: float = Field(default=2.0, gt=0, le=24)
+
+
+@family.post("/cameras/{camera_id}/pause")
+async def pause_camera(camera_id: str, body: PauseIn):
+    """Pausing from the app, recorded as the app.
+
+    PRODUCT_SPEC §8.3 rule 1 is that the family cannot undo HER pause, not that
+    the camera can only be stopped from the hub — so `paused_by` is the whole
+    control here: this writes "family", and `resume` below refuses to lift a
+    pause it did not set. Her `p` on the hub preview still wins.
+    """
+    camera = await db().cameras.find_one({"_id": camera_id})
+    if not camera:
+        raise HTTPException(404, f"unknown camera_id {camera_id!r}")
+    until = (datetime.now(timezone.utc) + timedelta(hours=body.hours)).isoformat()
+    await db().cameras.update_one({"_id": camera_id}, {"$set": {
+        "paused_until": until, "paused_by": "family", "state": "paused"}})
+    await emit(resident_id=camera["resident_id"], source="camera", type="camera_paused",
+               embedding_text="The camera is paused.",
+               payload={"state": "paused", "paused_by": "family"}, source_id=camera_id)
+    _MONITOR.pop(camera_id, None)      # a paused camera has no live console
+    p = await _push_presence(camera["resident_id"])
+    return {"paused_until": until, "paused_by": "family", "presence": p}
+
+
+@family.post("/cameras/{camera_id}/resume")
+async def resume_camera(camera_id: str):
+    camera = await db().cameras.find_one({"_id": camera_id})
+    if not camera:
+        raise HTTPException(404, f"unknown camera_id {camera_id!r}")
+    if _is_paused(camera) and camera.get("paused_by") == "resident":
+        raise HTTPException(403, "she paused this camera — only she can start it again")
+    await db().cameras.update_one({"_id": camera_id}, {"$set": {
+        "paused_until": None, "paused_by": None}})
+    p = await _push_presence(camera["resident_id"])
+    return {"paused_until": None, "presence": p}
 
 
 # ---------------------------------------------------------------------------

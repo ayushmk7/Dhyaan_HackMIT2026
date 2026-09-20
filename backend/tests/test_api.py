@@ -270,3 +270,81 @@ def test_websocket_receives_pushed_event():
                 assert "id" in msg["event"]
         finally:
             portal.call(dbmod.close)
+
+
+# ---------------------------------------------------------------------------
+# 9. One alert shape, REST and websocket
+#
+# These two lived apart and drifted: the socket pushed the raw Mongo doc, so it
+# had no `closed_at` and no `ladder`, and the app's full-screen takeover reads
+# both. Resolving an alert closed it over REST and left it stuck on the phone.
+# ---------------------------------------------------------------------------
+
+class _Socket:
+    def __init__(self):
+        self.sent = []
+
+    async def send_json(self, msg):
+        self.sent.append(msg)
+
+
+def _listen(resident_id):
+    import asyncio
+
+    from app.routers import live
+
+    ws = _Socket()
+    live._connections[ws] = {"resident_id": resident_id, "lock": asyncio.Lock()}
+    return ws
+
+
+def _stop(ws):
+    from app.routers import live
+
+    live._connections.pop(ws, None)
+    return [m["alert"] for m in ws.sent if m.get("t") == "alert.update"]
+
+
+async def test_a_resolved_alert_closes_the_takeover_over_the_websocket(client, db, resident):
+    alert = await _open_alert(db, resident)
+    ws = _listen(resident)
+    try:
+        r = await client.post(f"/v1/alerts/{alert['_id']}/resolve", headers=APP_HEADERS,
+                              json={"resolution": "false_positive"})
+        assert r.status_code == 200
+    finally:
+        pushed = _stop(ws)
+
+    assert pushed, "resolving an alert must push it"
+    assert pushed[-1]["closed_at"], "the phone dismisses the takeover on closed_at"
+    assert pushed[-1]["closed_at"] == r.json()["closed_at"], "REST and WS must not drift"
+
+
+async def test_an_open_alert_is_pushed_with_a_null_closed_at(client, db, resident):
+    ws = _listen(resident)
+    try:
+        await _open_alert(db, resident)
+    finally:
+        pushed = _stop(ws)
+    assert pushed and pushed[-1]["closed_at"] is None
+
+
+async def test_the_escalation_ladder_replays_in_order(client, db, resident):
+    """TECHNICAL_PRD §4.3: replayable from `events` alone — nothing is stored
+    for this, it is projected on read."""
+    from app import alerts
+
+    alert = await _open_alert(db, resident)
+    ws = _listen(resident)
+    try:
+        await alerts.ack(alert["_id"], by="Priya", channel="app")
+    finally:
+        pushed = _stop(ws)
+
+    r = await client.get(f"/v1/alerts/{alert['_id']}", headers=APP_HEADERS)
+    ladder = r.json()["ladder"]
+    assert [s["step"] for s in ladder] == ["suspected", "cancel_window", "acknowledged"]
+    assert [s["at"] for s in ladder] == sorted(s["at"] for s in ladder)
+    assert all(s["detail"] for s in ladder), "every row is a sentence the screen prints"
+    assert ladder[-1]["detail"].startswith("Priya is on it")
+    assert pushed[-1]["ladder"] == ladder, "REST and WS must not drift"

@@ -16,6 +16,9 @@ The review check is the last test in tests/test_vision_gate.py, which walks
 this package's AST and fails on any imwrite/VideoWriter/open() call.
 """
 
+import os
+
+
 # --- the one tuning dict ------------------------------------------------------
 # Every threshold in the cascade lives here so a real room can be re-tuned in one
 # place. THESE NUMBERS ARE NOT UNIVERSAL: a webcam in a bright kitchen with a
@@ -50,12 +53,13 @@ TUNING = dict(
     # YOLO answers person/visitor/food/posture every cycle at ~6 ms. The model
     # only writes the sentence, so it runs every 4th cycle. 1 = a model call
     # every time, as it used to be.
-    vlm_every_n=4,
+    vlm_every_n=int(os.getenv("VLM_EVERY_N", "4")),
     max_batch_wait_s=30,      # ...flushed after this long even if short
     absent_after_s=30,        # no person for this long -> "absent", no VLM call
     # --- worker cadence ---
     config_poll_s=10,
     heartbeat_s=30,
+    monitor_s=1.0,            # at most one monitor tick a second (telemetry, not data)
 )
 
 # --demo: the same rules, fast enough that a bite becomes a sentence inside the
@@ -75,6 +79,5 @@ JPEG_QUALITY = 70             # ~18 KB/frame to Ollama
 #   moondream     returned nothing usable on this schema
 # 2.5vl:3b answers in clean JSON with no thinking tax and got the same scene
 # right (person_count 1, sitting). Override with VLM_MODEL.
-import os
 VLM_MODEL = os.getenv("VLM_MODEL", "qwen2.5vl:3b")
 OLLAMA_HOST = "http://localhost:11434"

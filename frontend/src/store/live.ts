@@ -32,6 +32,23 @@ type LiveState = {
 
 let unsubscribe: (() => void) | null = null;
 
+// Mirrors MONITOR_STALE_S in backend/app/routers/camera.py. Keep in sync.
+const MONITOR_STALE_MS = 15_000;
+const staleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Drop a camera's tick once it stops being live. Each new tick pushes the
+ *  deadline out, so a healthy worker never trips it. */
+function expireTick(cameraId: string, set: (fn: (s: LiveState) => Partial<LiveState>) => void) {
+  clearTimeout(staleTimers.get(cameraId));
+  staleTimers.set(cameraId, setTimeout(() => {
+    staleTimers.delete(cameraId);
+    set((st) => {
+      const { [cameraId]: _gone, ...rest } = st.monitor;
+      return { monitor: rest };
+    });
+  }, MONITOR_STALE_MS));
+}
+
 export const useLive = create<LiveState>((set, get) => ({
   status: 'closed',
   states: {},
@@ -93,9 +110,20 @@ export const useLive = create<LiveState>((set, get) => ({
           activeAlert: s.activeAlert && s.activeAlert.id === m.alert_id ? null : s.activeAlert,
         }));
         break;
-      case 'camera.monitor':
-        set((st) => ({ monitor: { ...st.monitor, [m.tick.camera_id]: m.tick } }));
+      case 'camera.monitor': {
+        // The server spreads the tick into the envelope rather than nesting it
+        // (`{"t": "camera.monitor", **tick}`), so strip the discriminator back
+        // off to store a clean tick.
+        const { t: _t, ...tick } = m;
+        set((st) => ({ monitor: { ...st.monitor, [tick.camera_id]: tick } }));
+        // A tick is live telemetry, not a record: when the worker dies the
+        // pushes simply stop, and without this the console would keep showing
+        // that last confident "12 fps" forever. The hub drops ticks older than
+        // MONITOR_STALE_S (15 s) on the read path; this is the same rule on the
+        // push path, so both agree on when there is nothing to show.
+        expireTick(tick.camera_id, set);
         break;
+      }
       case 'presence.update':
         set((s) => ({ presence: { ...s.presence, [m.resident_id]: m.presence } }));
         break;

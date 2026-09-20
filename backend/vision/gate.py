@@ -85,6 +85,24 @@ class MotionGate:
     def moved(self, score):
         return score >= self.t["motion_ratio"]
 
+    def bbox(self):
+        """Normalised (x0, y0, x1, y1) around the last foreground, or None.
+
+        For the hub console ONLY — it is where something moved, which is not
+        the same claim as "a person is here". Nothing that reaches an
+        observation is derived from it; without a detector the VLM still owns
+        `person_count`.
+        """
+        import cv2
+
+        if self.fg is None:
+            return None
+        x, y, w, h = cv2.boundingRect((self.fg > 127).astype("uint8"))
+        if w == 0 or h == 0:
+            return None
+        fh, fw = self.fg.shape[:2]
+        return (x / fw, y / fh, (x + w) / fw, (y + h) / fh)
+
 
 # --- stage 3: person ----------------------------------------------------------
 

@@ -110,33 +110,36 @@ def _person(img, x, top, bottom, shade=(78, 84, 96)):
 class SyntheticCamera:
     """`--source synthetic`: a scripted day in a drawn living room, no webcam.
 
-    The point is NOT to fake observations — every frame here goes through the
-    real cascade (motion, person, keyframe, VLM) and the real POST. It is a
-    camera that exists on any machine, so the lane can be demoed, rehearsed and
-    debugged on a laptop with no device, no permission prompt and no room.
+    Everything downstream of perception is real — the motion gate, the keyframe
+    rules, the VLM call, the POST, the dedup, presence, the events, the
+    websocket. What is NOT real is the perception: no detector and no 3B model
+    reads a drawn figure as a person (measured on this machine: yolo11s scores
+    the figure at 0.04, i.e. noise, and the VLM answers "no person visible"). So
+    on this source `script()` says who is in the room and the cascade runs on
+    that, and every row it produces carries `simulated: true` — which is what
+    makes this an admission rather than a lie.
 
-    Deterministic: the frame is a pure function of the loop phase, and the phase
-    is wall-clock, so two runs started at the same second draw the same thing.
-    The loop is 120 s: empty room, she comes in, eats at the table with a plate,
-    moves to the armchair, a visitor sits with her, she leaves, empty room.
+    Deterministic: the frame and the script are pure functions of the loop
+    phase, and the phase is wall-clock, so two runs started at the same second
+    see the same day. The loop is 120 s: empty room, she comes in, eats at the
+    table with a plate, crosses to the armchair, a visitor sits with her, she
+    gets up and leaves, empty room.
 
-    ponytail: rectangles and circles, no sprites, no video file to ship. Ceiling:
-    a 3B VLM shown a cartoon says cartoon things — `activity` is often "unclear"
-    where a real frame would say "eating", and the structural half (person_count,
-    the plate) is what actually drives the demo. Upgrade: `--source clip.mp4`
-    with a real rehearsal recording, which `Camera` already plays and loops.
+    ponytail: rectangles and circles, no sprites, no video file to ship.
+    Ceiling: it proves the lane, not the perception — a bug in the prompt or the
+    detector cannot fail here. Upgrade: `--source clip.mp4` of a real room,
+    which `Camera` already plays and loops, and which does exercise both.
     """
 
     FPS = 30
     LOOP_S = 120.0
-    # (from_s, to_s) of the loop, in order. Anything outside them is an empty room.
-    IN_VIEW = (12.0, 110.0)
-    MEAL = (30.0, 70.0)
-    VISITOR = (82.0, 98.0)
 
     def __init__(self):
         self.t0 = time.monotonic()
         self._seq, self._frame = -1, None
+
+    def phase(self):
+        return (time.monotonic() - self.t0) % self.LOOP_S
 
     def read(self):
         seq = int((time.monotonic() - self.t0) * self.FPS)
@@ -146,6 +149,65 @@ class SyntheticCamera:
 
     def close(self):
         self._frame = None
+
+    # --- the script: one source of truth for where the people are -------------
+
+    def _figures(self, t):
+        """[(x_centre, top, bottom)] in frame pixels. The drawing and the
+        scripted observation both read this, so a box on the hub console is
+        always where the figure actually is."""
+        import numpy as np
+
+        jitter = int(6 * np.sin(t * 2.2))     # never perfectly still: MOG2 would
+        #                                       otherwise absorb her into the wall
+        if t < 12 or t >= 110:
+            return []
+        if t < 22:                            # walking in from the right
+            return [(440 - (t - 12) * 12, 60 + jitter, 215)]
+        if t < 74:                            # seated at the table
+            return [(330 + jitter, 96, 190)]
+        if t < 80:                            # crossing to the armchair
+            return [(330 - (t - 74) * 36, 60, 215)]
+        if t < 100:                           # settled in the armchair
+            her = [(86, 100 + jitter, 196)]
+            return her + [(170 - jitter, 98, 200)] if 82 <= t < 98 else her
+        return [(86 + (t - 100) * 40, 60, 215)]   # up and out of the room
+
+    def script(self, t=None):
+        """What is happening at loop phase `t`, as an Observation plus the
+        normalised boxes for the console."""
+        t = self.phase() if t is None else t
+        figs = self._figures(t)
+        boxes = []
+        for x, top, bottom in figs:
+            w = max((bottom - top) * 0.34, 6)
+            boxes.append([max(x - w / 2, 0) / FRAME_W, top / FRAME_H,
+                          min(x + w / 2, FRAME_W) / FRAME_W, bottom / FRAME_H])
+
+        def obs(activity, spot, **over):
+            base = dict(activity=activity, spot=spot, posture="seated", movement="slow",
+                        person_count=len(figs), assistive_device="none",
+                        plate_or_cup_present=False, food_visible=False,
+                        hand_to_mouth_observed=False, changed_between_frames=True,
+                        confidence=0.82, evidence=f"Scripted rehearsal frame at {t:.0f}s.",
+                        boxes=boxes)
+            return dict(base, **over)
+
+        if not figs:
+            return dict(ABSENT_SCRIPT, boxes=[])
+        if t < 22 or 74 <= t < 80 or t >= 100:
+            return obs("walking", "doorway" if t < 22 or t >= 100 else "other",
+                       posture="upright", movement="normal")
+        if 30 <= t < 70:
+            return obs("eating", "table", plate_or_cup_present=True, food_visible=True,
+                       hand_to_mouth_observed=True, confidence=0.86)
+        if 82 <= t < 98:
+            return obs("with_visitor", "armchair", confidence=0.79)
+        if t < 74:
+            return obs("sitting", "table")
+        return obs("reading", "armchair")
+
+    # --- the drawing ----------------------------------------------------------
 
     def _draw(self, t):
         import numpy as np
@@ -157,27 +219,24 @@ class SyntheticCamera:
         cv2.rectangle(f, (300, 158), (315, 205), (96, 120, 150), -1)  # table leg
         cv2.rectangle(f, (40, 120), (130, 200), (120, 110, 105), -1)  # armchair
 
-        lo, hi = self.IN_VIEW
-        if not lo <= t < hi:
-            return f
-        jitter = int(6 * np.sin(t * 2.2))        # never perfectly still: MOG2 would
-        #                                          absorb her into the background
-        if t < 22:                               # walking in from the right
-            _person(f, 440 - (t - lo) * 12, 60 + jitter, 215)
-        elif t < 74:                             # seated at the table
-            if self.MEAL[0] <= t < self.MEAL[1]:
-                cv2.ellipse(f, (330, 140), (22, 9), 0, 0, 360, (240, 240, 235), -1)  # plate
-                cv2.rectangle(f, (352, 132), (356, 148), (230, 230, 225), -1)        # cup
-                # the fork hand, going to the mouth and back — the one motion
-                # that makes "sitting at a table" into "eating"
-                cv2.line(f, (334, 138), (330, 118 + abs(jitter) * 2), (78, 84, 96), 5)
-            _person(f, 330 + jitter, 96, 190)
-        elif t < 80:                             # crossing to the armchair
-            _person(f, 330 - (t - 74) * 36, 60, 215)
-        elif t < 100:                            # settled in the armchair
-            _person(f, 86, 100 + jitter, 196)
-            if self.VISITOR[0] <= t < self.VISITOR[1]:
-                _person(f, 170 - jitter, 98, 200, shade=(64, 72, 88))
-        else:                                    # up and out of the room
-            _person(f, 86 + (t - 100) * 40, 60, 215)
+        if 30 <= t < 70:
+            cv2.ellipse(f, (330, 140), (22, 9), 0, 0, 360, (240, 240, 235), -1)  # plate
+            cv2.rectangle(f, (352, 132), (356, 148), (230, 230, 225), -1)        # cup
+            # the fork hand, going to the mouth and back — the one motion that
+            # makes "sitting at a table" into "eating"
+            cv2.line(f, (334, 138), (330, 118 + int(abs(12 * np.sin(t * 2.2)))),
+                     (78, 84, 96), 5)
+        for i, (x, top, bottom) in enumerate(self._figures(t)):
+            _person(f, x, top, bottom, shade=(78, 84, 96) if i == 0 else (64, 72, 88))
         return f
+
+
+# The scripted stand-in for "nobody is in the room". Kept beside the script
+# rather than imported from vlm.py, which would make capture.py depend on the
+# model layer for a dict of five words.
+ABSENT_SCRIPT = dict(
+    activity="absent", person_count=0, posture="unclear", movement="unclear",
+    spot="unclear", assistive_device="unclear", plate_or_cup_present=False,
+    food_visible=False, hand_to_mouth_observed=False, changed_between_frames=False,
+    confidence=0.9, evidence="No person visible in the room.",
+)

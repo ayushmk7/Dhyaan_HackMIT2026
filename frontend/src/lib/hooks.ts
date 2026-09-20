@@ -74,3 +74,19 @@ export const useProfile = (residentId: string) =>
     queryFn: () => api.getProfile(residentId),
     enabled: !!residentId,
   });
+
+// ---- the camera console ------------------------------------------------------
+// The tick arrives over the websocket (`camera.monitor`); this poll is the belt
+// under it, and the only way to see anything at all if the socket is down. 2 s,
+// because a console that updates once a minute does not read as live.
+
+export const useCameras = () =>
+  useQuery({ queryKey: ['cameras'], queryFn: api.listCameras });
+
+export const useCameraMonitor = (cameraId: string | undefined) =>
+  useQuery({
+    queryKey: ['monitor', cameraId],
+    queryFn: () => api.getCameraMonitor(cameraId!),
+    enabled: !!cameraId,
+    refetchInterval: 2000,
+  });

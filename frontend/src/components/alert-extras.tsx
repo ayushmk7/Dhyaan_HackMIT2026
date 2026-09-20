@@ -2,7 +2,7 @@
 // and the applause-line elapsed stat. White-on-vermilion by design.
 import React, { useEffect, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
-import { palette, sp } from '@/theme/tokens';
+import { mono, palette, sp } from '@/theme/tokens';
 import { useReducedMotion } from './entrance';
 import { Icon } from './icon';
 
@@ -102,7 +102,9 @@ const styles = StyleSheet.create({
     borderWidth: 4, borderColor: WHITE,
     alignItems: 'center', justifyContent: 'center',
   },
-  ringNumber: { fontSize: 56, fontWeight: '800', letterSpacing: -1, color: WHITE },
+  // Tabular, and mono: this number changes every second, and proportional
+  // digits make the whole ring twitch as 30 becomes 29 becomes 28.
+  ringNumber: { ...mono.big, fontSize: 56, lineHeight: 62, color: WHITE },
   caption: { fontSize: 14, lineHeight: 19, color: WHITE_SOFT, textAlign: 'center', maxWidth: 260 },
   pulseStage: { width: 140, height: 140, alignItems: 'center', justifyContent: 'center' },
   pulseRing: {
@@ -116,6 +118,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.6)',
     alignItems: 'center', justifyContent: 'center',
   },
-  statNumber: { fontSize: 44, lineHeight: 50, fontWeight: '800', letterSpacing: -1, color: palette.ink },
+  // The applause line is a measurement, so it is set like one.
+  statNumber: { ...mono.big, fontSize: 44, lineHeight: 50, color: palette.ink },
   statCaption: { fontSize: 16, lineHeight: 23, color: palette.inkMuted, marginTop: sp(1) },
 });

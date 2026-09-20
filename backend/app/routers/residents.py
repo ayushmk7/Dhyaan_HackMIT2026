@@ -425,17 +425,94 @@ async def list_alerts(state: str = "open"):
         res = rmap.get(a["resident_id"], {})
         item["resident_name"] = res.get("display_name")
         item["room"] = res.get("room")
+        item["closed_at"] = _closed_at(a)
         out.append(item)
     return out
 
 
-@router.get("/alerts/{alert_id}")
-async def get_alert(alert_id: str):
-    d = db()
-    a = await d.alerts.find_one({"_id": alert_id})
-    if not a:
-        raise HTTPException(404, "alert not found")
+# The FSM has more states than the takeover screen has phases, deliberately:
+# the family does not need to know the difference between RETRY_RESIDENT and
+# VOICEMAIL — both mean "she hasn't picked up". This is that projection, and it
+# is the app's vocabulary (frontend/src/lib/types.ts::LadderStep), not ours.
+_LADDER_STEP = {
+    "SUSPECTED": "suspected",
+    "LOCAL_CANCEL": "cancel_window",
+    "CALLING_RESIDENT": "calling_resident",
+    "CLASSIFYING": "calling_resident",     # she picked up; still on the phone
+    "RETRY_RESIDENT": "no_answer",
+    "VOICEMAIL": "no_answer",              # "a voicemail is not an answer" (PRD §5.6)
+    "CALLING_CONTACT_1": "calling_contact_1",
+    "CALLING_CONTACT_2": "calling_contact_2",
+    "ESCALATED_FINAL": "escalated_final",
+    "ACKNOWLEDGED": "acknowledged",
+    "CANCELLED": "cancelled",
+    "EXHAUSTED": "exhausted",
+    "RESOLVED_OK": "resolved",
+    "FELL_BUT_FINE": "resolved",
+    "MANUALLY_RESOLVED": "resolved",
+}
 
+_LADDER_LINE = {
+    "suspected": "A fall was suspected.",
+    "cancel_window": "Waiting half a minute, in case it was nothing.",
+    "calling_resident": "Calling her now.",
+    "no_answer": "She didn't answer.",
+    "calling_contact_1": "Calling her family next.",
+    "calling_contact_2": "Still no answer. Calling the next person.",
+    "escalated_final": "Nobody has picked up. Escalated.",
+    "exhausted": "The ladder ran out of people to call.",
+    "resolved": "Closed.",
+}
+
+
+def _ladder_step(e: dict) -> dict:
+    """One `events` row -> one LadderStep the takeover screen can render.
+
+    TECHNICAL_PRD §4.3: the ladder is replayable from `events` alone, and
+    `alerts.py::_apply` already writes one event per transition. So nothing is
+    stored for this — it is a projection, computed on read, and the REST body
+    and the websocket push both come from here.
+
+    `detail` is the line the screen prints, so it is a sentence, not the FSM's
+    internal dict. The raw states ride along beside it for staff and for
+    debugging a demo that went sideways.
+    """
+    pay = e.get("payload") or {}
+    # The alert-open event carries an alert_id but no transition — it is the
+    # "suspected" row, not a blank one.
+    step = _LADDER_STEP.get(pay.get("to_state") or "SUSPECTED", "suspected")
+    detail = pay.get("detail")
+    by = detail.get("by") if isinstance(detail, dict) else None
+    if step == "acknowledged":
+        line = f"{by} is on it. The ladder has stopped." if by else \
+            "Someone is on it. The ladder has stopped."
+    elif step == "cancelled":
+        line = f"Cancelled by {by}." if by else "Cancelled — a false alarm."
+    else:
+        line = _LADDER_LINE.get(step, step.replace("_", " "))
+    return {"step": step, "at": e["ts"], "detail": line,
+            "outcome": pay.get("trigger"),
+            "from_state": pay.get("from_state"), "state": pay.get("to_state")}
+
+
+def _closed_at(a: dict) -> str | None:
+    """When the takeover screen should stop taking over, as an ISO string.
+
+    The app reads exactly this field to dismiss the full-screen alert. It used
+    to be computed client-side from `state`, on the REST path only, so an alert
+    resolved while the phone was watching the websocket never closed. Deriving
+    it here is the fix: one definition, both paths.
+    """
+    if a.get("state") not in _terminal_states():
+        return None
+    return a.get("resolved_at") or a.get("updated_at")
+
+
+async def alert_response(a: dict) -> dict:
+    """The one alert shape. REST and the websocket both go through here, so
+    they cannot drift again."""
+    d = db()
+    alert_id = a["_id"]
     trigger = await d.events.find_one({"_id": a["trigger_event_id"]}) if a.get("trigger_event_id") else None
 
     # `db().calls` is now populated by app/voice.py's stub and by the Twilio
@@ -456,25 +533,22 @@ async def get_alert(alert_id: str):
     ladder_events = await d.events.find({
         "source": "derived", "payload.alert_id": alert_id,
     }).sort("ts_epoch", 1).to_list(None)
-    ladder = [
-        {
-            "at": e["ts"],
-            "from_state": (e.get("payload") or {}).get("from_state"),
-            "state": (e.get("payload") or {}).get("to_state"),
-            "trigger": (e.get("payload") or {}).get("trigger"),
-            "detail": (e.get("payload") or {}).get("detail"),
-        }
-        for e in ladder_events
-        # The alert-open event carries an alert_id but no transition, so it would
-        # render as a blank "None -> None" row at the top of the replay.
-        if (e.get("payload") or {}).get("to_state")
-    ]
+    ladder = [_ladder_step(e) for e in ladder_events]
 
     out = _ser(a)
+    out["closed_at"] = _closed_at(a)
     out["trigger_event"] = _ser(trigger) if trigger else None
     out["calls"] = [_ser(c) for c in call_events]
     out["ladder"] = ladder
     return out
+
+
+@router.get("/alerts/{alert_id}")
+async def get_alert(alert_id: str):
+    a = await db().alerts.find_one({"_id": alert_id})
+    if not a:
+        raise HTTPException(404, "alert not found")
+    return await alert_response(a)
 
 
 class AckBody(BaseModel):
@@ -506,7 +580,7 @@ async def ack_alert(alert_id: str, body: AckBody):
 
     a = await d.alerts.find_one({"_id": alert_id})
     await live.broadcast_alert(a)
-    return _ser(a)
+    return await alert_response(a)
 
 
 class ResolveBody(BaseModel):
@@ -538,7 +612,7 @@ async def resolve_alert(alert_id: str, body: ResolveBody):
     if not a:
         raise HTTPException(404, "alert not found")
     await live.broadcast_alert(a)
-    return _ser(a)
+    return await alert_response(a)
 
 
 class FeedbackBody(BaseModel):

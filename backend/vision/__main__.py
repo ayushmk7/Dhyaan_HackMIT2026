@@ -1,5 +1,7 @@
 """CLI: `python -m vision --source 0 --camera-id cam_mac_01`.
 
+  --source synthetic a scripted day in a drawn living room — no webcam, no
+                     permission prompt, and the real cascade end to end
   --dry-run          print the exact JSON it would POST, never post it
   --demo             faster keyframe rules for the 3-minute slot
   --no-yolo          the cut path: motion only, the VLM decides presence
@@ -22,8 +24,9 @@ def main(argv=None):
     p = argparse.ArgumentParser("python -m vision", description=__doc__,
                                formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--source", default="0",
-                   help="camera index (0 = MacBook camera, 1+ = Continuity Camera) "
-                        "or a path to a video/still for rehearsal")
+                   help="camera index (0 = MacBook camera, 1+ = Continuity Camera), "
+                        "a path to a video/still for rehearsal, or 'synthetic' for a "
+                        "scripted drawn room that needs no webcam")
     p.add_argument("--camera-id", default="cam_mac_01")
     p.add_argument("--api", default=os.getenv("DHYAAN_API", "http://localhost:8000"))
     p.add_argument("--band-key", default=os.getenv("BAND_KEY", "band-dev-key"))

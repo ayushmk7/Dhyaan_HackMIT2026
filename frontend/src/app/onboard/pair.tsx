@@ -1,10 +1,20 @@
 // Pair the band: the 6-digit code the band shows or reads aloud.
+//
+// What the server actually does with that code (POST /bands/pair): it upserts
+// a band row with that id against this resident, and refuses only when the id
+// already belongs to SOMEONE ELSE. It cannot check that a band with those six
+// digits exists, because nothing has heard from it yet. So this screen does
+// not say "Band connected" — it says what is true: the hub has this id on
+// file, here is the id it recorded, check it against the band, and it counts
+// as connected the moment the band sends its first reading.
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
-import { Btn, Row, Screen, StatusDot, Txt } from '@/components';
+import {
+  Btn, Card, DataLabel, Entrance, Marquee, Rule, Screen, Txt,
+} from '@/components';
 import { api } from '@/lib/api';
-import { palette, radius, sp } from '@/theme/tokens';
+import { mono, palette, radius, sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
 
 export default function Pair() {
@@ -12,71 +22,111 @@ export default function Pair() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [paired, setPaired] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [paired, setPaired] = useState<{ bandId: string } | null>(null);
 
   const pair = async () => {
     setBusy(true);
     setError(null);
     try {
-      await api.pairBand(code);
-      setPaired(true);
+      const band = await api.pairBand(code);
+      setPaired({ bandId: band.band_id });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'That code didn’t match. Try again.');
+      setError(e instanceof Error ? e.message : 'The hub didn’t accept that code.');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Screen>
-      <Txt kind="title">Pair {residentName}’s band</Txt>
-      <Txt kind="body" style={{ marginTop: sp(2) }}>
-        Type the 6-digit code the band shows.
-      </Txt>
+    <Screen
+      wash
+      floatingBar={
+        paired
+          ? <Btn label="Continue" onPress={() => router.push('/onboard/survey')} />
+          : <Btn label="Pair the band" onPress={pair} busy={busy} disabled={code.length !== 6} />
+      }
+    >
+      <Entrance index={0}>
+        <Marquee first title={`Pair ${residentName}’s band`} />
+        <Txt kind="body">
+          Type the 6-digit code the band shows.
+        </Txt>
+      </Entrance>
 
-      <TextInput
-        style={styles.code}
-        value={code}
-        onChangeText={(t) => { setCode(t.replace(/\D/g, '').slice(0, 6)); setError(null); }}
-        keyboardType="number-pad"
-        maxLength={6}
-        placeholder="000000"
-        placeholderTextColor={palette.line}
-        editable={!paired}
-        accessibilityLabel="6-digit pairing code"
-      />
+      <Entrance index={1}>
+        <TextInput
+          style={styles.code}
+          value={code}
+          onChangeText={(t) => { setCode(t.replace(/\D/g, '').slice(0, 6)); setError(null); }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          keyboardType="number-pad"
+          maxLength={6}
+          placeholder="000000"
+          placeholderTextColor={palette.line}
+          editable={!paired}
+          accessibilityLabel="6-digit pairing code"
+        />
+        <Rule
+          weight={focused ? 'ink' : 'hair'}
+          color={focused ? palette.ink : palette.line}
+        />
+      </Entrance>
 
-      {error && (
-        <Txt kind="caption" tone="alert" style={{ textAlign: 'center', marginTop: sp(2) }}>{error}</Txt>
+      {!!error && (
+        <Entrance index={2}>
+          <Txt kind="caption" tone="alert" style={{ marginTop: sp(3) }} accessibilityLiveRegion="polite">
+            {error}
+          </Txt>
+        </Entrance>
       )}
 
-      {paired ? (
-        <View style={{ marginTop: sp(6) }}>
-          <Row gap={2} style={{ justifyContent: 'center', marginBottom: sp(6) }}>
-            <StatusDot state="ok" />
-            <Txt kind="label" tone="ok">Band connected</Txt>
-          </Row>
-          <Btn label="Continue" onPress={() => router.push('/onboard/survey')} />
-        </View>
-      ) : (
-        <View style={{ marginTop: sp(6) }}>
-          <Btn label="Pair the band" onPress={pair} busy={busy} disabled={code.length !== 6} />
-        </View>
+      {!!paired && (
+        <Entrance index={2}>
+          <Card style={{ marginTop: sp(6) }}>
+            <DataLabel value={paired.bandId}>Band on file</DataLabel>
+            <Rule style={{ marginTop: sp(2.5) }} />
+            <Txt kind="body" style={{ marginTop: sp(3) }}>
+              Her hub recorded that band as {residentName}’s. It has not heard from the
+              band itself yet — it will count as connected the moment the band sends its
+              first reading.
+            </Txt>
+            <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>{/* voice-ok */}
+              Check those digits against the ones printed on the band. The hub accepts
+              any six digits, so a typo here would file her falls under a band nobody
+              is wearing.
+            </Txt>
+            <Btn
+              kind="quiet"
+              label="Type a different code"
+              style={{ marginTop: sp(4) }}
+              onPress={() => { setPaired(null); setCode(''); }}
+            />
+          </Card>
+        </Entrance>
       )}
+
+      <View style={{ height: sp(6) }} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  // The code is a machine reading, so it wears the machine face: Menlo,
+  // tabular, on a plate with an exposed rule beneath — the same grammar as
+  // <Field>, which cannot do centred six-digit figures.
   code: {
-    fontSize: 34,
-    fontWeight: '700',
+    ...mono.big,
+    fontSize: 38,
+    lineHeight: 46,
     letterSpacing: 8,
     textAlign: 'center',
     color: palette.ink,
     backgroundColor: palette.raised,
-    borderRadius: radius.card,
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
     paddingVertical: sp(5),
-    marginTop: sp(8),
+    marginTop: sp(7),
   },
 });

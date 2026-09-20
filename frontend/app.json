@@ -41,6 +41,7 @@
       "reactCompiler": true
     },
     "extra": {
+      "_note_eas_projectId": "REPLACE extra.eas.projectId below. Run `npx eas init` on a machine signed in to an Expo account; it writes the real UUID here. Until then push notifications CANNOT register: src/lib/push.ts refuses any id starting with REPLACE, and Settings (long-press the first section) shows the button as 'Push needs an EAS project id'. Nothing else in the app depends on this value.",
       "eas": {
         "projectId": "REPLACE-AFTER-eas-init"
       }

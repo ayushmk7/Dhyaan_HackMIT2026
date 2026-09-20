@@ -8,14 +8,15 @@
 // expects, that's adapted here (each such spot is commented), never in the
 // screen. Where the real backend still has no equivalent endpoint at all,
 // the function says so and throws or degrades instead of faking data.
-import { planFromThread as aiPlanFromThread, polishLetter, type FamilyPlan } from './ai';
+import { draftOpeners, planFromThread as aiPlanFromThread, polishLetter, type FamilyPlan } from './ai';
 import { API_BASE, API_KEY } from './config';
 import { useSession } from '@/store/session';
 import type {
   ActivityDay, Alert, AlertKind, AlertSeverity, BaselineFeature, CallRow,
   ChatMessage, Contact, DaySummary, Fact, KEvent, LocationMethod,
   LocationSegment, LoginResult, MemoryDeleted, MemoryScope, Presence, Profile,
-  ProfilePatch, Resident, ResidentLocation,
+  ProfilePatch, Resident, ResidentLocation, CameraMonitorTick, CameraSummary,
+  SimulateKind, VoiceScript,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -337,22 +338,36 @@ export const httpApi = {
     };
   },
 
-  // POST /admin/simulate — the real demo trigger, walking the real ingest
-  // path (FSM + websocket + app all react as they would for a band). Not
-  // every kind is guaranteed an alert_id (e.g. a plain "walk"); this
-  // signature only ever passes fall/bathroom, which the contract's own note
-  // says must produce one, so a missing alert_id surfaces as a real error
-  // rather than a fabricated Alert card.
-  simulate: async (kind: 'fall' | 'bathroom' = 'fall', forResident = residentId()): Promise<Alert> => {
+  // POST /admin/simulate — the real demo trigger, walking the real ingest path
+  // (FSM + websocket + app all react as they would for a band). Only `fall`
+  // is guaranteed to open an alert: `bathroom` opens one on a dwell threshold
+  // the backend may not have crossed, and `walk` is benign by design. So this
+  // returns `Alert | null` and the caller decides — the old version threw
+  // "Simulated event did not open an alert" on every bathroom rehearsal.
+  // `script` picks the voice-call outcome the backend will play out
+  // (setup.py's Literal); omitted, the process keeps whatever it had.
+  simulate: async (
+    kind: SimulateKind = 'fall',
+    forResident = residentId(),
+    script?: VoiceScript,
+  ): Promise<Alert | null> => {
     const body = await post<{ event_id: string; alert_id?: string }>('/admin/simulate', {
-      resident_id: forResident,
-      kind,
+      resident_id: forResident, kind, ...(script ? { script } : {}),
     });
-    if (!body.alert_id) {
-      throw new Error('Simulated event did not open an alert.');
-    }
+    if (!body.alert_id) return null;
     return toAlert(await get<RawAlert>(`/alerts/${body.alert_id}`));
   },
+
+  // POST /residents/{id}/notes — a staff or family note, stored as a real
+  // event so it is retrievable and shows up on the timeline like anything else.
+  addNote: async (residentId_: string, text: string, role: 'staff' | 'family' = 'family'): Promise<void> => {
+    await post(`/residents/${residentId_}/notes`, { text, role });
+  },
+
+  // POST /admin/rollup — runs the nightly baseline + narrative pass now.
+  // Without it a freshly seeded backend has no daily summaries at all and
+  // Her day reads "Today's isn't written yet" forever.
+  rollup: async (): Promise<void> => { await post('/admin/rollup'); },
 
   // POST /bands/pair — contract body is {band_id, resident_id}, but
   // onboard/pair.tsx only ever collects a 6-digit code shown on the band, no
@@ -474,7 +489,11 @@ export const httpApi = {
 
   getActivity: async (residentId: string, date: string): Promise<ActivityDay> => {
     try {
-      return await get<ActivityDay>(`/residents/${residentId}/activity?date=${date}`);
+      const day = await get<ActivityDay>(`/residents/${residentId}/activity?date=${date}`);
+      // The route sorts ascending (camera.py `.sort("ts_epoch", 1)`), but every
+      // screen reads `items[0]` as the most recent thing that happened — Today
+      // labels it "Last noticed". Reverse once here rather than in each screen.
+      return { ...day, items: [...day.items].reverse() };
     } catch (e) {
       if (isNotFound(e)) {
         return {
@@ -522,6 +541,36 @@ export const httpApi = {
       scope, confirm: confirm.trim(),
     })).deleted,
 
+  // ---- the camera console -------------------------------------------------
+  // Telemetry about the worker. `GET /cameras/{id}/monitor` 404s until the
+  // worker has posted a tick, which is the honest "nothing is running" state —
+  // returning null lets the console say so instead of inventing a feed.
+
+  listCameras: (): Promise<CameraSummary[]> =>
+    get<CameraSummary[]>('/cameras'),
+
+  // The route answers `{camera, online, tick}` — an envelope, because "which
+  // camera, and is it alive" is the half of the answer that still exists when
+  // no tick does. `tick` is null until the worker posts one, and that null is
+  // the console's real "nothing is running" state: never synthesize one.
+  getCameraMonitor: async (cameraId: string): Promise<CameraMonitorTick | null> => {
+    try {
+      const body = await get<{ tick: CameraMonitorTick | null }>(`/cameras/${cameraId}/monitor`);
+      return body.tick ?? null;
+    } catch (e) {
+      if (isNotFound(e)) return null; // camera deleted mid-session
+      throw e;
+    }
+  },
+
+  pauseCamera: async (cameraId: string, hours = 2): Promise<void> => {
+    await post(`/cameras/${cameraId}/pause`, { hours });
+  },
+
+  resumeCamera: async (cameraId: string): Promise<void> => {
+    await post(`/cameras/${cameraId}/resume`);
+  },
+
   simulateCamera: async (kind: 'meal' | 'visitor' | 'out_of_view'): Promise<void> => {
     await post('/admin/simulate', { resident_id: residentId(), kind });
   },
@@ -535,7 +584,15 @@ export const httpApi = {
   // ponytail: connection layer has no backend endpoints yet — live path is a
   // Muse Spark call over GET /residents/{id}/events (Meta challenge), and a
   // /messages endpoint fed by the voice agent's leave_message tool.
-  talkAbout: async (): Promise<string[]> => [],
+  // Openers are drafted by Claude over today's real observations (the mock
+  // already did exactly this; there was never a reason for the real client to
+  // return nothing). No key configured -> no openers, and Today drops the
+  // section rather than inventing conversation starters.
+  talkAbout: async (): Promise<string[]> => {
+    const events = await httpApi.getEvents(residentId()).catch(() => []);
+    if (!events.length) return [];
+    return (await draftOpeners(events.slice(0, 20).map((e) => e.embedding_text))) ?? [];
+  },
   latestMessage: async (): Promise<{ text: string; at: string } | null> => null,
   planFromThread: async (thread: string): Promise<FamilyPlan> =>
     (await aiPlanFromThread(thread)) ?? {

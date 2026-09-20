@@ -232,7 +232,7 @@ export type WsEnvelope =
   | { t: 'resident.state'; resident_id: string; state: ResidentState; reason?: string }
   | { t: 'alert.update'; alert: Alert; resident_id: string | null } // real: live.py broadcast_alert
   | { t: 'presence.update'; resident_id: string; presence: Presence } // VLM_PLAN §6.1
-  | { t: 'camera.monitor'; tick: CameraMonitorTick } // the console's live feed
+  | ({ t: 'camera.monitor' } & CameraMonitorTick) // flat, not nested — see camera.py
   | { t: 'ping' }; // real: live.py's 25s keepalive
 
 // ---------------------------------------------------------------------------
@@ -283,6 +283,12 @@ export interface CameraSummary {
   last_heartbeat_at: string | null;
   online: boolean;
 }
+
+/** `/admin/simulate` kinds. Only `fall` is guaranteed to open an alert. */
+export type SimulateKind = 'fall' | 'bathroom' | 'walk';
+
+/** How the simulated voice call plays out (backend setup.py's Literal). */
+export type VoiceScript = 'okay' | 'distress' | 'fell_but_fine' | 'no_answer' | 'silence';
 
 export type PresenceStatus =
   | 'in_view' | 'out_of_view' | 'paused' | 'camera_off' | 'no_camera';

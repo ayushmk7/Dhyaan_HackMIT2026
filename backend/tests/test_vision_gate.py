@@ -14,8 +14,9 @@ import pytest
 
 cv2 = pytest.importorskip("cv2", reason='camera lane extra: uv pip install -e ".[vision]"')
 
-from vision import DEMO, TUNING
-from vision.gate import MotionGate, apply_mask, aspect, parse_mask, posture_band
+from vision import DEMO, TUNING, vlm, worker
+from vision.gate import (MotionGate, PersonGate, apply_mask, aspect, parse_mask,
+                         posture_band)
 from vision.keyframe import KeyframeSelector, RingBatch
 
 H, W = 360, 640
@@ -309,3 +310,199 @@ def test_no_module_in_the_vision_package_touches_the_filesystem():
             if name == "open":
                 where = (path.name, scope.get(id(node)))
                 assert where in allowed_open, f"{path.name}:{node.lineno} opens a file in {where[1]}"
+
+
+# --- stage 3: one YOLO pass, four answers -------------------------------------
+#
+# The model is faked: a real one would need torch, a 5 MB download and a
+# webcam, and none of those prove what this file is for — that the class ids
+# land in the right buckets and that the largest person is the one the cascade
+# tracks.
+
+class _Tensor:
+    def __init__(self, v):
+        self._v = v
+
+    def tolist(self):
+        return self._v
+
+
+class _Result:
+    def __init__(self, pairs):
+        self.boxes = type("B", (), {
+            "cls": _Tensor([c for c, _ in pairs]),
+            "xyxy": _Tensor([list(b) for _, b in pairs]),
+        })()
+
+
+class _FakeYOLO:
+    """Records what it was asked for, so the `classes=` filter is testable too."""
+
+    def __init__(self, pairs):
+        self.pairs, self.asked = pairs, None
+
+    def predict(self, frame, classes=None, **kw):
+        self.asked = classes
+        return [_Result(self.pairs)]
+
+
+def fake_gate(pairs):
+    g = PersonGate(enabled=False)      # no ultralytics, no torch, no download
+    g.enabled, g.model = True, _FakeYOLO(pairs)
+    return g
+
+
+def test_scene_splits_people_food_dishes_and_seating():
+    g = fake_gate([
+        (0, (10, 10, 40, 120)),       # a person
+        (0, (200, 10, 300, 220)),     # a bigger person
+        (53, (50, 50, 70, 70)),       # pizza  -> food
+        (41, (80, 50, 90, 65)),       # cup    -> dishes
+        (45, (95, 50, 110, 62)),      # bowl   -> dishes
+        (60, (0, 100, 300, 160)),     # dining table -> seating
+        (16, (0, 0, 20, 20)),         # a dog: named by nothing, counted as nothing
+    ])
+    s = g.scene(blank())
+    assert s["person_count"] == 2
+    assert s["food"] == ["pizza"]
+    assert s["dishes"] == ["bowl", "cup"]
+    assert s["seating"] == ["dining table"]
+    # Largest first: the cascade tracks one person, and it must be the one
+    # filling the frame, not whoever the detector happened to list first.
+    assert s["boxes"][0] == (200, 10, 300, 220)
+
+
+def test_scene_asks_for_only_the_classes_it_can_name():
+    g = fake_gate([])
+    g.scene(blank())
+    assert set(g.model.asked) == {0} | set(PersonGate.FOOD_IDS) | set(PersonGate.DISH_IDS) | \
+        set(PersonGate.SEAT_IDS)
+
+
+def test_scene_off_returns_the_same_shape_empty():
+    """The cut path must not hand callers a different type to branch on."""
+    s = PersonGate(enabled=False).scene(blank())
+    assert s == {"person_count": 0, "boxes": [], "food": [], "dishes": [], "seating": []}
+
+
+def test_a_missing_ultralytics_is_the_cut_path_not_a_crash(monkeypatch):
+    import builtins
+
+    real = builtins.__import__
+
+    def no_ultralytics(name, *a, **kw):
+        if name in ("ultralytics", "torch"):
+            raise ImportError(f"no {name}")
+        return real(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", no_ultralytics)
+    g = PersonGate(enabled=True)
+    assert g.enabled is False and g.model is None
+
+
+# --- the override: YOLO counts, the VLM narrates ------------------------------
+
+def vlm_said(**over):
+    said = dict(vlm.ABSENT, activity="sitting", person_count=1, spot="table",
+                confidence=0.7, evidence="A person is seated at a table.")
+    return dict(said, **over)
+
+
+def test_yolo_overrules_the_models_person_count():
+    """Counting is what a detector is for. A 3B model asked to count in prose
+    gets it wrong, and this split is what present/absent hangs off.
+
+    With VISITOR_DETECTION off (the default) the count is clamped to one: the
+    product answers "she is there" or "she is not", never "there are four
+    people". A room full of strangers is the room, not the story - and in a
+    hall it is true of every frame, which drowns everything else.
+    """
+    obs = vlm.merge_scene(vlm_said(person_count=0),
+                          {"person_count": 4, "boxes": [], "food": [], "dishes": [],
+                           "seating": ["couch"]})
+    assert obs["person_count"] == 1          # clamped, not 4
+    assert vlm.post_rules(obs)["activity"] != "absent"
+
+
+def test_visitor_detection_can_be_switched_back_on(monkeypatch):
+    """The capability is intact, just off. A real home wants it."""
+    monkeypatch.setattr(vlm, "VISITORS", True)
+    obs = vlm.merge_scene(vlm_said(person_count=1),
+                          {"person_count": 2, "boxes": [], "food": [], "dishes": [],
+                           "seating": []})
+    assert obs["person_count"] == 2
+    assert vlm.post_rules(obs)["activity"] == "with_visitor"
+
+
+def test_yolo_may_add_food_but_never_subtract_it():
+    """COCO has no class for toast, porridge or soup. A detector that saw no
+    food has not refuted a model that did — zeroing this would lose exactly the
+    hand-held meals `food_visible` was added for."""
+    scene = {"person_count": 1, "boxes": [], "food": [], "dishes": [], "seating": []}
+    kept = vlm.merge_scene(vlm_said(food_visible=True, hand_to_mouth_observed=True), scene)
+    assert kept["food_visible"] is True
+    assert vlm.post_rules(kept)["activity"] == "eating"
+
+    added = vlm.merge_scene(vlm_said(food_visible=False), dict(scene, food=["sandwich"]))
+    assert added["food_visible"] is True
+    assert "sandwich" in added["evidence"]
+
+
+def test_no_scene_is_the_identity():
+    """No detector ran on these frames, so there is nothing to overrule with."""
+    said = vlm_said()
+    assert vlm.merge_scene(said, None) == said
+    assert vlm.merge_scene(said, None) is not said     # ...and it is a copy
+
+
+def test_a_stale_scene_cannot_reach_a_later_observation():
+    """The bug this guards: YOLO sees a sandwich, then the person walks off and
+    a later batch flushes on a frame no detector ran on. If `scene` survived,
+    that observation would report food nobody can see."""
+    w = worker.Worker(source="synthetic", camera_id="cam_x", api="http://localhost:0",
+                      band_key="k", dry_run=True)
+    g = fake_gate([(0, (10, 10, 40, 120)), (48, (50, 50, 70, 70))])
+
+    box, seen = w._detect(g, blank(), run_it=True, moved=True, motion=None)
+    assert seen and box is not None
+    assert w.scene["food"] == ["sandwich"]
+    assert w.boxes == [[10 / W, 10 / H, 40 / W, 120 / H]], "boxes leave here normalised"
+
+    w._detect(g, blank(), run_it=False, moved=False, motion=None)
+    assert w.scene is None
+    assert vlm.merge_scene(vlm_said(), w.scene)["food_visible"] is False
+
+
+def test_the_cut_path_lets_motion_be_presence():
+    w = worker.Worker(source="synthetic", camera_id="cam_x", api="http://localhost:0",
+                      band_key="k", dry_run=True)
+    g = MotionGate()
+    settled(g)
+    g.score(with_block(120, 60, 420, 330))
+    box, seen = w._detect(PersonGate(enabled=False), blank(), run_it=True,
+                          moved=True, motion=g)
+    assert (box, seen) == (None, True)
+    assert w.scene is None                      # nothing structural was observed
+    assert len(w.boxes) == 1 and all(0.0 <= c <= 1.0 for c in w.boxes[0])
+
+
+# --- the synthetic source -----------------------------------------------------
+
+def test_the_synthetic_day_is_deterministic_and_scripted():
+    from vision.capture import SyntheticCamera
+
+    cam = SyntheticCamera()
+    assert (cam._draw(5.0) == cam._draw(5.0)).all()          # pure function of the phase
+    assert (cam._draw(5.0) == cam._draw(115.0)).all()        # both ends are an empty room
+    assert (cam._draw(5.0) != cam._draw(40.0)).any()         # ...and the middle is not
+
+    g = MotionGate()
+    fired = []
+    k = KeyframeSelector(DEMO)
+    for i in range(int(SyntheticCamera.LOOP_S * 3)):         # the cascade's own 3 fps
+        t = i / 3.0
+        if (r := k.update(t, g.moved(g.score(cam._draw(t))))):
+            fired.append(r)
+    # It must drive the real cascade with no webcam and no detector: someone
+    # arrives, is seen more than once, and goes away again.
+    assert "appear" in fired and "dwell" in fired and "absent" in fired

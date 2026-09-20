@@ -2,11 +2,12 @@
 // escalation ladder, and 14-day sparklines. Pure Views — no chart library.
 import React, { useEffect, useState } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
-import { hue, palette, sp, radius, type, zoneColor } from '@/theme/tokens';
+import { hue, mono, palette, sp, rule as ruleW, zoneColor } from '@/theme/tokens';
 import type { KEvent, LadderStep, LocationSegment } from '@/lib/types';
 import { displaySentence, eventTitle, mins, timeOf, zoneLabel } from '@/lib/format';
 import { eventSymbol, Icon } from './icon';
 import { Txt, Row } from './ui';
+import { Rule } from './brutal';
 
 // ---- THE row (Health anatomy) ---------------------------------------------------
 // One row species for the whole app: tiny tinted glyph + tinted label up top,
@@ -32,16 +33,17 @@ export function MetricRow({
           <Text style={{ fontSize: 13, fontWeight: '600', color: tint }}>{label}</Text>
         </Row>
         <Row gap={1}>
-          {!!time && <Text style={{ fontSize: 12, color: palette.inkMuted }}>{time}</Text>}
+          {!!time && <Text style={[mono.stamp, { color: palette.inkMuted }]}>{time}</Text>}
           {onPress && <Icon name="chevron.right" size={11} color="#C7C7CC" />}
         </Row>
       </Row>
       {value != null ? (
         <Row gap={1} style={{ alignItems: 'baseline', marginTop: 2 }}>
-          <Text style={{ fontSize: 24, fontWeight: '700', letterSpacing: -0.4, color: palette.ink }}>
-            {value}
-          </Text>
-          {!!unit && <Text style={{ fontSize: 13, color: palette.inkMuted }}>{unit}</Text>}
+          {/* The datum is the one brutalist note in an otherwise soft row:
+              tabular mono, so a column of them lines up and a changing number
+              does not reflow the row it lives in. */}
+          <Text style={[mono.big, { color: palette.ink }]}>{value}</Text>
+          {!!unit && <Text style={[mono.stamp, { color: palette.inkMuted }]}>{unit}</Text>}
         </Row>
       ) : sentence ? (
         <Text
@@ -99,13 +101,15 @@ export function RoomTimeBar({ segments, night = false }: { segments: LocationSeg
           />
         ))}
       </View>
+      {/* The bar sits ON a line rather than floating: a measurement needs a
+          baseline to be read against, and the hard rule is that baseline. */}
+      <Rule weight="hair" night={night} />
       <Row style={{ marginTop: sp(2), flexWrap: 'wrap' }} gap={3}>
         {top.map(([zone, s]) => (
           <Row key={zone} gap={1.5}>
             <View style={[styles.swatch, { backgroundColor: zoneColor[zone] ?? zoneColor.unknown }]} />
-            <Txt kind="caption" tone={night ? 'nightMuted' : 'muted'}>
-              {zoneLabel(zone)} · {mins(s)}
-            </Txt>
+            <Txt kind="caption" tone={night ? 'nightMuted' : 'muted'}>{zoneLabel(zone)}</Txt>
+            <Txt kind="stamp" tone={night ? 'nightMuted' : 'muted'}>{mins(s)}</Txt>
           </Row>
         ))}
       </Row>
@@ -148,13 +152,13 @@ export function LadderTimeline({ steps, night = true }: { steps: LadderStep[]; n
             </View>
             <View style={{ flex: 1, paddingBottom: sp(4) }}>
               <Row style={{ justifyContent: 'space-between' }}>
-                <Text style={[type.caption, { color: muted }]}>
-                  {String(i + 1).padStart(2, '0')} · {timeOf(s.at)}
+                <Text style={[mono.micro, { color: muted }]}>
+                  {String(i + 1).padStart(2, '0')} · {timeOf(s.at).toUpperCase()}
                 </Text>
               </Row>
-              <Text style={[type.body, { color: ink, fontWeight: current ? '600' : '400', marginTop: 1 }]}>
+              <Txt kind="body" style={{ color: ink, fontWeight: current ? '600' : '400', marginTop: 1 }}>
                 {s.detail}
-              </Text>
+              </Txt>
             </View>
           </View>
         );
@@ -166,6 +170,18 @@ export function LadderTimeline({ steps, night = true }: { steps: LadderStep[]; n
 // ---- Sparkline -----------------------------------------------------------------------
 
 export function Sparkline({ series, tone = palette.slate, height = 34 }: { series: number[]; tone?: string; height?: number }) {
+  // The real backend sends one point per feature (`last_value`), or none at
+  // all when a baseline hasn't been learned yet. A one-bar "trend" is a lie
+  // and an empty one used to render as a silent void, so both say so.
+  if (series.length < 2) {
+    return (
+      <View style={{ height, justifyContent: 'flex-end' }}>
+        <Txt kind="caption" tone="muted">
+          {series.length === 0 ? 'No readings yet' : 'Only one reading so far'}
+        </Txt>
+      </View>
+    );
+  }
   const max = Math.max(...series, 1);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 3, height }}>
@@ -185,26 +201,15 @@ export function Sparkline({ series, tone = palette.slate, height = 34 }: { serie
 }
 
 const styles = StyleSheet.create({
-  eventRow: {
-    flexDirection: 'row',
-    gap: sp(3),
-    paddingVertical: sp(3),
-    alignItems: 'flex-start',
-  },
-  glyph: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: palette.raised,
-    borderWidth: 1, borderColor: palette.line,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  glyphDeviation: { borderColor: palette.ochre, borderWidth: 2 },
+  // Square, not a pill, and taller: it is a measurement, and a rounded end
+  // lies about where the first and last segment actually begin.
   bar: {
     flexDirection: 'row',
-    height: 14,
-    borderRadius: radius.pill,
+    height: 20,
     overflow: 'hidden',
+    marginBottom: ruleW.hair,
   },
-  swatch: { width: 10, height: 10, borderRadius: 3 },
+  swatch: { width: 10, height: 10 },
   pulseDot: { width: 12, height: 12, borderRadius: 6, marginTop: 4 },
   doneDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 2, marginTop: 5 },
   ladderLine: { width: 2, flex: 1, marginTop: 4 },

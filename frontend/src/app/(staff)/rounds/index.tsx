@@ -1,83 +1,187 @@
 // Night rounds: 23:00–07:00 mode. Only what deviated tonight, darkest screen
-// in the app — Marcus reads this in a dim corridor.
-import { LinearGradient } from 'expo-linear-gradient';
+// in the app — Marcus reads this in a dim corridor, so it is the most
+// instrument-like surface on the staff side: cream-on-black, tabular figures,
+// hard rules, no decoration.
+//
+// It used to be permanently "All quiet tonight": it filtered `res_eleanor`
+// (the only seeded resident) out, then filtered what was left down to
+// `attention | alerting | offline` — and `backend/app/routers/residents.py`
+// only ever sends `alerting` or `ok`. Now it ranks on states that can actually
+// occur (see `(staff)/_layout.tsx`), and when nothing deviates it still shows
+// the roll call with each band's last signal, because a rounds screen that
+// renders one sentence tells the night nurse nothing.
+import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Card, ErrorState, LoadingState, Row, StateChip, StatusDot, Txt } from '@/components';
-import { ago } from '@/lib/format';
+import React, { useCallback, useState } from 'react';
+import { Pressable, RefreshControl, View } from 'react-native';
+import {
+  Card, DataLabel, ErrorState, Hairline, LoadingState, Marquee, Row, Screen, Stagger,
+  StateChip, StatusDot, Txt,
+} from '@/components';
+import { timeOf } from '@/lib/format';
 import { useResidents } from '@/lib/hooks';
+import type { Resident } from '@/lib/types';
 import { useLive } from '@/store/live';
-import { palette, sp } from '@/theme/tokens';
+import { elevation, palette, radius, sp } from '@/theme/tokens';
 import type { ResidentState } from '@/theme/tokens';
+import { NEEDS_EYES, TIER, deriveState, pad2, triageReason } from '../_layout';
 
-const SEVERITY: Record<ResidentState, number> = {
-  alerting: 0, attention: 1, offline: 2, learning: 3, ok: 4,
-};
+type RoundsItem = Resident & { state: ResidentState; reason: string | null };
 
 export default function Rounds() {
-  const insets = useSafeAreaInsets();
-  const { data, isLoading, isError, refetch } = useResidents();
+  const qc = useQueryClient();
+  const { data, isLoading, isError, refetch, dataUpdatedAt } = useResidents();
   const liveStates = useLive((s) => s.states);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const deviating = (data ?? [])
-    .filter((r) => r.id !== 'res_eleanor')
-    .map((r) => ({ ...r, state: liveStates[r.id] ?? r.state }))
-    .filter((r) => r.state === 'attention' || r.state === 'alerting' || r.state === 'offline')
-    .sort((a, b) => SEVERITY[a.state] - SEVERITY[b.state]);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await qc.invalidateQueries();
+    setRefreshing(false);
+  }, [qc]);
+
+  const refreshControl = (
+    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.nightMuted} />
+  );
+
+  const rows: RoundsItem[] = (data ?? [])
+    .map((r) => {
+      const state = deriveState(r, liveStates[r.id], r.open_alerts > 0);
+      return { ...r, state, reason: triageReason(r, state, undefined) };
+    })
+    .sort((a, b) => TIER[a.state] - TIER[b.state]);
+
+  const deviating = rows.filter((r) => NEEDS_EYES.includes(r.state));
+  const quiet = rows.filter((r) => !NEEDS_EYES.includes(r.state));
 
   return (
-    <View style={{ flex: 1, backgroundColor: palette.night }}>
-      <LinearGradient colors={[palette.night, '#0B1016']} style={StyleSheet.absoluteFill} />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{
-          paddingTop: sp(2),
-          paddingHorizontal: sp(4),
-          paddingBottom: insets.bottom + sp(6),
-        }}
-        showsVerticalScrollIndicator={false}
-      >
+    <Screen native night wash refreshControl={refreshControl}>
       {isLoading && !data && <LoadingState label="Loading tonight's rounds…" night />}
       {isError && !data && (
         <ErrorState message="Couldn’t reach the floor list." onRetry={refetch} night />
       )}
 
-      <View style={{ marginTop: sp(5), gap: sp(3) }}>
-        {!isLoading && !isError && deviating.map((r) => (
-          <Pressable
-            key={r.id}
-            accessibilityRole="button"
-            onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
+      {!isLoading && !isError && (
+        <Stagger>
+          {/* Inverted: cream slab on the night ground. One such moment, here. */}
+          <View
+            style={{
+              backgroundColor: palette.nightInk,
+              borderRadius: radius.glass,
+              paddingHorizontal: sp(4.5),
+              paddingVertical: sp(4),
+              ...elevation.takeover,
+            }}
           >
-            {({ pressed }) => (
-              <Card night style={pressed ? { opacity: 0.7 } : undefined}>
-                <Row style={{ justifyContent: 'space-between' }}>
-                  <Row gap={2}>
-                    {r.state === 'alerting' && <StatusDot state="alerting" />}
-                    <Txt kind="label" tone="nightInk">{r.display_name}</Txt>
-                    <Txt kind="caption" tone="nightMuted">· {r.room}</Txt>
-                  </Row>
-                  <StateChip state={r.state} />
-                </Row>
-                <Txt kind="body" tone="nightInk" style={{ marginTop: sp(2) }}>
-                  {r.attention_reason ?? 'Needs a look'}
+            <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }}>
+              <View>
+                <DataLabel tone={palette.night}>Needs a look</DataLabel>
+                <Txt kind="data" style={{ fontSize: 46, lineHeight: 50, color: palette.night, marginTop: sp(1) }}>
+                  {pad2(deviating.length)}
                 </Txt>
-                <Txt kind="caption" tone="nightMuted" style={{ marginTop: sp(1) }}>
-                  Last signal {r.last_seen ? ago(r.last_seen) : 'never'}
-                </Txt>
-              </Card>
+              </View>
+              <View style={{ alignItems: 'flex-end', gap: sp(1.5) }}>
+                <DataLabel tone={palette.night} value={pad2(rows.length)}>On the floor</DataLabel>
+                <DataLabel
+                  tone={palette.night}
+                  value={dataUpdatedAt ? timeOf(new Date(dataUpdatedAt).toISOString()) : '--:--'}
+                >
+                  Updated
+                </DataLabel>
+              </View>
+            </Row>
+          </View>
+
+          <View>
+            <Marquee night title="Needs a look tonight" meta={pad2(deviating.length)} />
+            {deviating.length === 0 ? (
+              <Txt kind="body" tone="nightMuted">
+                Nothing has deviated tonight. Every band is still reporting.
+              </Txt>
+            ) : (
+              <View style={{ gap: sp(3) }}>
+                {deviating.map((r) => (
+                  <Pressable
+                    key={r.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${r.display_name}, ${r.room ? `room ${r.room}` : 'no room'}`}
+                    onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
+                  >
+                    {({ pressed }) => (
+                      <Card night style={pressed ? { opacity: 0.7 } : undefined}>
+                        <Row style={{ justifyContent: 'space-between' }}>
+                          <Row gap={2} style={{ flex: 1 }}>
+                            <StatusDot state={r.state} />
+                            <Txt kind="label" tone="nightInk" numberOfLines={1} style={{ flex: 1 }}>
+                              {r.display_name}
+                            </Txt>
+                          </Row>
+                          <StateChip state={r.state} />
+                        </Row>
+                        {!!r.reason && (
+                          <Txt kind="body" tone="nightInk" style={{ marginTop: sp(2) }}>
+                            {r.reason}
+                          </Txt>
+                        )}
+                        <Row gap={3} style={{ marginTop: sp(2.5), flexWrap: 'wrap' }}>
+                          {/* Staff-only whereabouts — D-001. */}
+                          <DataLabel night value={r.room ?? 'NONE'}>Room</DataLabel>
+                          <DataLabel night value={r.last_seen ? timeOf(r.last_seen) : '--:--'}>
+                            Seen
+                          </DataLabel>
+                          {r.band_battery_pct != null && (
+                            <DataLabel night value={`${r.band_battery_pct}%`}>Band</DataLabel>
+                          )}
+                        </Row>
+                      </Card>
+                    )}
+                  </Pressable>
+                ))}
+              </View>
             )}
-          </Pressable>
-        ))}
-        {!isLoading && !isError && deviating.length === 0 && (
-          <Txt kind="body" tone="nightMuted" style={{ marginTop: sp(10), textAlign: 'center' }}>
-            All quiet tonight.
-          </Txt>
-        )}
-      </View>
-      </ScrollView>
-    </View>
+          </View>
+
+          {quiet.length > 0 && (
+            <View>
+              <Marquee night title="Roll call" meta={`${pad2(quiet.length)} quiet`} />
+              <Card night style={{ paddingVertical: sp(1) }}>
+                {quiet.map((r, i) => (
+                  <View key={r.id}>
+                    {i > 0 && <Hairline night />}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`${r.display_name}, quiet`}
+                      onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
+                      style={({ pressed }) => [{ paddingVertical: sp(2.5) }, pressed && { opacity: 0.6 }]}
+                    >
+                      <Row style={{ justifyContent: 'space-between' }}>
+                        <Row gap={2} style={{ flex: 1 }}>
+                          <StatusDot state={r.state} size={8} />
+                          <Txt kind="label" tone="nightInk" numberOfLines={1} style={{ flex: 1 }}>
+                            {r.display_name}
+                          </Txt>
+                        </Row>
+                        <Row gap={3}>
+                          <Txt kind="stamp" tone="nightMuted">{r.room ? `RM ${r.room}` : '—'}</Txt>
+                          <Txt kind="stamp" tone="nightMuted">
+                            {r.last_seen ? timeOf(r.last_seen) : '--:--'}
+                          </Txt>
+                        </Row>
+                      </Row>
+                    </Pressable>
+                  </View>
+                ))}
+              </Card>
+            </View>
+          )}
+
+          {rows.length === 0 && (
+            <Txt kind="body" tone="nightMuted" style={{ marginTop: sp(6) }}>
+              No residents are set up on this floor yet.
+            </Txt>
+          )}
+        </Stagger>
+      )}
+    </Screen>
   );
 }

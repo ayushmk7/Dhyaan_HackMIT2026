@@ -41,6 +41,26 @@ class MockDhyaan {
   }
   getEvent(id: string): KEvent | undefined { return this.world.events.find((e) => e.id === id); }
 
+  /** A note someone typed, stored as a real event — same as the server does. */
+  addNote(text: string, role: 'staff' | 'family'): KEvent {
+    const e: KEvent = {
+      id: `evt_note_${Date.now().toString(36)}`,
+      resident_id: 'res_eleanor',
+      source: 'manual',
+      type: role === 'staff' ? 'staff_note' : 'family_note',
+      ts: new Date().toISOString(),
+      ts_end: null,
+      confidence: 1,
+      zone: null,
+      payload: { text, role },
+      embedding_text: text,
+      review_state: 'unreviewed',
+    };
+    this.world.events.unshift(e);
+    this.emit({ t: 'event.new', event: e });
+    return e;
+  }
+
   getSummaries(residentId: string): DaySummary[] {
     if (residentId !== 'res_eleanor') return [];
     return [...this.world.summaries].reverse();

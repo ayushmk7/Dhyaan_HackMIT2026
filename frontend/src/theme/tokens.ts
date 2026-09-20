@@ -114,6 +114,8 @@ export const type = {
   body: { fontSize: 17, lineHeight: 24 }, // iOS body default (HIG)
   label: { fontSize: 15, lineHeight: 20, fontWeight: '600' as const },
   caption: { fontSize: 13, lineHeight: 18 },
+  // The serif's one job: Eleanor's own quoted words. Content, never chrome.
+  quote: { fontFamily: font.serif, fontSize: 19, lineHeight: 28 },
 } as const;
 
 // ---------------------------------------------------------------------------

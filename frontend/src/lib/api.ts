@@ -7,7 +7,7 @@ import { mockCamera } from './mock/camera';
 import { dhyaan } from './mock/dhyaan';
 import type {
   ActivityDay, Alert, ChatMessage, Fact, LoginResult, MemoryDeleted, MemoryScope,
-  Presence, Profile, ProfilePatch,
+  Presence, Profile, ProfilePatch, SimulateKind, VoiceScript,
 } from './types';
 
 // ponytail: simulated latency keeps loading states honest in the demo.
@@ -76,10 +76,28 @@ const mockApi = {
       `Eleanor’s week, from Dhyaan:\n\n${dhyaan.getSummaries('res_eleanor').map((s) => s.narrative).join(' ')}\n\nSent from the Dhyaan family app`
     );
   },
-  async simulate(kind: 'fall' | 'bathroom' = 'fall', residentId?: string): Promise<Alert> {
+  async simulate(
+    kind: SimulateKind = 'fall', residentId?: string, _script?: VoiceScript,
+  ): Promise<Alert | null> {
     await wait(150);
+    // The in-memory backend only models the fall ladder; a bathroom dwell or a
+    // walk opens nothing there, same as they may open nothing for real.
+    if (kind !== 'fall') return null;
     return dhyaan.simulate(kind, residentId);
   },
+
+  async addNote(_residentId: string, text: string, role: 'staff' | 'family' = 'family') {
+    await wait(200);
+    dhyaan.addNote(text, role);
+  },
+
+  // No nightly job in the mock — the seeded world already has its summaries.
+  async rollup() { await wait(300); },
+
+  async listCameras() { await wait(120); return mockCamera.listCameras(); },
+  async getCameraMonitor(cameraId: string) { await wait(60); return mockCamera.getMonitor(cameraId); },
+  async pauseCamera(_cameraId: string, hours = 2) { await wait(200); mockCamera.pauseCamera(hours); },
+  async resumeCamera(_cameraId: string) { await wait(200); mockCamera.resumeCamera(); },
 
   // Onboarding — mock accepts anything plausible.
   async pairBand(code: string) {

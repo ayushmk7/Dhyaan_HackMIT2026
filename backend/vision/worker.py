@@ -5,6 +5,7 @@ is in gate.py / keyframe.py / vlm.py, which is where the tests point.
 """
 
 import json
+import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -12,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from . import DEMO, TUNING, VLM_MODEL, FRAME_H, FRAME_W
-from .capture import Camera, to_jpeg_b64
+from .capture import Camera, SyntheticCamera, to_jpeg_b64
 from .gate import MotionGate, PersonGate, apply_mask, posture_band
 from .keyframe import KeyframeSelector, RingBatch
 from . import vlm
@@ -30,6 +31,20 @@ STANDIN_CONFIG = {
 }
 
 NO_CONSENT = {"consent_camera": 0, "resident_id": None, "name": None}
+
+
+_SPOT = {"table": "at the table", "armchair": "in the armchair", "sofa": "on the sofa",
+         "counter": "at the counter", "window": "by the window", "doorway": "in the doorway",
+         "floor": "on the floor"}
+
+
+def _sentence(obs):
+    """The one line the hub console shows. Built from `activity` and `spot`,
+    which are both already family-visible (`GET /presence` says the same two
+    things); NEVER from `evidence`, which is staff/audit only (§5.2). The API
+    scrubs it again anyway — see `routers/camera.py::MonitorIn`."""
+    return " ".join(x for x in (obs["activity"].replace("_", " "),
+                                _SPOT.get(obs.get("spot"))) if x)
 
 
 def log(*a):
@@ -50,11 +65,24 @@ class Worker:
         self.cfg = dict(NO_CONSENT)       # fail closed until a poll succeeds
         self.local_paused_until = None
         self.dropped_batches = 0
+        self.synthetic = str(source) == "synthetic"
+        # The structural facts for THIS frame, or None when no detector ran.
+        # Reset every sampled frame — a stale plate must never reach a later
+        # observation (see `_detect`).
         self.scene = None
+        # Console state, deliberately separate from `self.scene`: the last
+        # geometry worth drawing, which persists between detector runs so the
+        # hub console does not strobe. It is never merged into an observation.
+        self.boxes, self.people = [], 0
+        self.last_obs = {"activity": None, "sentence": "", "confidence": None,
+                         "latency_ms": 0, "batch_frames": 0}
+        self.cam = None
+        self._last_monitor = 0.0
         self.frames_seen = 0
         self.last_fps_mark = (time.monotonic(), 0)
         self.fps = 0.0
         self._warned_standin = False
+        self._warned_monitor = False
         self._http = httpx.Client(timeout=5.0, headers={"X-Band-Key": band_key})
 
     # --- config + consent -----------------------------------------------------
@@ -130,6 +158,35 @@ class Worker:
         except Exception as e:
             log(f"heartbeat failed: {type(e).__name__}")
 
+    def monitor(self, gate, force=False):
+        """A tick for the hub console: counts, normalised boxes, one sentence.
+
+        Never a pixel, never a room name, never the `evidence` line — see the
+        allowlist on the API side (`routers/camera.py::MonitorIn`), which is the
+        thing that actually enforces it. This is telemetry: fire and forget, and
+        a console nobody is watching must not cost the cascade a millisecond.
+        """
+        if self.dry_run:
+            return
+        now = time.monotonic()
+        if not force and now - self._last_monitor < self.tuning["monitor_s"]:
+            return
+        self._last_monitor = now
+        body = {"camera_id": self.camera_id,
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "fps": round(self.fps, 2), "person_count": self.people,
+                "boxes": self.boxes, "gate": gate, "model": self.model,
+                "simulated": self.synthetic, **self.last_obs}
+        try:
+            r = self._http.post(f"{self.api}/v1/ingest/camera/monitor", json=body)
+            # Say it once. A silently-swallowed 422 here is a console that is
+            # blank for no visible reason, which cost a debugging round trip.
+            if r.status_code != 204 and not self._warned_monitor:
+                self._warned_monitor = True
+                log(f"monitor: {r.status_code} {r.text[:160]} (said once)")
+        except Exception:
+            pass
+
     def post(self, payload):
         """--dry-run prints the exact JSON instead of posting it, so it can be
         diffed against fixtures/camera_observation.json."""
@@ -175,10 +232,21 @@ class Worker:
 
         log(f"consent ok for {self.cfg.get('name')} · zone {self.cfg.get('zone')} · "
             f"opening source {self.source!r}")
-        cam = Camera(self.source)
+        cam = self.cam = SyntheticCamera() if self.synthetic else Camera(self.source)
+        if self.synthetic and not self.cfg.get("demo_fast"):
+            log("synthetic: the API has DEMO_FAST off, so the dedup wants real minutes "
+                "of eating before a meal becomes one event. Run the API with DEMO_FAST=1 "
+                "to see the timeline move inside a two-minute loop.")
         motion = MotionGate(self.tuning)
-        person_gate = PersonGate(enabled=not self.no_yolo, tuning=self.tuning)
-        log(f"person gate: {'YOLO11n on ' + person_gate.device if person_gate.enabled else 'OFF (--no-yolo, motion-only; the VLM decides presence)'}")
+        # A detector trained on photographs does not see drawn shapes — measured:
+        # yolo11s finds the synthetic figure at confidence 0.04, i.e. noise. So
+        # the synthetic source runs the cut path (§3.3) on purpose rather than
+        # reporting an empty room for two minutes. Ceiling: no posture rule and
+        # no 5 s re-confirm, so a long sit reads as absent, exactly as it would
+        # with --no-yolo. Upgrade: --source clip.mp4 of a real room.
+        person_gate = PersonGate(enabled=not (self.no_yolo or self.synthetic),
+                                 tuning=self.tuning)
+        log(f"person gate: {'YOLO on ' + person_gate.device if person_gate.enabled else 'OFF (motion-only; the VLM or the script decides presence)'}")
         selector = KeyframeSelector(self.tuning)
         ring = RingBatch(self.tuning)
 
@@ -205,6 +273,8 @@ class Worker:
                     # detector, no VLM, no POST. Nothing is retained.
                     ring.take()
                     status = st
+                    self.boxes, self.people = [], 0
+                    self.monitor("idle")
                     if self.preview and not self._show(None, None, None, 0.0, status):
                         break
                     time.sleep(0.2)
@@ -230,20 +300,11 @@ class Worker:
                 # the background, and "she stopped moving" must not become
                 # "she left". With --no-yolo there is no way to make that check,
                 # which is the honest cost of the cut path.
-                box, seen = None, False
-                if moved or (selector.present and person_gate.enabled and now - last_person_check >= 5):
+                run_detector = moved or (
+                    selector.present and person_gate.enabled and now - last_person_check >= 5)
+                if run_detector:
                     last_person_check = now
-                    if person_gate.enabled:
-                        # One YOLO pass gives the box AND the structural facts
-                        # (person_count, food, dishes, seating). It costs the
-                        # same ~6 ms as asking only for a person.
-                        _t0 = time.monotonic()
-                        self.scene = person_gate.scene(masked)
-                        self.scene_ms = int((time.monotonic() - _t0) * 1000)
-                        box = self.scene["boxes"][0] if self.scene["boxes"] else None
-                        seen = box is not None
-                    else:
-                        seen = moved
+                box, seen = self._detect(person_gate, masked, run_detector, moved, motion)
 
                 reason = selector.update(now, seen, box)       # stage 4
                 status = f"motion {score:.3f}" + (" · person" if seen else "") + \
@@ -251,14 +312,22 @@ class Worker:
 
                 if reason == "absent":
                     ring.take()
+                    self.boxes, self.people = [], 0
                     self.post(vlm.to_payload(
                         self.camera_id, self.cfg["resident_id"], t.isoformat(),
-                        0.0, 0, vlm.ABSENT, model="none", latency_ms=0))
+                        0.0, 0, vlm.ABSENT, model="none", latency_ms=0,
+                        simulated=self.synthetic))
+                    self.last_obs = {"activity": "absent", "sentence": "out of view",
+                                     "confidence": vlm.ABSENT["confidence"],
+                                     "latency_ms": 0, "batch_frames": 0}
                 elif reason:
                     ring.add(now, to_jpeg_b64(masked))
 
                 if ring.ready(now, force=(reason == "on_floor")):
+                    self.monitor("thinking", force=True)       # ...then block for the VLM
                     status = self._flush(ring, t0_mono, t0_wall)
+
+                self.monitor("person" if seen else ("motion" if moved else "idle"))
 
                 if self.preview and not self._show(masked, motion.fg, box, score, status):
                     break
@@ -270,6 +339,49 @@ class Worker:
             self.heartbeat("offline")
             self._http.close()
             log("stopped. no frame was written to disk.")
+
+    def _detect(self, person_gate, frame, run_it, moved, motion):
+        """Stage 3. Returns (box, seen) and sets `self.scene` for this frame.
+
+        `self.scene` is cleared FIRST, every time: it is a fact about the frame
+        in hand, and a flush that lands on a frame where no detector ran must
+        override nothing. Stale food is how a sandwich from a minute ago ends up
+        in tonight's observation.
+
+        One YOLO pass gives the box AND the structural facts (person_count,
+        food, dishes, seating) for the same ~6 ms as asking only for a person.
+        """
+        self.scene = None
+        if self.synthetic:
+            # Scripted perception (SyntheticCamera.script): nothing reads a drawn
+            # figure as a person, so this source says who is in the room and the
+            # rest of the cascade — keyframe rules, the VLM call, ingest, dedup,
+            # presence, events, the socket — runs on it for real. The motion gate
+            # still runs on every frame; on this source it just does not get a
+            # vote. Every row posted carries simulated: true.
+            sc = self.cam.script()
+            self.boxes, self.people = sc["boxes"], sc["person_count"]
+            if not sc["boxes"]:
+                return None, False
+            x0, y0, x1, y1 = sc["boxes"][0]
+            return (x0 * FRAME_W, y0 * FRAME_H, x1 * FRAME_W, y1 * FRAME_H), True
+        if not run_it:
+            return None, False
+        if not person_gate.enabled:
+            # The cut path: motion is presence, and the console draws where the
+            # foreground is, which is all anyone can honestly say without a
+            # detector. `person_count` still comes from the VLM.
+            self.boxes = [list(b) for b in [motion.bbox()] if b]
+            return None, moved
+        _t0 = time.monotonic()
+        self.scene = person_gate.scene(frame)
+        self.scene_ms = int((time.monotonic() - _t0) * 1000)
+        h, w = frame.shape[:2]
+        self.boxes = [[x0 / w, y0 / h, x1 / w, y1 / h]
+                      for x0, y0, x1, y1 in self.scene["boxes"]]
+        self.people = self.scene["person_count"]
+        box = self.scene["boxes"][0] if self.scene["boxes"] else None
+        return box, box is not None
 
     def _mark_fps(self, now):
         t0, n0 = self.last_fps_mark
@@ -298,10 +410,9 @@ class Worker:
         if scene and self._since_vlm < every:
             obs = vlm.post_rules(vlm.from_scene(scene, posture_band(
                 scene["boxes"][0] if scene["boxes"] else None, self.tuning)))
-            self.post(vlm.to_payload(self.camera_id, self.cfg["resident_id"],
-                                     wall[-1].isoformat(), span, len(images), obs,
-                                     model="yolo11s",
-                                     latency_ms=getattr(self, "scene_ms", 0)))
+            self._post_obs(obs, wall[-1], span, len(images),
+                           os.getenv("YOLO_MODEL", "yolo11s.pt").replace(".pt", ""),
+                           getattr(self, "scene_ms", 0))
             return f"YOLO -> {obs['activity']}"
         self._since_vlm = 0
 
@@ -319,26 +430,32 @@ class Worker:
                     span, len(images), dict(vlm.ABSENT, activity="unclear", confidence=0.0,
                                             evidence="VLM unavailable; shape only."),
                     model=self.model, latency_ms=0, simulated=True))
-            return f"vlm failed ({self.dropped_batches} dropped)"
-        # YOLO saw the frame too, at ~6 ms, and it counts people and spots a
-        # sandwich more reliably than a 3B model asked to do it in prose. Its
-        # facts win; the VLM keeps the half only language can do - the activity
-        # and the sentence. `post_rules` then re-derives activity from the
-        # corrected counts, so "2 people" still becomes with_visitor.
-        scene = getattr(self, "scene", None)
-        if scene:
-            obs["person_count"] = scene["person_count"]
-            obs["food_visible"] = bool(scene["food"])
-            obs["plate_or_cup_present"] = bool(scene["dishes"])
-            if scene["food"] or scene["dishes"]:
-                seen_items = ", ".join((scene["food"] + scene["dishes"])[:3])
-                if seen_items not in obs.get("evidence", ""):
-                    obs["evidence"] = f"{obs.get('evidence','')[:40]} ({seen_items})".strip()
-        obs = vlm.post_rules(obs)
-        self.post(vlm.to_payload(self.camera_id, self.cfg["resident_id"],
-                                 wall[-1].isoformat(), span, len(images), obs,
-                                 model=self.model, latency_ms=latency))
+            if not self.synthetic:
+                return f"vlm failed ({self.dropped_batches} dropped)"
+            obs, latency = dict(vlm.ABSENT), 0     # the script overwrites it below
+        # YOLO saw the same frame at ~6 ms and counts people more reliably than a
+        # 3B model asked to do it in prose. `post_rules` then re-derives the
+        # activity from the corrected count, so "2 people" still becomes
+        # with_visitor. The VLM keeps the half only language can do.
+        # The rehearsal lane still spends the VLM call — Ollama and the console's
+        # latency number are part of what it rehearses — but the answer is the
+        # script's, because no model reads a drawing (SyntheticCamera).
+        obs = self.cam.script() if self.synthetic else \
+            vlm.post_rules(vlm.merge_scene(obs, self.scene))
+        self._post_obs(obs, wall[-1], span, len(images), self.model, latency)
         return f"VLM {latency/1000:.1f}s -> {obs['activity']}"
+
+    def _post_obs(self, obs, ts, span, n_frames, model, latency):
+        """Post it, then remember it for the console. One place, so a second
+        way of producing an observation cannot forget the console again."""
+        self.post(vlm.to_payload(self.camera_id, self.cfg["resident_id"],
+                                 ts.isoformat(), span, n_frames, obs,
+                                 model=model, latency_ms=latency,
+                                 simulated=self.synthetic))
+        self.people = obs["person_count"]
+        self.last_obs = {"activity": obs["activity"], "sentence": _sentence(obs),
+                         "confidence": round(float(obs["confidence"]), 3),
+                         "latency_ms": int(latency), "batch_frames": n_frames}
 
     # --- preview: the only screen a frame ever reaches ------------------------
 
