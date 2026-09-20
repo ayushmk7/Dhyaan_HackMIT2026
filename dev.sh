@@ -96,7 +96,16 @@ else
   # instead of needing real minutes of eating. This is the dev script, and a
   # demo nobody can watch happen is not a demo. Override it in the environment
   # to exercise the real thresholds: DEMO_FAST=0 ./dev.sh
-  (cd "$BACKEND" && DEMO_FAST="${DEMO_FAST:-1}" exec .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000) &
+  # CHAT_FALLBACK_MODEL turns Ask from a template into an answer. With no
+  # ANTHROPIC_API_KEY set, rag.py falls back to stitching the retrieved
+  # sentences together; pointing it at the vision model (already pulled, and
+  # kept warm for the camera lane) gets real prose out of the same Ollama for
+  # no extra download. Measured: "Yes, she has eaten today. She had dinner at
+  # the table around 7:10 pm..." instead of a labelled list.
+  (cd "$BACKEND" \
+    && DEMO_FAST="${DEMO_FAST:-1}" \
+       CHAT_FALLBACK_MODEL="${CHAT_FALLBACK_MODEL:-qwen2.5vl:3b}" \
+       exec .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000) &
   API_PID=$!
   PIDS+=("$API_PID")
   for i in $(seq 1 30); do
