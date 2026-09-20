@@ -26,7 +26,7 @@
     ],
     "ff_threshold_g": 0.4,
     "ff_min_ms": 80,
-    "ff_max_ms": 400,
+    "ff_max_ms": 700,
     "drop_latch_ms": 1000,
     "impact_g_after_ff": 2.8,
     "impact_g_soft": 3.5,
@@ -106,5 +106,5 @@
   },
   "calibrated_by": null,
   "calibrated_at": null,
-  "calibration_notes": "Uncalibrated defaults \u2014 run HARDWARE_SPEC \u00a77.2 before demo freeze."
+  "calibration_notes": "Uncalibrated defaults - run HARDWARE_SPEC 7.2 before demo freeze. ff_max_ms raised 400->700 (2026-09-20): a standing person's chest free-falls ~450ms; 400 rejected real standing falls as 'dropped device'."
 }
