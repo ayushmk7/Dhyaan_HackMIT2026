@@ -478,8 +478,12 @@ export const family = {
     noCameraBody: 'Nothing is watching, and nothing is posting. Point a camera at one common room in Settings, then start the vision worker on her computer. This screen fills in the moment it says something.',
     consentOff: 'The camera is off.',
     consentOffBody: 'Consent for the camera hasn’t been given, so the worker doesn’t run and there is nothing to show. Her band still watches for falls.',
-    paused: (until: string) => `Paused until ${until}.`,
-    pausedBody: 'While it’s paused the worker stops looking, so no ticks arrive and this stays empty. It starts again on its own, or you can resume it below.',
+    paused: (until: string) => `The camera is off until ${until}.`,
+    pausedBody: 'While it’s off the worker stops looking, so nothing is noticed and nothing is written down. It comes back on by itself, or you can turn it on below.',
+    // She stopped it at her own hub. §8.3: the family cannot undo her pause, so
+    // the switch is not offered here — a button that cannot work is worse than
+    // no button, and this is her control, not theirs.
+    herPause: 'She turned the camera off herself, at her hub. Only she can turn it back on.',
     listening: 'Listening for the worker…',
     monitorError: 'Couldn’t reach the hub to ask what the worker is doing. Nothing is being shown rather than something out of date.',
     notPosting: 'The worker isn’t posting anything.',
@@ -499,8 +503,12 @@ export const family = {
     rec: 'REC',
     simulated: 'SIMULATED',
 
-    resume: 'Resume the camera',
-    pauseTwoHours: 'Pause for 2 hours',
+    // The one switch on the screen. It reads as the thing it does, not as the
+    // mechanism: underneath, "off" is the pause the API already has, which is
+    // why the line above it says when it comes back.
+    turnOff: 'Turn the camera off',
+    turnOn: 'Turn the camera on',
+    offUntil: (until: string) => `It comes back on by itself at ${until}.`,
     trouble: 'That didn’t go through, so nothing changed. The hub may not be reachable.',
   },
 

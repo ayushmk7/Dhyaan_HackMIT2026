@@ -2,6 +2,19 @@
 export const timeOf = (isoTs: string) =>
   new Date(isoTs).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
+/**
+ * A moment that may not be today. "9:12 AM" is a lie about a time 24 hours out,
+ * and the camera switch can put one exactly there, so a stamp that lands on
+ * another day carries that day's name.
+ */
+export const whenOf = (isoTs: string) => {
+  const d = new Date(isoTs);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return sameDay
+    ? timeOf(isoTs)
+    : `${d.toLocaleDateString(undefined, { weekday: 'long' })} ${timeOf(isoTs)}`;
+};
+
 export const dayOf = (isoTs: string) => {
   const d = new Date(isoTs);
   const today = new Date(); today.setHours(0, 0, 0, 0);

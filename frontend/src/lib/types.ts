@@ -309,6 +309,8 @@ export interface CameraSummary {
   state: string;
   consent: boolean;
   paused_until: string | null;
+  /** "family" when this app stopped it, "resident" when she did at her hub. */
+  paused_by: 'family' | 'resident' | null;
   last_heartbeat_at: string | null;
   online: boolean;
 }

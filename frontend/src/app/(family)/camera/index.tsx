@@ -39,7 +39,7 @@ import {
 import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
 import { family } from '@/lib/copy/family';
-import { ago, scrubRooms, timeOf } from '@/lib/format';
+import { ago, scrubRooms, whenOf } from '@/lib/format';
 import { useCameraMonitor, useCameras, useNow, useResidentLocation } from '@/lib/hooks';
 import type { CameraMonitorTick, CameraSummary, ResidentLocation } from '@/lib/types';
 import { useLive } from '@/store/live';
@@ -312,7 +312,9 @@ export default function CameraConsole() {
     if (pausedUntil) {
       return (
         <Card>
-          <EmptyState title={copy.paused(timeOf(pausedUntil))}>{copy.pausedBody}</EmptyState>
+          <EmptyState title={copy.paused(whenOf(pausedUntil))}>
+            {cam.paused_by === 'resident' ? copy.herPause : copy.pausedBody}
+          </EmptyState>
         </Card>
       );
     }
@@ -380,24 +382,31 @@ export default function CameraConsole() {
     );
   })();
 
-  // Pause is the only control here. The three canned simulations were an
-  // on-stage fallback for a sulking webcam, and they were demo chrome in the
-  // family's own bar: a family screen should not offer to invent observations
-  // about her. `POST /admin/simulate` still exists behind Settings' debug panel.
-  const bar = cam ? (
+  // One switch, and it is the only control on the screen. Underneath it is the
+  // pause the API already has, so "off" has an end: the longest the contract
+  // allows is 24 hours (PauseIn caps it), and the camera coming back by itself
+  // is a safety property, not an oversight — a camera nobody remembers to turn
+  // on is the failure this product cannot have. The line under the switch says
+  // when, so the button never implies more than it does.
+  //
+  // Her own pause is not offered here at all (§8.3): the family can lift a
+  // pause they set and cannot lift hers, and a button that 403s is worse than
+  // no button.
+  const hers = pausedUntil && cam?.paused_by === 'resident';
+  const bar = cam && !hers ? (
     <View style={{ gap: sp(2.5) }}>
       {pausedUntil ? (
         <Btn
-          label={copy.resume}
-          busy={busy === 'resume'}
-          onPress={() => run('resume', () => api.resumeCamera(cam.id))}
+          label={copy.turnOn}
+          busy={busy === 'switch'}
+          onPress={() => run('switch', () => api.resumeCamera(cam.id))}
         />
       ) : (
         <Btn
           kind="quiet"
-          label={copy.pauseTwoHours}
-          busy={busy === 'pause'}
-          onPress={() => run('pause', () => api.pauseCamera(cam.id, 2))}
+          label={copy.turnOff}
+          busy={busy === 'switch'}
+          onPress={() => run('switch', () => api.pauseCamera(cam.id, 24))}
         />
       )}
       {!!trouble && <ErrorState inline message={trouble} />}

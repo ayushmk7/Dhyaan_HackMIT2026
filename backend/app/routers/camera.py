@@ -635,6 +635,11 @@ def _camera_row(camera: dict, resident: dict) -> dict:
         "state": camera.get("state") or "offline",
         "consent": bool(resident.get("consent_camera")),
         "paused_until": camera.get("paused_until") if _is_paused(camera) else None,
+        # WHO stopped it. The app needs this to be honest about its own switch:
+        # the family can lift a pause it set and cannot lift hers (§8.3), so a
+        # button that offers to turn the camera back on when only she can is a
+        # button that lies. `presence` has carried this all along.
+        "paused_by": camera.get("paused_by") if _is_paused(camera) else None,
         "last_heartbeat_at": hb,
         "online": fresh and camera.get("state") == "watching",
     }

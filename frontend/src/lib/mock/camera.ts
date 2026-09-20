@@ -222,6 +222,7 @@ class MockCamera {
       state: consent ? 'watching' : 'no_consent',
       consent,
       paused_until: cam.paused_until ?? null,
+      paused_by: (cam.paused_until ? 'family' : null) as 'family' | null,
       last_heartbeat_at: consent ? iso(Date.now()) : null,
       online: consent,
     }];
