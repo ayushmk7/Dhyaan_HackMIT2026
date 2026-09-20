@@ -15,7 +15,10 @@ export default function RoundsStack() {
         headerLargeTitleEnabled: false,
         headerTitleAlign: 'center',
         headerTransparent: true,
-        headerBlurEffect: 'systemChromeMaterialLight',
+        // No `headerBlurEffect`. On iOS 26 react-native-screens applies its own
+        // scroll-edge effect to a transparent header, and setting both makes
+        // them overlap — RNScreens warns about exactly this at runtime. The
+        // system effect is the one Apple ships, so we take it and set nothing.
         headerShadowVisible: false,
         headerTintColor: t.accent,
         // Off the scale, not a literal: a native header is drawn by UIKit and

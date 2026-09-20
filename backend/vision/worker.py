@@ -23,7 +23,7 @@ PRIVATE_ZONES = {"bedroom", "bathroom"}
 # Used only by --dry-run when there is no API and no --config-json. A real run
 # fails closed instead; see _refresh_config.
 STANDIN_CONFIG = {
-    "resident_id": "res_eleanor", "name": "Asha", "consent_camera": 1,
+    "resident_id": "res_eleanor", "name": "Eleanor", "consent_camera": 1,
     "paused_until": None, "zone": "living_room", "zone_label": "living room",
     "zone_hint": "Living room. The dining table is on the left, her armchair by the window on the right.",
     "appearance": "", "spots_line": "", "demo_fast": False,
@@ -584,6 +584,22 @@ class Worker:
             return f"YOLO -> {obs['activity']}"
         self._since_vlm = 0
 
+        # The VLM call used to happen right here, on the capture loop, and the
+        # comment at the call site said so: "...then block for the VLM". Every
+        # keyframe the loop stopped dead for ~2.4 s - no frames read, no
+        # detection, no posts - which is the hitch you feel. Nothing downstream
+        # waits on the sentence, so it goes to a worker thread and lands when it
+        # lands. The loop never blocks on a model again.
+        #
+        # `self.scene` is snapshotted here: the loop rewrites it every frame, and
+        # merge_scene on the thread must see the scene this batch came from, not
+        # whatever is current 2.4 s later.
+        self._submit_vlm(images, prompt, wall[-1], span, len(images),
+                         dict(self.scene) if self.scene else None)
+        return "VLM queued"
+
+    def _vlm_job(self, images, prompt, ts, span, n_frames, scene):
+        """Runs on the VLM thread. Never raises into the loop."""
         try:
             obs, latency = vlm.call(images, prompt, model=self.model,
                                     **({"host": self.ollama} if self.ollama else {}))
@@ -599,7 +615,7 @@ class Worker:
                                             evidence="VLM unavailable; shape only."),
                     model=self.model, latency_ms=0, simulated=True))
             if not self.synthetic:
-                return f"vlm failed ({self.dropped_batches} dropped)"
+                return
             obs, latency = dict(vlm.ABSENT), 0     # the script overwrites it below
         # YOLO saw the same frame at ~6 ms and counts people more reliably than a
         # 3B model asked to do it in prose. `post_rules` then re-derives the
@@ -609,9 +625,45 @@ class Worker:
         # latency number are part of what it rehearses — but the answer is the
         # script's, because no model reads a drawing (SyntheticCamera).
         obs = self.cam.script() if self.synthetic else \
-            vlm.post_rules(vlm.merge_scene(obs, self.scene))
-        self._post_obs(obs, wall[-1], span, len(images), self.model, latency)
-        return f"VLM {latency/1000:.1f}s -> {obs['activity']}"
+            vlm.post_rules(vlm.merge_scene(obs, scene))
+        self._post_obs(obs, ts, span, n_frames, self.model, latency)
+        log(f"VLM {latency/1000:.1f}s -> {obs['activity']}")
+
+    def _submit_vlm(self, *args):
+        """Hand a batch to the VLM thread. Queue of one, drop-oldest.
+
+        Depth one on purpose: if the model is slower than the keyframes, the
+        only batch worth answering is the newest. Queuing them would make the
+        sentence describe a moment that has already passed, and it would grow
+        without bound.
+        """
+        import queue
+        import threading
+
+        q = getattr(self, "_vlmq", None)
+        if q is None:
+            q = self._vlmq = queue.Queue(maxsize=1)
+
+            def drain():
+                while True:
+                    job = q.get()
+                    if job is None:
+                        return
+                    try:
+                        self._vlm_job(*job)
+                    except Exception as e:                       # noqa: BLE001
+                        self.dropped_batches += 1
+                        log(f"vlm thread: {type(e).__name__}: {str(e)[:120]}")
+
+            threading.Thread(target=drain, daemon=True, name="dhyaan-vlm").start()
+        try:
+            q.put_nowait(args)
+        except Exception:                                        # noqa: BLE001
+            try:
+                q.get_nowait()          # drop the stale one
+                q.put_nowait(args)
+            except Exception:                                    # noqa: BLE001
+                log("vlm queue busy — skipped a batch")
 
     def _post_obs(self, obs, ts, span, n_frames, model, latency):
         """Post it, then remember it for the console. One place, so a second

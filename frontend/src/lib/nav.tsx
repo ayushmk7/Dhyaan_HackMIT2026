@@ -6,9 +6,9 @@
 // it with `contentInsetAdjustmentBehavior="automatic"` so nothing starts
 // hidden beneath it.
 //
-// Prop names are the Expo SDK 57 native-stack ones (`headerLargeTitleEnabled`,
-// not the deprecated `headerLargeTitle`; `headerBlurEffect` needs
-// `headerTransparent`). See docs.expo.dev/versions/v57.0.0/sdk/router.
+// Prop names are the Expo SDK 57 native-stack ones: `headerLargeTitleEnabled`,
+// not the deprecated `headerLargeTitle`. See
+// docs.expo.dev/versions/v57.0.0/sdk/router.
 //
 // These are the app's last colours that cannot come from a surface context: a
 // native header is drawn by UIKit, not by our components, so it has to be
@@ -27,7 +27,10 @@ export function TabStack({ children }: { children: React.ReactNode }) {
         headerLargeTitleEnabled: false,
         headerTitleAlign: 'center',
         headerTransparent: true,
-        headerBlurEffect: t.isDark ? 'systemChromeMaterialDark' : 'systemChromeMaterialLight',
+        // No `headerBlurEffect`. On iOS 26 react-native-screens applies its own
+        // scroll-edge effect to a transparent header, and setting both makes
+        // them overlap — RNScreens warns about exactly this at runtime. The
+        // system effect is the one Apple ships, so we take it and set nothing.
         headerShadowVisible: false,
         headerTintColor: t.accent,
         headerTitleStyle: { color: t.ink, fontSize: type.label.fontSize, fontWeight: type.label.fontWeight },
