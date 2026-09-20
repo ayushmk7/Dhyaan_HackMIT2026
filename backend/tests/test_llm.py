@@ -208,6 +208,35 @@ async def test_answer_shape_with_fake_llm(monkeypatch, resident, db):
     assert isinstance(result["retrieved_count"], int)
 
 
+async def test_a_slow_answer_chain_gives_up_and_uses_the_template(monkeypatch, resident, db):
+    """One budget over the whole chain. Each link only bounds itself — OpenAI is
+    8s plus a retry (llm.REQUEST_TIMEOUT_S), the local model another 25s behind
+    it — so a bad night could keep a family waiting ~41 seconds for a question
+    the template answers instantly and truthfully."""
+    import asyncio
+    import time
+
+    assert rag.ANSWER_BUDGET_S <= 10.0, "the budget is the point; keep it under a chat bubble's patience"
+
+    await rag.daily_narrative(resident, "2026-09-05")
+    await rag.drain_embeddings()
+
+    async def never_returns(question, hits, resident_name):
+        await asyncio.sleep(5)
+        return "an answer nobody is still waiting for"
+
+    monkeypatch.setattr(rag, "_llm_answer", never_returns)
+    monkeypatch.setattr(rag, "ANSWER_BUDGET_S", 0.2)  # the real 10s is asserted above
+
+    started = time.monotonic()
+    result = await rag.answer_family(resident, "how has she been this week")
+    assert time.monotonic() - started < 1.0, "the budget did not fire"
+    assert "still waiting" not in result["answer"]
+    assert result["retrieved_count"] > 0
+    # The deterministic template answer: the retrieved sentences, labelled.
+    assert any(c["text"][:30] in result["answer"] for c in result["citations"]), result["answer"]
+
+
 # ---------------------------------------------------------------------------
 # summaries.alert_digest
 # ---------------------------------------------------------------------------

@@ -87,3 +87,17 @@ async def test_a_fingerprint_for_an_unknown_zone_is_dropped(resident, db):
     fingerprints = await _fingerprints_for(resident)
     assert [f["zone"] for f in fingerprints] == ["kitchen"]
     assert classify({"bcn_dining": -51}, fingerprints)[0] == "location_unknown"
+
+
+def test_two_beacons_on_one_site_uuid_stay_apart():
+    """iBeacon puts identity in major/minor; every anchor on a site shares the
+    uuid. Keying on the uuid alone collapsed both anchors into one number, so
+    two rooms had the same fingerprint and the classifier never moved."""
+    from app.location import _scan_vector
+
+    vec = _scan_vector({"beacons": [
+        {"uuid": "site-uuid", "major": 1, "minor": 1, "rssi": -34},
+        {"uuid": "site-uuid", "major": 1, "minor": 2, "rssi": -58},
+    ]})
+    assert len(vec) == 2, f"both anchors must survive, got {vec}"
+    assert set(vec.values()) == {-34.0, -58.0}

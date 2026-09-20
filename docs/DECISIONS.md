@@ -400,6 +400,87 @@ thing that blinded it, that the copy really is all in one place, is stronger and
 **Changed.** `frontend/src/lib/copy/*`, every screen, `frontend/scripts/copy-audit.py` ·
 `docs/frontend-DESIGN.md`.
 
+### D-026 · A pause has an owner, and `paused_by` is that owner, not who is looking
+**Date:** 2026-09-20 · **Status:** Accepted
+
+**Context.** `PRODUCT_SPEC.md` §8.3 rule 1 is that the family cannot undo the pause she set on her own
+hub. We had written that as a single field, `paused_by`, and a `403` on `POST /cameras/{id}/resume`.
+Three separate paths then wrote that field, and each one broke the rule in a different direction: the
+worker's heartbeat wrote `paused_until` unconditionally, so one `watching` tick erased a pause the app
+had set a second earlier and reopened the fail-closed ingest gate; a `paused` tick stamped
+`paused_by: "resident"` over a pause that was the family's, so their own Resume started `403`-ing one
+heartbeat later; and `resume` checked liveness as well as ownership, so an expired pause of hers became
+the family's to lift.
+
+**Decision.** `paused_by` records **who owns the pause**, and only the owner's own side may write it.
+A heartbeat reports what the hub is doing and nothing more: it writes the pause fields only when the
+camera is not already `family`-owned. `POST /resume` refuses on `paused_by == "resident"` alone, with
+no test of whether `paused_until` is still in the future. A resident pause is lifted by her hub's next
+`watching` heartbeat; a family pause is lifted by `POST /resume` and by nothing else.
+
+**Why.** The alternative was to let liveness decide — treat an expired pause as no pause at all — which
+is simpler and wrong in the one case that matters: her pause expiring is not her consenting. Reading
+the field as ownership costs one condition on each of three writes and makes the rule checkable in one
+place instead of three. The cost we accepted: a resident pause is now sticky until her hub speaks
+again, so a hub that is switched off leaves the camera paused with no way for the family to start it,
+indefinitely. That is the safe direction and it is the one she would choose.
+
+**Changed.** `backend/app/routers/camera.py` (`ingest_camera_heartbeat`, `resume_camera`) ·
+`docs/API_CONTRACT_V3.md` (the consent-gate table, V3.1 *Pausing*) · `docs/TECHNICAL_PRD.md` §10.5 ·
+`docs/backend-README.md`. **Follow-up:** F-17.
+
+### D-027 · One fall is one ladder, and a ladder an hour old is one we lost
+**Date:** 2026-09-20 · **Status:** Accepted
+
+**Context.** Every `POST /v1/ingest/band` carrying `fall_suspected` opened a new alert with its own
+timers. A band that retries its POST, or a second press of the staff "Simulate a fall" button, therefore
+started two ladders — and a cancel carries a single alert id, so the button stopped one while the other
+kept dialling. Separately, the ladder's timers are in-memory `asyncio` tasks, so a restart stranded
+every open alert where it stood; re-arming them fixed that, and then fired a past-due timer the moment
+the process came back.
+
+**Decision.** One constant, `STALE_ALERT_S = 3600`, governs both ends. `open_alert` returns the existing
+alert when the same resident has a non-terminal alert of the same `kind` opened within that window.
+`_rearm_pending` writes an alert more than that far past its last transition straight to `EXHAUSTED`
+instead of re-arming it and dialling.
+
+**Why.** An hour is well past the whole ladder — cancel window, two resident calls, two contacts and
+the final rung all run in minutes — so past that line an open alert is not an escalation in progress.
+The window is load-bearing in both directions: without the `opened_at` bound on the dedup, one alert
+stuck non-terminal would swallow every later fall for that resident forever; without the cutoff on the
+re-arm, an alert left open since last week dials at 3 a.m. about a fall someone dealt with days ago,
+and under `uvicorn --reload` that is every file save. Deliberately not an environment knob, unlike the
+ladder timings in §4.2: it is a statement about the ladder, not a tuning parameter.
+
+**Changed.** `backend/app/alerts.py` (`open_alert`, `_rearm_pending`, `STALE_ALERT_S`) ·
+`docs/TECHNICAL_PRD.md` §4.3 · `docs/backend-README.md`.
+
+### D-028 · The family filter is applied on the server, on every read, including the socket
+**Date:** 2026-09-20 · **Status:** Accepted · Continues D-001
+
+**Context.** D-001 promises the family never learns which room she is in, and `/activity`, `/presence`
+and chat had the filter. Three other paths did not. `GET /timeline` returned raw rows — 183 of 200
+seeded rows carried a `zone`, plus prose like "Asha moved into the bathroom". `GET /events/{id}`, which
+the app opens from a notification deep link, returned the raw document. `event.new` pushed the raw Mongo
+doc to every socket on the LAN. The app had a `scrubRooms` of its own and that was standing in for all
+three.
+
+**Decision.** All three go through the same shaper the family routes already used (`_family_item`,
+`rag.scrub_rooms`, `FAMILY_EXCLUDED_TYPES`): `zone` and `derived_from` dropped, prose scrubbed, excluded
+types not sent at all. One shaper, not a second copy, so a row cannot be safe on one path and leaky on
+another. The client-side scrub stays, and is no longer the control.
+
+**Why.** A client-side filter is not a privacy control: it only ever knew seven room names, it could not
+touch the socket at all, and the raw record was reaching the phone either way — which is the exact thing
+§12.4 says does not count. The cost is that `event.new` is now a family-shaped message with no role
+behind it, so a staff surface that wants rooms on the socket cannot have them; it refetches instead.
+Four routes still name rooms by design (`/location`, `/location/history`, `/day`, `GET /residents`) and
+are still open to any caller — that half of F-02 is not closed and should not be read as closed.
+
+**Changed.** `backend/app/routers/residents.py` (`timeline`, `get_event`), `backend/app/routers/live.py`
+(`_on_event`) · `docs/API_CONTRACT_V2.md`, `docs/API_CONTRACT_V3.md`, `docs/backend-README.md` ·
+`docs/TECHNICAL_PRD.md` §10.5, §12.4. **Follow-up:** F-02 (the four room-bearing routes remain).
+
 ---
 
 ## Code follow-ups these decisions create
@@ -424,3 +505,4 @@ Docs were changed in the same commit as this file. **Code was not.** Each owner 
 | F-14 | Abhinav | Drop the vestigial `Authorization: Bearer` header and the websocket `?token=` once the deployed backend process is rebuilt on the no-auth HEAD (D-021); delete `API_KEY` from `lib/config.ts` | `frontend/src/lib/config.ts`, `frontend/src/lib/http.ts` |
 | F-15 | Abhinav | Remove the deprecated `headerLargeTitle: false` still passed by four child-stack layouts; `TabStack` already sets `headerLargeTitleEnabled: false` | `frontend/src/app/(family)/{settings,chat,timeline}/_layout.tsx`, `(staff)/triage/_layout.tsx` |
 | F-16 | Abhinav | Move `FloatingTabBar` / `TabBarInsets` out of `app/(family)/_layout.tsx` into `src/components/tab-bar.tsx`; the staff layout imports them across route groups today | `frontend/src/app/(family)/_layout.tsx`, `(staff)/_layout.tsx` |
+| F-17 | Ayush | `GET /presence` reports `camera.paused_by` only while the pause is still live, but `POST /resume` refuses on ownership whether or not it has expired (D-026). After a resident pause lapses the app therefore sees `paused_by: null` and still gets a `403`, with nothing on screen to explain it. Report the owner whenever there is one, or give the `403` a body the app can read | `backend/app/presence.py::family_presence`, `backend/app/routers/camera.py::resume_camera` |

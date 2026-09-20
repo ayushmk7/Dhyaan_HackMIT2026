@@ -17,3 +17,7 @@ weights/
 brag-output*/**/node_modules/
 brag-output*/**/renders/
 brag-output*/*.mp4
+
+# The AirDropped handoff kit from a teammate; it holds two secret env files
+# (root.env and frontend.env) that the bare `.env` rule above does not catch.
+dhyaan-ayush-kit/

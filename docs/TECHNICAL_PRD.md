@@ -148,12 +148,12 @@ graph TB
     LEARN <--> DB
     RAG <--> DB
     RAG <-->|/api/embed| OLL
-    RAG <-->|plan + answer| ANT
-    LEARN -->|daily summaries| ANT
+    RAG <-->|plan + answer| OAI
+    LEARN -->|daily summaries| OAI
     API -->|"calls.create + inline TwiML"| TW
     TW <-->|"wss media stream<br/>mulaw 8k"| BRIDGE
     BRIDGE <-->|"wss agent socket<br/>mulaw 8k"| DG
-    DG -.->|think provider| ANT
+    DG -.->|think provider| OAI
     API -->|push| EXPO
     EXPO --> RN
     RN <-->|"REST + WS"| TUN
@@ -733,6 +733,41 @@ a loop over `STATES`, not drawn per arrow; `FELL_BUT_FINE` is not terminal and c
 the table does not know about, straight to the document. A timer still pending for such an alert fires
 once, finds no transition, logs and drops. Upgrade: a real `resolve()` in `alerts.py` that also cancels
 the timer.
+
+Four more things the diagram cannot show, all of them about the ladder surviving
+the real world:
+
+- **One fall is one ladder.** `open_alert` reuses an alert that is already open
+  for the same resident and the same `kind` and was opened within `STALE_ALERT_S`
+  (3600 s), instead of opening a second one. The band retries its POST and the
+  "Simulate a fall" button gets pressed twice; each used to start its own alert
+  with its own timers, and a cancel carries a single alert id, so the button
+  stopped one ladder while the other kept dialling. The `opened_at` bound is the
+  load-bearing half: without it, one alert stuck non-terminal would swallow every
+  later fall for that resident forever.
+- **A restart re-arms, except when it should close.** Timers are in-memory
+  `asyncio` tasks, so a restart used to strand every open alert exactly where it
+  stood — and under `uvicorn --reload` that is every file save.
+  `_rearm_pending` restores each waiting state's own timeout (the one declared in
+  `_pending_timer`, which is also what `_apply` arms on entry, so the two cannot
+  disagree), measuring the remaining wait from the alert's `updated_at`. An alert
+  more than `STALE_ALERT_S` past its last transition is not an escalation in
+  progress, it is one we lost: it is written straight to `EXHAUSTED` rather than
+  re-armed, because a past-due timer fires on the next tick and that would be a
+  real 3 a.m. call about a fall someone dealt with days ago.
+- **`_apply` is a compare-and-swap.** The update is conditional on the state that
+  was read. Nothing holds a lock and two triggers really do arrive at once: a
+  firing timer pops itself from `_timers` before calling, so an ack landing in
+  that gap cancels nothing. Ack wrote `ACKNOWLEDGED`, the timer then wrote
+  `CALLING_CONTACT_1` over it, and the family was dialled for an alert a human
+  had already taken. Whoever writes first wins; the loser returns the alert as it
+  now stands and emits nothing, broadcasts nothing and dials nobody. The next
+  rung's clock is armed before the action runs, with no `await` in between, so a
+  failing action cannot cost the ladder its timer.
+- **`ESCALATED_FINAL` tolerates a bad leg.** `_final_escalation` calls every
+  remaining contact with a number; one that raises is logged and the loop moves
+  on. It used to abort the whole loop, so a number Twilio rejected meant contact
+  2 was never dialled at all on the last rung of a real fall.
 
 ### 4.4 The five classifications
 
@@ -2188,6 +2223,17 @@ template, *not* an LLM call, so the learner stays synchronous and cheap:
  (last 14 days). This is unusual for her."
 ```
 
+Two things the pseudocode does not say, both as built in `backend/app/baseline.py`:
+
+- **A day with no events at all scores nothing.** `rollup` returns `{}` before
+  deriving a single feature. A day we saw nothing is an outage, not a day she did
+  not eat: `meal_count = 0` against λ = 3 scores warn, and then sits in the
+  60-day window as if it were a real observation and drags her normal down.
+- **Room time is read from `dwell_s`.** That is the key `location.py` puts on a
+  `zone_dwell` payload; `_derive_features` used to read `duration_s` alone, so
+  `time_in_kitchen_s`, `time_in_bedroom_s` and `time_out_of_room_s` summed to
+  zero every day — three features that looked learned and could never deviate.
+
 ### 8.4 Cold start
 
 Three phases. A resident moves through them automatically.
@@ -2651,6 +2697,23 @@ Sample output, with the citations the UI turns into tappable chips that deep-lin
 > for under 5 minutes each time [chunk_d_0917, chunk_d_0918]. I don't have observations for Sunday —
 > the dining-room camera was offline [chunk_sys_0914]."*
 
+**As built, the answer is a chain of three and the first two are optional.**
+`rag.answer_family` tries `app/llm.py` (OpenAI `gpt-5.6-terra`, §11), then a local
+Ollama chat call when `CHAT_FALLBACK_MODEL` is set, then `_template_answer` — the
+retrieved sentences grouped and labelled by kind. That order is what makes the
+demo answer a question with no API key at all, and every link is reached by the
+one before it returning `None` rather than raising. The same applies to the
+daily narrative (`rag._template_narrative`). There is one LLM client for the
+whole app and it is `app/llm.py`: one `complete()` that POSTs to
+`/v1/chat/completions` over raw `httpx`, no vendor SDK, no agent framework, no
+prompt-template library, fails closed to `None` on anything — no key, timeout,
+rate limit, malformed reply. The embedder (`nomic-embed-text`, §9.3) and the
+camera lane's VLM (`qwen2.5vl:3b`) are local through Ollama and share none of
+that path. There is no planner call: `rag.time_window` resolves "this week" with
+a regex over the resident's timezone, so the planner's `refuses` short-circuit in
+§9.7 below is a pair of compiled patterns (`MEDICAL_PATTERN`, `hard_refusal`)
+that run before any retrieval, which is the behaviour that mattered.
+
 ### 9.7 Guardrails
 
 | Guardrail | Mechanism | Fails how |
@@ -2844,7 +2907,7 @@ const token = (await Notifications.getExpoPushTokenAsync({ projectId: EXPO_PROJE
 
 ### 10.5 API contract
 
-**This section is the route census of the API as built** (`backend/app/routers/*.py`, 274 tests in
+**This section is the route census of the API as built** (`backend/app/routers/*.py`, 340 tests in
 `backend/tests/`, `cd backend && .venv/bin/python -m pytest -q`). The original design for this
 section, with its JWT, its `/events` and `/summary` names and its role-scoped websocket, is kept
 below it under *Specified, not built*, because knowing what was planned and dropped is worth more
@@ -2906,20 +2969,21 @@ and persists it onto the event, so a seeded fall is never mistaken for a wrist.
 |---|---|---|---|
 | POST | `/ingest/band` | `{band_id, type, ts, peak_g?, free_fall_ms?, post_impact_tilt_deg?, stillness_ms?, battery_pct, simulated?}`; `type` in `fall_suspected fall_confirmed fall_cancelled button_pressed band_motion_high band_still prolonged_inactivity` | `201 {event_id}`, plus `alert_id` and `cancel_window_s` when `type == fall_suspected` (opens a `fall`/`critical` alert) |
 | POST | `/ingest/band/cancel` | `{band_id, alert_id, by: "button"\|"voice"\|"staff"}` | `200` the raw alert doc (`_id`, `state: "CANCELLED"`, ...); only valid from `LOCAL_CANCEL`, any other state raises inside `alerts.cancel` and surfaces as a `500`, not a `409`. Demo-grade; upgrade: catch `ValueError` and return `409` |
-| POST | `/ingest/heartbeat` | `{band_id, battery_pct, uptime_s?, simulated?}` | `204`; under 15% emits `band_low_battery`. Never returns a walking profile (§8.7 is not built) |
-| POST | `/ingest/rf` | `{band_id, ts, beacons: [{uuid?, major?, minor?, rssi}], wifi: [{bssid, rssi}], simulated?}`, `rssi` in -100..0 | `200 {zone, confidence, posterior, committed}` from `location.observe` |
+| POST | `/ingest/heartbeat` | `{band_id, battery_pct, uptime_s?, gait?, activity_label?, simulated?}` | `204`. **Edge-triggered, not level-triggered**: `band_low_battery` fires on the crossing below 15%, not on every heartbeat under it — a band at 14% beats every 60 s and a level test wrote ~480 identical events (and ~480 embedding tasks) by morning. `activity_classified` is edge-triggered the same way, off the pre-update doc `find_one_and_update` returns. Never returns a walking profile (§8.7 is not built) |
+| POST | `/ingest/rf` | `{band_id, ts, beacons: [{uuid?, major?, minor?, rssi}], wifi: [{bssid, rssi}], simulated?}`, `rssi` in -100..0 | `200 {zone, confidence, posterior, committed}` from `location.observe`, which takes the **scan's own `ts`**, not the server's clock. A band that buffered an hour offline and replays it in one burst would otherwise have every scan stamped `now`, collapsing the gap into a single zone with near-zero dwell — which both invents and misses `bathroom_prolonged` |
 | POST | `/ingest/camera` | see `API_CONTRACT_V3.md` | `201 {observation_id, presence, event_ids}` |
-| POST | `/ingest/camera/monitor` | the 1 Hz console tick, V3.1 | `204`; kept in RAM only |
-| POST | `/ingest/camera/heartbeat` | `{camera_id, state, paused_until?, fps, dropped_batches}` | `204`; a state change emits `camera_online` / `camera_paused` / `camera_offline` and `state: "paused"` records `paused_by: "resident"` |
+| POST | `/ingest/camera/monitor` | the ~3 Hz console tick, V3.1 | `204`; kept in RAM only |
+| POST | `/ingest/camera/frame?camera_id=` | one annotated JPEG, `image/jpeg` | `204`; one frame per camera in RAM, never on disk and never in Mongo. `400` empty, `413` over 512 KB. V3.1 |
+| POST | `/ingest/camera/heartbeat` | `{camera_id, state, paused_until?, fps, dropped_batches}` | `204`; a state change emits `camera_online` / `camera_paused` / `camera_offline`. It reports what the hub is doing and never overrides who owns the pause: `state: "paused"` records `paused_by: "resident"` only when the camera is not already `"family"`, and `state: "watching"` clears the pause only when it is not `"family"` either (V3.1) |
 | GET | `/camera/config?camera_id=` | — | what the worker polls every 10 s, V3 |
 
 #### Residents, location, timeline (`routers/residents.py`, `routers/camera.py`)
 
 | Method | Path | Request → Response |
 |---|---|---|
-| GET | `/residents` | → `[{id, display_name, phone_e164, room, state: "ok"\|"alerting", battery_pct, last_seen, location: {zone, since, confidence, method} \| null, open_alert: <raw alert> \| null}]`. Bulk queries, not N+1. **Names a room** and carries her own phone number: a staff/operator shape, not a family one |
+| GET | `/residents` | → `[{id, display_name, phone_e164, room, state: "ok"\|"alerting", battery_pct, activity_label, last_seen, location: {zone, since, confidence, method} \| null, open_alert: <raw alert> \| null}]`. Bulk queries, not N+1. `activity_label` is the pendant's own on-device classifier (`walking`/`sitting`/`standing`/`lying`), off the band doc. **Names a room** and carries her own phone number: a staff/operator shape, not a family one |
 | GET | `/residents/{id}` | → the resident doc plus `consent: {camera, voice}` and `contacts` sorted by `ladder_order` |
-| GET | `/residents/{id}/timeline?since=&limit=50&types=` | → `[Event]` newest first, `since` is epoch seconds, `types` comma-separated and validated against `EVENT_TYPES` (`422` otherwise), `limit` 1..200. **Unfiltered**: carries `zone` and every type in `FAMILY_EXCLUDED_TYPES` (`evidence` is never on an event; it stays on `observations`) |
+| GET | `/residents/{id}/timeline?since=&limit=50&types=` | → `[{id, ts, ts_end, type, sentence, kind, confidence}]` newest first, `since` is epoch seconds, `types` comma-separated and validated against `EVENT_TYPES` (`422` otherwise), `limit` 1..200. **Family-shaped** through the same `_family_item` as `/activity`: no `zone`, and `FAMILY_EXCLUDED_TYPES` are dropped entirely. It used to return the raw rows, and 183 of 200 seeded rows carried a room (`evidence` is never on an event; it stays on `observations`) |
 | GET | `/residents/{id}/location` | → `{zone, since, confidence, method}` from the newest zone-bearing event, or all-null. **Open to any caller**; the "staff only" below is not enforced |
 | GET | `/residents/{id}/location/history?date=` | → `[{zone, from, to, seconds, method, confidence}]` from `zone_entered`/`zone_exited` boundaries only; a day that starts mid-visit drops that first stretch |
 | GET | `/residents/{id}/day?date=` | → `{date, meal_count, walk_count, night_bed_exits, room_time_s: {zone: s}}` in her timezone; `room_time_s` is "time until the next zone-bearing event", a one-pass approximation |
@@ -2933,13 +2997,16 @@ and persists it onto the event, so a seeded fall is never mistaken for a wrist.
 | POST | `/residents/{id}/notes` | `{text, author, role}` → the new `family_note` / `staff_note` event |
 | PUT | `/residents/{id}/contacts` | replaces the ladder, V2 |
 | POST | `/residents/{id}/survey/start\|sample\|stop` | RF site survey, V2 (the `/fingerprint/*` names below were renamed) |
-| GET | `/events/{event_id}` | → the event, or 404 |
+| GET | `/events/{event_id}` | → the event **shaped for the family**: `zone` and `derived_from` dropped, `embedding_text` through `rag.scrub_rooms`. The app opens this route from a notification deep link (`timeline/[eventId].tsx`), and its own `scrubRooms` is no longer the control — it only ever knew seven room names, and the raw record was reaching the phone either way |
 
-**The family/staff split is by route, not by role.** `/timeline`, `/location`, `/location/history`,
-`/day` and `GET /residents` name rooms; `/activity`, `/presence` and `/chat` never do. Nothing stops a
-family client calling the first group. D-001 is enforced by which routes the app chooses to call, which
-is exactly the client-side filter §12.4 says is not a privacy control. Upgrade path: put a role back on
-the caller and 403 the room-bearing routes for `family`.
+**The family/staff split is by route, not by role, and it has shrunk.** Four routes still name rooms:
+`/location`, `/location/history`, `/day` and `GET /residents`. Everything the app actually renders is
+now shaped on the server — `/activity`, `/presence`, `/chat`, `/timeline`, `GET /events/{id}` and the
+`event.new` socket message all go through `_family_item` / `rag.scrub_rooms` / `FAMILY_EXCLUDED_TYPES`,
+so a row cannot be safe on one path and leaky on another. Nothing stops a family client calling the
+four that remain, so for those four D-001 is still enforced by which routes the app chooses to call,
+which is exactly the client-side filter §12.4 says is not a privacy control. Upgrade path unchanged:
+put a role back on the caller and 403 the room-bearing routes for `family`.
 
 #### Alerts
 
@@ -2986,16 +3053,25 @@ discards anything the client sends. One process, one dict of sockets; Redis pub/
 a second worker.
 
 ```jsonc
-{"t":"event.new","event":{...}}                 // every emit(), every type, NOT family-filtered
+{"t":"event.new","event":{...}}                 // every emit() whose type is not in FAMILY_EXCLUDED_TYPES, family-shaped
 {"t":"alert.update","alert":{...}}              // every FSM transition, ack, resolve; same shape as GET /alerts/{id}
-{"t":"presence.update","resident_id":"…","presence":{...}}   // observation, heartbeat change, pause, resume, memory delete
+{"t":"presence.update","resident_id":"…","presence":{...}}   // observation, heartbeat change, pause, resume, memory delete — only when it changed
 {"t":"camera.monitor","camera_id":"…","resident_id":"…", ...tick}   // flat: the tick's fields spread into the envelope
 {"t":"ping"}
 ```
 
-`alert.update` is skipped entirely when no socket is connected, so the ladder never pays for shaping a
-message nobody reads. There is no coalescing; the PRD's "throttle `location.changed` to one per resident
-per 10 s" has nothing to throttle because that message does not exist.
+`event.new` carries the `_family_item` shape plus `resident_id`, not the raw Mongo doc: pushing the raw
+doc put `zone` and the raw `embedding_text` on every client on the LAN, which is the D-001 leak
+`/timeline` had. `alert.update` is skipped entirely when no socket is connected, so the ladder never
+pays for shaping a message nobody reads. `presence.update` is dropped when nothing a person could see
+changed, because a live camera posts two or three observations a second and the home screen re-rendered
+at that rate. There is no coalescing beyond that; the PRD's "throttle `location.changed` to one per
+resident per 10 s" has nothing to throttle because that message does not exist.
+
+The fan-out is parallel with a **2 s per-socket deadline**, and a socket that misses it is dropped and
+left to reconnect on its own backoff. `events.emit()` awaits its subscribers, so `broadcast` sits on the
+fall-ingest path: one phone on bad venue wifi that never finished its send used to block every other
+client's event and, behind the per-socket lock, queue the next one behind it.
 
 #### Specified, not built
 
@@ -3036,7 +3112,7 @@ local LLM makes an 81-year-old think the line has gone dead.
 |---|---|---|---|---|
 | Fall detection from IMU | Threshold cascade on STM32 | — | **Local (MCU)** | Must work with the Wi-Fi down. 208 Hz, sub-ms. No model needed; the per-wearer threshold arrives from the hub (§8.7) and the band keeps the last one offline |
 | Motion gate | OpenCV MOG2 | — | **Local** | Per-pixel op, 1.3 M frames/day. Cloud is absurd |
-| Person detect + track | YOLO11n (MPS) / CoreML ANE | Cloud detection API | **Local** | Privacy (§12) + cost. Frames never leave the Mac |
+| Person detect + track | YOLO11n (MPS) / CoreML ANE | Cloud detection API | **Local** | Privacy (§12) + cost. Frames never leave the LAN, and inference never leaves the Mac |
 | **ADL understanding from frames** | **Qwen3-VL-8B-4bit** via Ollama, schema-constrained | gpt-5.6-terra vision | **Local** | **Non-negotiable.** Uploading video of elderly residents is the thing that makes this product unsellable. ~2–4 s/batch (§6.7) is fast enough for ADL, which is not a real-time problem |
 | Room localization | k-NN + HMM, numpy | — | **Local** | 50 fingerprints, microseconds. There is nothing to send |
 | Baseline statistics | median/MAD, Poisson, pure Python | — | **Local** | 60 floats. An LLM here would be strictly worse and non-deterministic |
@@ -3054,8 +3130,11 @@ local LLM makes an 81-year-old think the line has gone dead.
 **Cost of the cloud column for the whole hackathon:** Deepgram ~$0.075/min × ~60 demo-minutes ≈ **$5**;
 OpenAI ≈ **$40** (§9.7); Twilio `[UNVERIFIED — check pricing in hour 0]`, budget **$20**. Under $70.
 
-**The one-line version for the judges:** *"Every frame of video stays on this laptop. Nothing that
+**The one-line version for the judges:** *"No frame of video ever leaves this LAN. Nothing that
 could identify what someone's home looks like ever goes to a server. What goes to OpenAI is sentences."*
+The earlier wording was "stays on this laptop", and as built that is one word too strong: the hub
+pushes an annotated frame to the API and the phone can display it (§12.3, point 2). No frame reaches a
+server, a disk or the database — but it does cross the room.
 
 ---
 
@@ -3104,7 +3183,7 @@ if not resident.consent_camera:
 | Cameras are never in bedrooms or bathrooms | Enforced in `zones`: `kind ∈ {bedroom, bathroom}` may only hold a **doorway** polygon (§6.6). The staff dashboard shows every camera's zone kind so a resident's family can audit it |
 | Capability, not surveillance | The `/onboard/consent` screen lists **what Dhyaan can tell you** ("that she went out this morning", "that her nights changed") and **what it cannot** ("which room she is in, who she talked to, what she looks like") |
 
-### 12.3 Video never leaves the Mac. Structurally.
+### 12.3 Video never leaves the LAN. Structurally.
 
 This is the claim the product lives or dies on, so it is enforced in four independent places:
 
@@ -3112,7 +3191,16 @@ This is the claim the product lives or dies on, so it is enforced in four indepe
    `frames/` directory. `keyframe_ids` in an event payload are **ring references that expire**, not
    file paths — after ~10 minutes the id resolves to nothing, and the UI shows "evidence expired".
 2. **No frame crosses a process boundary except to `localhost:11434`.** The VLM worker talks to Ollama
-   over loopback. That is the only socket a frame touches.
+   over loopback. That is the only socket a frame touches. **Build status: relaxed, deliberately and
+   visibly.** The app's camera screen now shows the same annotated picture the hub's preview window
+   draws, so the worker also POSTs one JPEG at ~5 fps to `POST /v1/ingest/camera/frame` and the phone
+   pulls it from `GET /v1/cameras/{id}/frame`. Points 1, 3 and 4 are untouched — the frame is encoded
+   in memory, one is held per camera in a module-level dict, it is never written to disk on either side
+   and never reaches the database, and it expires from the API after five seconds. What it costs is
+   real and this build does not pay it down: there is no auth on that route, so anything on the LAN can
+   pull the picture. `VISION_STREAM=0` turns the push off. Before this is more than a demo the route
+   goes behind auth and behind the resident's consent record, and the family screen asks for the stream
+   rather than receiving it by default.
 3. **No image content part is ever constructed for the OpenAI API.** There is exactly one OpenAI
    client wrapper (`backend/app/llm.py`) and it only ever sends plain-string message content, never an `image_url` part. `[The
    assert is 3 lines. Write it in hour 2, not hour 20.]`
@@ -3145,7 +3233,7 @@ Margaret her son can never see.
 
 | Family (Priya) sees | Family never sees |
 |---|---|
-| Whether she is **home or out**, and when she left and came back | **Which room she is in** — not live, not historical, not as a dwell chart. Enforced in the API by route shape, not by role (there are no roles, §10.5): the family routes (`/activity`, `/presence`, `/chat`, the monitor tick) strip rooms unconditionally, and the room-bearing routes (`/timeline`, `/location`, `/location/history`, `/day`, `event.new` on the socket) are open to any caller. The app decides which it calls |
+| Whether she is **home or out**, and when she left and came back | **Which room she is in** — not live, not historical, not as a dwell chart. Enforced in the API by route shape, not by role (there are no roles, §10.5): the family routes (`/activity`, `/presence`, `/chat`, `/timeline`, `GET /events/{id}`, `event.new` on the socket, the monitor tick) strip rooms unconditionally and on the server, and the four that remain room-bearing (`/location`, `/location/history`, `/day`, `GET /residents`) are open to any caller. The app decides which of those four it calls |
 | Activity from the band: steps walked, up at night (a count), active or still | A map, a dot, a floor plan, a per-room timeline |
 | Deviations from Eleanor's own baseline — next morning, as one sentence, and night changes only after **two** unusual nights | `unsteady_gait`, `gait_profile_shift` — **staff-only**, and never worded medically |
 | The voice-call transcript of any alert call that reached her | Any audio recording (none is stored) |
@@ -3242,7 +3330,7 @@ the demo. If it does not, cut B2B (§14 R7) and spend the next six hours making 
 
 | Who | Task |
 |---|---|
-| **A** | RAG (§9): daily narratives via Opus 5, embed to `chunks_vec`, hybrid retrieve + RRF, answer prompt, citation regex, `/v1/chat`. Backfill 14 days for 3 residents |
+| **A** | RAG (§9): daily narratives via `gpt-5.6-terra`, embed to `chunks_vec`, hybrid retrieve + RRF, answer prompt, citation regex, `/v1/chat`. Backfill 14 days for 3 residents |
 | **B** | Bathroom-prolonged voice path (§7.6). Transcript streaming to the app (`alert.voice`). **Then join D on the app** — voice is done or it isn't |
 | **C** | Camera↔RF fusion (§7.5), the identity trick. `meal_skipped` job. `/admin/health`. Staff dashboard data endpoints |
 | **D** | Chat screen with citation chips. Staff triage screen (S1). Onboarding + survey screens (they are in the demo) |

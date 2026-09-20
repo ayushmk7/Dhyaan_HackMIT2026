@@ -1,6 +1,6 @@
 # Sponsor challenge submissions — copy-paste blurbs for Plume
 
-We submit to 8. Each blurb is ready to paste; longer write-ups live in the
+We submit to 9. Each blurb is ready to paste; longer write-ups live in the
 linked files. Demo video + repo link are shared across all.
 
 ## Deepgram — "Build Something Worth Talking To" (strongest fit)

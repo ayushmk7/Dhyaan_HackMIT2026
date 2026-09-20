@@ -25,7 +25,7 @@ those. "No auth" means no identity, not no checks.
 | GET | `/residents/{id}/baselines` | — | `[{feature, mu, mad, lam, n_obs, cold_start, last_value, updated_at, unit, direction}]`; sorted by `feature` |
 | GET | `/residents/{id}/summaries?days=7` | — | `[{date, narrative, deviations: [{feature, severity, text}]}]`; **one story per day**, newest day first (see below) |
 | GET | `/residents/{id}/location/history?date=YYYY-MM-DD` | — | `[{zone, from, to, seconds, method, confidence}]`; staff surface, names rooms |
-| GET | `/events/{event_id}` | — | the event, or 404 |
+| GET | `/events/{event_id}` | — | the event **shaped for the family** — no `zone`, no `derived_from`, `embedding_text` through `rag.scrub_rooms` — or 404 |
 | POST | `/admin/simulate` | `{resident_id, kind: "fall"\|"bathroom"\|"walk"\|"meal"\|"visitor"\|"out_of_view", script?}` | `fall`: `{event_id, alert_id}`; `bathroom`/`walk`: `{event_id}`; camera kinds: `{observation_ids, event_ids, presence}` |
 | POST | `/admin/rollup` | `{resident_id, date}` (both required, `date` is resident-local `YYYY-MM-DD`) | `{resident_id, date, features, deviations, narrative}` |
 | POST | `/bands/pair` | `{band_id, resident_id, force?: bool}` | `{ok, band: {id, resident_id, paired_at, ...}}`; `409` if the band is paired to someone else and `force` is not true |
@@ -50,7 +50,11 @@ Notes that matter:
   demo runs can end differently without restarting the server; ignored once real
   telephony is installed.
 - **`/admin/rollup` is the other demo button.** It runs `baseline.rollup` and
-  `rag.daily_narrative` for one resident-day now instead of at 03:30 local. Every
+  `rag.daily_narrative` for one resident-day now instead of at 03:30 local. A day
+  with no events at all comes back with `features: {}` and `deviations: {}`:
+  `baseline.rollup` returns `{}` rather than scoring zeros, because a day we saw
+  nothing is an outage, not a day she did not eat, and `meal_count = 0` against
+  λ = 3 would otherwise sit in the 60-day window as a real observation. Every
   run *appends* a fresh `daily_summary` and a fresh `baseline_deviation` per
   feature; nothing is superseded on write. The reads compensate: `/summaries`
   groups by `payload.date_local` and keeps the newest row per day (and the
@@ -60,12 +64,22 @@ Notes that matter:
   line (value, baseline, z-score) for retrieval and staff; `payload.narrative` is
   the family sentence written by `baseline._family_text`. `/summaries`,
   `/activity` and chat citations prefer `payload.narrative` when present.
+- **`/events/{event_id}` is shaped on the server, not on the phone.** The app
+  opens this route from a notification deep link (`timeline/[eventId].tsx`), so
+  it is filtered like every other family read: `zone` and `derived_from` are
+  dropped and `embedding_text` goes through `rag.scrub_rooms`. The client has a
+  `scrubRooms` of its own and it is no longer the control — it only ever knew
+  seven room names, and the raw record was reaching the phone either way.
 - **The survey endpoints feed `app/location.py`'s fingerprint store.** `stop`
   writes the collected RSSI vectors into the `fingerprints` collection for that
   zone, replacing any earlier survey of the same zone. That is what makes room
   classification work in a new building. In-progress surveys live in a
   process-local dict: a restart mid-survey drops them, nothing durable was
-  promised.
+  promised. `start` already rejects a zone the graph does not know, and
+  `location._fingerprints_for` drops one on the way back out as well: a
+  fingerprint for an unknown zone (a seed, or a direct write to Mongo) would win
+  `classify` and then never be committable by `step`, which only sums over
+  `ZONES`, so the resident would sit at `location_unknown` for good.
 - **`PUT /contacts` replaces the whole ladder** and renumbers `ladder_order`
   densely from 1. A gap in the ladder silently skips a person during an
   escalation. Delete-then-insert, not atomic; a crash between the two loses the

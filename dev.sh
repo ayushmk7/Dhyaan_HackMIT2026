@@ -67,14 +67,24 @@ else
   done
 fi
 
-if ollama list 2>/dev/null | grep -q '^nomic-embed-text'; then
+# Read the model list ONCE into a variable and grep that. Do NOT "simplify" this
+# back into `ollama list | grep -q ...`: this script runs under `set -euo
+# pipefail`, and `grep -q` exits the moment it matches. qwen2.5vl:3b is the FIRST
+# data row, so ollama still has rows to write, gets SIGPIPE, exits 141 — and
+# pipefail turns the whole pipeline into a failure even though grep MATCHED. That
+# is what made dev.sh warn that a model you have pulled is not pulled. (The
+# nomic-embed-text row is last, so that check happened to get away with it.)
+# A here-string has no writer process left to kill.
+OLLAMA_MODELS="$(ollama list 2>/dev/null || true)"
+
+if grep -q '^nomic-embed-text' <<<"$OLLAMA_MODELS"; then
   : # already pulled
 else
   warn "pulling nomic-embed-text (one-time, ~270MB — used for semantic recall)"
   ollama pull nomic-embed-text
 fi
 
-if ! ollama list 2>/dev/null | grep -q '^qwen2\.5vl:3b'; then
+if ! grep -q '^qwen2\.5vl:3b' <<<"$OLLAMA_MODELS"; then
   warn "qwen2.5vl:3b (camera-lane VLM) not pulled — run 'cd backend && make vlm' before using the camera lane"
 fi
 
@@ -83,7 +93,7 @@ info "checking seed data"
 SEEDED="$(docker exec dhyaan-mongo mongosh dhyaan --quiet --eval 'db.residents.countDocuments({})' 2>/dev/null | tail -1 | tr -d '[:space:]')"
 SEEDED="${SEEDED:-0}"
 if [ "$SEEDED" = "0" ]; then
-  info "DB is empty — seeding Eleanor (14 days + today)"
+  info "DB is empty — seeding Asha (14 days + today)"
   (cd "$BACKEND" && .venv/bin/python -m scripts.seed --wipe)
 else
   info "DB already has $SEEDED resident(s) — skipping seed (cd backend && make seed to force a reseed)"

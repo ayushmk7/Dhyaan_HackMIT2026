@@ -5,7 +5,7 @@
 **Eldercare sensing that phones the grandparent first, and the family second.**
 
 A wrist band that feels a fall, ESP32 anchors that know which room she is in,
-and a camera whose pixels never leave the machine — folded into one event
+and a camera read only by models on this laptop — folded into one event
 stream the family can ask questions of.
 
 `HackMIT 2026` · Arduino UNO Q + ESP32-S3 + MacBook-local inference
@@ -31,7 +31,7 @@ reproducible — is [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md).
 | Beat | What you see | Where it comes from |
 |---|---|---|
 | **Where she is** | Room changes as the band walks past the anchors, bathroom dwell raises a flag | `backend/app/location.py` · `beacons/beacon.ino` |
-| **What she did today** | "Eleanor ate lunch at the table, 12:31–12:48." No image, no room name | `backend/vision/` → `backend/app/presence.py` |
+| **What she did today** | "Asha ate lunch at the table, 12:31–12:48." No stored image, no room name | `backend/vision/` → `backend/app/presence.py` |
 | **The fall** | Band buzzes, 30 s to cancel, then the phone rings *her* | `band/fallband/sketch/` → `backend/app/alerts.py` |
 | **The second opinion** | Camera independently reports `on_floor`, which jumps the queue | `backend/vision/keyframe.py` |
 | **The escalation** | She doesn't answer → the family's phone rings and the app goes full-screen | `backend/app/alerts.py` · `frontend/src/app/alert/` |
@@ -47,31 +47,59 @@ consent conversation with a 79-year-old is over.
 | Job | Model | Where it runs | Measured |
 |---|---|---|---|
 | Scene → sentence | `qwen2.5vl:3b` | Ollama, `localhost:11434` | 0.69 s / call, warm |
-| Person + food + dishes + seating | `yolov8s-worldv2` (open-vocabulary) | in-process, Ultralytics | 9–11.5 ms / frame |
+| Person + food + dishes + seating | `yolov8s-worldv2` (open-vocabulary) | in-process, Ultralytics | ~13 ms / frame live |
 | Posture (hips vs shoulders vs knees) | MediaPipe `pose_landmarker_lite` | in-process | ~13.8 ms / frame |
-| Prompt vocabulary embeddings | CLIP `ViT-B/32` | in-process, once at startup | ~4 s, startup only |
+| Prompt vocabulary embeddings | CLIP `ViT-B/32` | in-process, once at startup | 3.1 s, startup only |
 | Motion | MOG2 on 320×180 grey | OpenCV | ~2 ms / frame |
 | Daily-narrative embeddings | `nomic-embed-text`, 768-d | Ollama | offline once pulled |
 | Fall cascade | threshold state machine, 208 Hz | STM32U585 **on the band** | no network at all |
 | Room estimate | weighted k-NN + HMM + hysteresis | in the API process | pure functions, no model |
 
-**Frames cross exactly one socket: loopback to Ollama.** No frame is ever
-written to disk — there is no `cv2.imwrite`, no `VideoWriter`, no `frames/`
-directory anywhere in `backend/vision/`, and the last test in
-`backend/tests/test_vision_gate.py` walks the package's AST and fails the build
-if anyone adds one. It is a structural promise, not a convention.
+**No frame is ever written to disk.** There is no `cv2.imwrite`, no
+`VideoWriter`, no `frames/` directory anywhere in `backend/vision/`, and a test
+in `backend/tests/test_vision_gate.py` walks the package's AST and fails the
+build if anyone adds one. It is a structural promise, not a convention.
 
-### The two things that do leave the machine, named out loud
+**A frame does now cross the LAN, and it is a relaxation, not a feature.** The
+only socket that carries a frame to a *model* is still loopback to Ollama. But
+the hub also posts the annotated frame it draws in its own window to
+`POST /v1/ingest/camera/frame` about five times a second, and the family app's
+camera screen renders it — the picture on the phone is the picture on the hub.
+The API keeps exactly one JPEG per camera in RAM, refuses the post when consent
+is off or the camera is paused (`_live_camera`, the same gate as every other
+device route), serves nothing older than 5 s so a stale frame cannot pass for a
+live one, and writes nothing to Mongo or to disk. `VISION_STREAM=0` turns the
+relay off and the screen goes back to geometry and a sentence. The comment over
+`_FRAME` in `routers/camera.py` calls it a demo-only relaxation of this lane's
+oldest rule and says what it would take to ship: auth on the route, its own
+consent grant, and a screen that asks for the picture instead of receiving it.
+
+### The two things that leave the LAN, named out loud
 
 | Edge | What crosses | What never crosses |
 |---|---|---|
-| **OpenAI** (`gpt-5.6-terra`, `backend/app/llm.py`) | The day's already-anonymised event sentences, for the daily narrative and the family's questions | Pixels, audio, room names |
+| **OpenAI** (`gpt-5.6-terra`, `backend/app/llm.py`) | The day's event sentences, for the daily narrative and the family's questions | Pixels, audio, video |
 | **Twilio + Deepgram** (`dhyaan/voice/`) | The disclosed phone call, during the call only | Nothing is stored: we keep the transcript, never the audio (D-004) |
 
-Both are text-only, both are on the escalation path rather than the sensing
-path, and pulling the API keys degrades the system instead of breaking it —
-`AVAILABLE = bool(OPENAI_API_KEY)` and the voice bridge only mounts when
-Twilio credentials exist, so `./dev.sh` runs zero-config with neither.
+Both are text-only, both are off the sensing path, and pulling the API keys
+degrades the system instead of breaking it — `AVAILABLE = bool(OPENAI_API_KEY)`
+and the voice bridge only mounts when Twilio credentials exist, so `./dev.sh`
+runs zero-config with neither.
+
+The text path is one `httpx` POST to `/v1/chat/completions` — no vendor SDK, no
+framework, an 8 s timeout and one retry — and it is the first link of a chain
+rather than a dependency. A family question that OpenAI does not answer falls
+to a chat model on the same local Ollama (`rag._ollama_answer`, off unless
+`CHAT_FALLBACK_MODEL` is set; `dev.sh` points it at the `qwen2.5vl:3b` already
+pulled for the camera), and then to a deterministic template that groups the
+retrieved sentences by *you told us* / *Dhyaan saw* / *from her pattern*. The
+daily narrative has the template but not the middle link. With no key at all
+the app still answers — it answers less well, and nothing 500s.
+
+One honest edge on that row: the questions are scrubbed of room names before
+they go out (`rag.scrub_rooms`, on every retrieved hit), but the daily-narrative
+prompt is the day's raw event sentences, and a band or beacon sentence can name
+a room. What renders on the family surface is scrubbed again server-side.
 
 ---
 
@@ -79,7 +107,7 @@ Twilio credentials exist, so `./dev.sh` runs zero-config with neither.
 
 ```mermaid
 flowchart LR
-    subgraph Home["Eleanor's home"]
+    subgraph Home["Asha's home"]
         BAND["Arduino UNO Q band<br/>LSM6DSOX @ 208 Hz<br/>fall cascade + BLE scan"]
         B1["ESP32-S3 anchor<br/>minor 1 · kitchen"]
         B2["ESP32-S3 anchor<br/>minor 2 · bathroom"]
@@ -102,31 +130,43 @@ flowchart LR
     B2 -. iBeacon adverts .-> BAND
     BAND -->|"POST /v1/ingest/band · /ingest/rf"| API
     CAM --> VIS
-    VIS -->|"sentences, never frames"| API
+    VIS -->|"sentences · + a 5 fps preview frame, RAM only"| API
     API --> LOC
     API --> RAG
     RAG --> OPENAI
     API --> PHONE
-    API -->|"WebSocket + push"| APP["Expo app<br/>family · staff"]
+    API -->|"WebSocket · REST · the preview frame"| APP["Expo app<br/>family · staff"]
 ```
 
 ---
 
 ## The camera lane, in order
 
-`backend/vision/` is the only process in the system that ever holds a pixel.
-Every stage exists to avoid paying for the next one.
+`backend/vision/` is the only process that runs a model on a pixel — the API's
+relay buffer, above, holds one JPEG at a time and writes it nowhere. Every
+stage exists to avoid paying for the next one.
 
 | Stage | What it does | Cost | Drops |
 |---|---|---|---|
 | 0 · sample | Every 2nd frame at 30 fps → 15 fps | — | half |
 | 1 · mask | Black out a normalised rectangle *before* any detector sees it | ~0 | the doorway you excluded |
 | 2 · motion | MOG2 foreground ratio > 0.008 | ~2 ms | an empty room, all day |
-| 3 · gate | One YOLO-World pass: person, food, dishes, seating | 9–11.5 ms | frames with nobody in them |
+| 3 · gate | One YOLO-World pass: person, food, dishes, seating | ~13 ms | frames with nobody in them |
 | 3b · posture | MediaPipe pose — hips relative to shoulders and knees | ~13.8 ms | false `on_floor` |
-| 4 · keyframe | Is this frame worth 0.7 s of VLM? | pure state machine | ~59 of every 60 |
+| 3c · post | The detector's own observation, the moment `(people, food, dishes, posture band)` changes | ~0 | a flapping label: one post a second, at most |
+| 4 · keyframe | Is this frame worth 0.7 s of VLM? | pure state machine | every frame but one a minute |
 | 5 · VLM | 448×252 JPEG → `qwen2.5vl:3b` → strict JSON | 0.69 s | — |
 | 6 · fold | Observations → one open interval per activity → one event | — | five duplicate lunches |
+
+**Two things come out of that cascade, on two clocks.** The detector answers
+every structural question — is she there, is someone with her, is there food,
+is she up or seated — in ~13 ms, so stage 3c posts its own observation the
+moment that answer changes and does not wait for a keyframe. `quick_min_s`
+(1.0 s) is the floor under it: a label sitting on its confidence threshold
+flaps, and without the floor each flap was a write, fifteen a second, for ever.
+The VLM only writes the sentence, on stage 4's much slower cadence. Before that
+split every observation cost a model call and the app sat six seconds behind a
+camera that already knew.
 
 **Why posture is its own module.** The bbox aspect ratio (taller than wide =
 standing, wider = floor) returned `on_floor` on 20 out of 20 webcam frames of
@@ -136,6 +176,19 @@ did. So we ask the body. And when the knees are under the desk — landmark
 visibility 0.15 and 0.03 on those same frames — the answer is `unclear`, which
 is a first-class result here. A carer paged at 3am by a confident wrong posture
 is worse than one not paged by an admitted unknown.
+
+`unclear` is also the answer when a body is pointed at the lens. Lying with her
+head toward the camera projects the shoulders and hips almost on top of each
+other: the torso measures shorter than the shoulders are wide, the tilt reads
+*vertical*, the knees sit in front of the hips, and the geometry that follows
+from that says `seated`, at full confidence — a real fall confidently
+contradicted, with the VLM then never asked. A torso that projects shorter than the shoulder width is
+not a torso seen side-on, whatever its angle says, so that branch withholds the
+answer. It can only ever produce `unclear`, never an `on_floor`: two normalised
+landmarks cannot tell lying-toward-the-camera from leaning-hard-toward-it, and
+guessing wrong there puts "she appeared to be on the floor" on a family's
+screen. The depth cue that would turn it into a positive is MediaPipe's world
+landmarks, which we do not read yet.
 
 **Why this model.** Same live frame, same prompt, warm, on this machine:
 
@@ -158,18 +211,51 @@ breakfast.
 
 **What it becomes.** `presence.py` folds observations into intervals (a meal
 needs ≥2 observations over ≥120 s) and emits one event with a plain sentence:
-*"Eleanor ate lunch at the table, 12:31–12:48."* The family surface gets that
-sentence. It never gets the frame, the room name, the posture or the evidence
-string — the filter is server-side, in `routers/camera.py` and
+*"Asha ate lunch at the table, 12:31–12:48."* The family surface gets that
+sentence. It never gets the room name, the posture or the evidence string, and
+the only pixels it ever gets are the live relay above, which is stored nowhere
+and stops with consent — the filter is server-side, in `routers/camera.py` and
 `rag.search(family=True)`, because a client-side privacy filter is not a
 privacy control.
 
-**Fall corroboration.** `on_floor` is the one posture band that jumps the
-keyframe queue — it forces a VLM call immediately rather than waiting for the
-next scheduled one, at most once per 30 s. The band is what opens the alert;
-the camera is the second opinion that lands in the same event stream seconds
-later, flagged `on_floor`, so the person looking at the alert sees both
-sensors agreeing before anyone picks up a phone.
+**Fall corroboration, and the three gates in front of it.** `on_floor` is the
+one posture band that jumps the keyframe queue: it force-flushes the ring and
+spends a VLM call now rather than at the next scheduled one. Everything about
+that path is built to be hard to enter.
+
+- **The pose read has to repeat.** A single landmark frame saying "on the
+  floor" was wrong 104 times in 2091 observations across one morning — 5%,
+  with nobody ever on the floor, because the landmarker puts the hips
+  somewhere plausible when it cannot really see them and a hip guessed
+  sideways of the shoulders is a torso past 55°. So `wide` is reported only
+  after `pose_wide_run` (3) uninterrupted reads, about 0.2 s at this frame
+  rate, and a marginal read before then is `None` — not "seated", because we
+  do not know.
+- **Then the selector confirms it again.** `on_floor_confirm` (2) consecutive
+  wide frames before the queue is jumped. YOLO's bbox aspect oscillates across
+  the 0.8 line frame to frame, so a bare "became wide" test fired on almost
+  every frame and force-flushed a one-frame batch each time.
+- **And stage 3c borrows the same confirm.** The detector's change-post was a
+  second route from a rectangle to the word "floor" and had no confirm of its
+  own, so a nap on the sofa or a sideways bend became "she appeared to be on
+  the floor at 3:14 pm" off one frame. It now reads `selector.floor_confirmed`
+  and drops `wide` to `None` without it. No single frame anywhere in this lane
+  can put someone on the floor.
+
+The 30 s cooldown (`on_floor_cooldown_s`) caps what survives all that, because
+a subject who is merely wide — someone cropped at the waist by a low camera —
+can otherwise re-arm every second or two. But a cooldown armed by a *false*
+read must not sit on a real fall, which is what it did: the reason was ANDed
+away, `min_gap_s` ate the fall-through, and the fall arrived 20–30 s late. A
+run of four — twice the confirm, strictly more evidence than the read that
+armed the cooldown ever had — now goes through it.
+
+The band is still what opens the alert; the camera is the second opinion that
+lands in the same event stream seconds later, flagged `on_floor`, so the person
+looking at the alert sees both sensors agreeing before anyone picks up a phone.
+What none of this proves is that `on_floor` is *right*: nobody lay on the floor
+for a camera during the build, so the positive case rests on synthetic-landmark
+tests (`test_posture.py`), not on a real fall.
 
 ---
 
@@ -218,11 +304,17 @@ plan — a dot promises metre accuracy we cannot deliver, and the first time it
 is in the wrong room the staff stop believing everything else on the screen.
 
 **Calibration is a product step, not a lab step.** The onboarding survey walks
-the family room by room, records ten scans each, and prints `separability_db`
-per room pair. Below ~6 dB the app tells them to *merge the two zones*: one
-correct "downstairs" beats two rooms that are right 55% of the time. Unplug an
-anchor and `beacon_offline` fires and the room degrades to `unknown`, which is
-a demo prop and also the honest failure mode.
+the family room by room and stores a fingerprint per zone; the API refuses a
+zone with fewer than three samples (`MIN_SURVEY_SAMPLES`, `routers/setup.py`)
+and the app says *not enough signal collected* in those words. It no longer
+prints a `separability_db` per room pair: the app was deriving that from the
+sample count, which is a guess wearing a unit, and `frontend/src/lib/http.ts`
+deleted it rather than keep it. The advice it existed to give still holds and
+now lives in `beacons/README.md` — below ~6 dB between two rooms, merge them:
+one correct "downstairs" beats two rooms that are right 55% of the time. Unplug
+an anchor and nothing announces it (`beacon_offline` is a declared event type
+with no producer anywhere in the code); the room degrades to `unknown` the slow
+honest way instead, on three ticks with the posterior under 0.45.
 
 **Honest accuracy.** Room-level, not metre-level: ~85–95% of committed
 estimates in walled rooms after a survey; poor in an open-plan kitchen/living
@@ -231,7 +323,7 @@ room, which is one RF room and should be one zone; 20–60 s to commit a change.
 **And the family never sees any of it** (D-001). Room, zone, posture and
 evidence are for the staff surface and the baseline learner. The family gets
 home/out, counts, and deviations from her own baseline. Priya knowing her
-mother is in the bathroom *right now* is exactly the surveillance Eleanor
+mother is in the bathroom *right now* is exactly the surveillance Asha
 would take the band off over.
 
 ---
@@ -252,16 +344,28 @@ Then the escalation, timings in `backend/app/alerts.py`:
 
 | t | State | What happens |
 |---|---|---|
-| `T+0` | `SUSPECTED` | Buzzer + red LED on the band. The hub knows. **No human is notified yet** (D-002) |
+| `T+0` | `SUSPECTED` | Buzzer + all three LEDs blinking on the band. The hub knows. **Nobody is phoned yet** (D-002) |
 | `T+0…30 s` | `LOCAL_CANCEL` | She presses the button → resolved `false_positive`, and nothing else happens |
-| `T+30 s` | `CALLING_RESIDENT` | **She** gets the call. A voice agent, disclosed as recorded and as AI, 25 s timeout |
-| on no-answer | `RETRY_RESIDENT` | Exactly one retry, 15 s later |
-| `T+~120 s` | `CALLING_CONTACT_1` | Family call + time-sensitive push + full-screen in-app alert |
-| `+60 s` | `CALLING_CONTACT_2` | Placed **in parallel**, contact 1 is not hung up on |
-| `+60 s` | `ESCALATED_FINAL` | Every remaining contact, with 911 guidance and the address. **We never dial 911 ourselves** (D-005) |
+| `T+30 s` | `CALLING_RESIDENT` | **She** gets the call. A voice agent, disclosed as recorded and as AI. 25 s of ringing, then 90 s to say something (`RESIDENT_RESPONSE_TIMEOUT_S`) |
+| on no-answer | `RETRY_RESIDENT` | One retry, 15 s later |
+| `T+~120 s` | `CALLING_CONTACT_1` | Family call + full-screen in-app alert |
+| `+60 s` | `CALLING_CONTACT_2` | Contact 1 is not hung up on |
+| `+60 s` | `ESCALATED_FINAL` | Every remaining contact. **We never dial 911 ourselves** (D-005) |
 
 30 s, not 60: someone who dropped the band knows within 5 seconds, and someone
 who actually fell is not cancelling.
+
+Four things that table would let you believe and shouldn't. **The retry rung
+is reachable but not automatic:** `RETRY_RESIDENT` is entered only on an
+explicit `no_answer` classification, and the timer out of `CALLING_RESIDENT` is
+`silence`, which goes straight to contact 1 — with the stub voice layer, the
+retry never runs. **The contacts are sequential**, 60 s apart, not parallel.
+**And the final escalation does not speak the address or 911 guidance:**
+`voice_adapter.speak_final_escalation` logs both and says so in its own comment.
+The contact hears the agent; they do not hear where she lives. There is also no
+push sender in the repo — `POST /push/register` stores a token nothing reads —
+so "the family's phone rings" is the phone call and the websocket, not a
+notification.
 
 ---
 
@@ -269,13 +373,14 @@ who actually fell is not cancelling.
 
 | Promise | Where it is enforced | How it fails |
 |---|---|---|
-| No frame ever hits disk | AST walk over `backend/vision/` in `test_vision_gate.py` | the test suite goes red |
-| No frame leaves the machine | one socket, loopback to Ollama | — |
-| Consent is checked before the device opens, and on every config poll | `vision/worker.py` | a failed config fetch means *no consent*, not "carry on" |
+| No frame ever hits disk, on either side | AST walk over `backend/vision/` in `test_vision_gate.py`; the API's relay buffer is one dict in RAM | the test suite goes red |
+| No frame reaches a model off this machine | one socket, loopback to Ollama | — |
+| The live picture stops when she does | the relay posts through `_live_camera` like every device route, and the API serves nothing older than 5 s | consent off or paused → 403, and the screen says it has no picture |
+| Consent is checked before the device opens and on every config poll, and the device is **closed** the moment it is withdrawn | `vision/worker.py` | a failed config fetch means *no consent*, not "carry on" |
 | Camera ingest fails closed | `routers/camera.py` | no camera doc, consent off or paused → nothing is written at all |
 | Family never sees a room | server-side filter in `routers/camera.py`, `rag.py`, `presence.py` | — |
 | No audio from the camera, ever | the worker never opens a microphone | — |
-| Call audio is never stored | D-004 — text transcripts, 7-day retention | — |
+| Call audio is never stored | `dhyaan/voice/` holds base64 in and out and opens no file; we keep the text transcript | D-004's 7-day retention is *not* built — `observations` is the only collection with a TTL |
 
 > **This build has no authentication.** No login, no API key, no band key, no
 > token on the websocket, and CORS is wide open. One laptop, one LAN, one
@@ -301,7 +406,7 @@ cd ../frontend && npm install && cd ..
 ```
 
 `dev.sh` starts mongo in Docker, starts `ollama serve` if it is not already
-up, pulls `nomic-embed-text` once, seeds Eleanor if the DB is empty, and runs
+up, pulls `nomic-embed-text` once, seeds Asha if the DB is empty, and runs
 the API on `0.0.0.0:8000` — reachable from a phone on the LAN, not just the
 Mac. Re-running it is safe: it skips what is already running and never reseeds
 a database that has data. Ctrl-C stops only what that run started.
@@ -324,8 +429,8 @@ stand-in:
 ```bash
 cd backend
 make vlm                                              # pull + warm qwen2.5vl:3b, once (3.2 GB)
-python -m vision --source 0 --camera-id cam_mac_01 --demo
-python -m vision --source 0 --preview                 # watch the cascade decide, live
+.venv/bin/python -m vision --source 0 --camera-id cam_mac_01 --demo
+.venv/bin/python -m vision --source 0 --preview       # watch the cascade decide, live
 make vision-synthetic                                 # no webcam: synthetic frames
 ```
 
@@ -335,7 +440,7 @@ numbers, so a bite becomes a sentence inside a 3-minute slot.
 **Tests** need mongo but not `dev.sh`:
 
 ```bash
-cd backend && make mongo && make test     # 274 tests, 21 s
+cd backend && make mongo && make test     # 340 tests, 36–46 s
 make -C band test                         # fall detector + payload shapes
 ```
 
@@ -390,7 +495,7 @@ one, and it would be labelled that way in the app.
 
 ### Speakers and a microphone — wanted, and not possible on this hardware
 
-Design called for a two-way in-room voice: Eleanor says "I'm okay" instead of
+Design called for a two-way in-room voice: Asha says "I'm okay" instead of
 finding a button, and the band answers out loud during the grace window. We
 could not build it in this box, for reasons that are hardware, not scheduling:
 
@@ -400,8 +505,8 @@ could not build it in this box, for reasons that are hardware, not scheduling:
   at any bit depth worth hearing.
 - **The UNO Q has no audio path.** No codec, no analog out, no MEMS mic. The
   only sound the band can make is the Modulino Buzzer — a self-oscillating
-  piezo on the I²C bus — which is why the grace window is a 2 kHz chirp and a
-  red LED rather than a voice.
+  piezo on the I²C bus — which is why the grace window is a 2 kHz chirp and
+  three blinking LEDs rather than a voice.
 - **The one board in the lab that *does* have a speaker and a mic array — the
   ESP32-S3-BOX — was already spoken for.** The hardware lab had exactly one
   DevKitC and one S3-BOX, and room localization needs two anchors at opposite
@@ -442,6 +547,7 @@ physical units rather than as a black box.
 | [`docs/PRODUCT_SPEC.md`](docs/PRODUCT_SPEC.md) | What this is, who it is for, the competitive landscape, and where it is weak |
 | [`docs/TECHNICAL_PRD.md`](docs/TECHNICAL_PRD.md) | The whole system: event model, alert FSM, voice layer, localization maths |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Every D-0xx decision and the argument behind it |
+| [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) | What is still wrong, and what we decided not to fix |
 | [`docs/VLM_PLAN.md`](docs/VLM_PLAN.md) | The camera lane, including what it honestly cannot do |
 | [`docs/HARDWARE_SPEC.md`](docs/HARDWARE_SPEC.md) | BOM, radios, power budget, placement, the fall cascade in pseudocode |
 | [`docs/HARDWARE_INTEGRATION.md`](docs/HARDWARE_INTEGRATION.md) | The contract firmware must meet |
@@ -453,12 +559,13 @@ Bring-up, hands on hardware:
 [`band/README.md`](band/README.md) · [`band/fallband/README.md`](band/fallband/README.md) ·
 [`beacons/README.md`](beacons/README.md) · [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md)
 
-Why the detector stack is what it is:
-[`the bench (git history, 56e2237).md`](the bench (git history, 56e2237).md) benchmarks every backend on the same
-frames, and [`the bench in git history, commit 56e2237`](the bench in git history, commit 56e2237) is the finding that drove the
-whole open-vocabulary gate — COCO has exactly ten food classes, so a crisp
-packet, a noodle box, a wrapper and a mug of soup are all invisible to a plain
-YOLO. "Did she eat?" is unanswerable with a closed vocabulary.
+Why the detector stack is what it is: the `testcam/` bench was removed once it
+had done its job (`12d53ff`) and survives at commit `56e2237`, which timed
+seven detectors on the same frames and carries the finding that drove the whole
+open-vocabulary gate — COCO has exactly ten food classes, so a crisp packet, a
+noodle box, a wrapper and a mug of soup are all invisible to a plain YOLO. "Did
+she eat?" is unanswerable with a closed vocabulary. Its numbers are quoted
+inline at the top of stage 3 in `backend/vision/gate.py`.
 
 Judging write-ups: [`SUBMISSIONS.md`](SUBMISSIONS.md) indexes them —
 [`COST.md`](COST.md), [`docs/DROPBOX_CHALLENGE.md`](docs/DROPBOX_CHALLENGE.md),
@@ -466,13 +573,24 @@ Judging write-ups: [`SUBMISSIONS.md`](SUBMISSIONS.md) indexes them —
 
 ---
 
-## Two things to say out loud to a judge
+## Three things to say out loud to a judge
 
-**Eleanor's 15 days of history come from a seed script. The learner running on
+**Asha's 15 days of history come from a seed script. The learner running on
 top of it is real** — `baseline.py` builds her distributions from whatever
 events exist, and it does not know or care that a script wrote them.
 
-**The camera never writes a frame to disk, and the family never sees an image
-or a room name.** They see sentences. That is not a limitation we are
-apologising for; it is the only version of this product a grandparent would
-agree to live with.
+**The camera never writes a frame to disk, and the family never sees a room
+name.** The disk guarantee is structural and tested; the room filter is
+server-side. What the family reads is sentences, and that is not a limitation
+we are apologising for — it is the only version of this product a grandparent
+would agree to live with.
+
+**The family *can* now see the live picture, and we are not going to hide
+that.** One screen in this build shows the annotated frame the hub is looking
+at, in the app's own words: *"This is her camera, live. Nothing is recorded and
+nothing is kept: each picture is replaced by the next one and the last one is
+gone."* That is accurate — RAM only, stale after 5 s, gone when consent goes
+off — and it is still a relaxation of the rule the rest of this lane was built
+around. On a build with no auth, anything on the LAN can pull that frame.
+Before it shipped it would need its own consent grant, auth on the route, and a
+screen that asks for the picture rather than receiving it.

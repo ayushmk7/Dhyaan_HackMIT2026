@@ -86,6 +86,32 @@ async def test_answer_citations_point_to_real_events(resident, db):
         assert "ts" in c and "text" in c
 
 
+async def test_a_daily_summary_is_embedded_on_its_whole_narrative(resident, db):
+    """A day's vector has to be the vector of the text retrieval hands back.
+
+    daily_narrative() embeds the full narrative itself, and the events.subscribe
+    hook used to embed the 400-char embedding_text over the top of it in the
+    background: whichever update_one landed second won, so a day's chunk was the
+    whole story or its first two sentences depending on the network, and the
+    same question could answer differently on two runs. Both paths now embed the
+    same text, so the order stopped mattering. This drives the hook alone, which
+    is the half that used to be wrong."""
+    narrative = ("Eleanor was up early and had toast and tea at the table. " * 12
+                 + "Late in the afternoon she potted geraniums on the balcony.")
+    assert len(narrative) > 400, "the race only shows up past emit()'s truncation"
+
+    await emit(resident_id=resident, source="derived", type="daily_summary",
+               embedding_text=narrative[:400], payload={"narrative": narrative})
+    await rag.drain_embeddings()
+
+    doc = await db.events.find_one({"resident_id": resident, "type": "daily_summary"})
+    assert doc["embedding"] == (await rag.embed([narrative]))[0]
+    assert doc["embedding"] != (await rag.embed([narrative[:400]]))[0]
+    # ...and the geraniums are findable, which is the whole point of the chunk.
+    hits = await rag.search(resident, "geraniums balcony afternoon", k=5)
+    assert hits and hits[0]["event_id"] == doc["_id"]
+
+
 async def test_medical_question_is_refused(resident, db):
     result = await rag.answer(resident, "Does she have dementia or a UTI?")
     assert result["citations"] == []

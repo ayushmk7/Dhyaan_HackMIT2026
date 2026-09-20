@@ -307,6 +307,31 @@ async def test_a_stuck_alert_does_not_swallow_the_next_fall(db, resident, monkey
     assert fresh["state"] == "LOCAL_CANCEL"
 
 
+async def test_a_manually_resolved_alert_does_not_swallow_the_next_fall(db, resident, monkeypatch):
+    """Staff pressed "resolve"; the next fall must still open a ladder.
+
+    `POST /v1/alerts/{id}/resolve` writes `MANUALLY_RESOLVED`, a state the FSM
+    table does not model — so the dedup below, matching on `$nin
+    TERMINAL_STATES`, still counted the resolved alert as open and returned it
+    instead of dialling. The staleness bound eventually let the next fall
+    through, so the symptom was a fall silently swallowed for up to an hour.
+    `opened_at` stays fresh here precisely so that bound cannot be what saves us.
+    """
+    monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 5)
+    resolved = await alerts.open_alert(resident, "evt_first", kind="fall", severity="critical")
+    alerts.stop_timers()
+    now = datetime.now(timezone.utc).isoformat()
+    await db.alerts.update_one(
+        {"_id": resolved["_id"]},
+        {"$set": {"state": "MANUALLY_RESOLVED", "resolution": "false_positive",
+                  "opened_at": now, "resolved_at": now}},
+    )
+
+    fresh = await alerts.open_alert(resident, "evt_second", kind="fall", severity="critical")
+    assert fresh["_id"] != resolved["_id"]
+    assert fresh["state"] == "LOCAL_CANCEL"
+
+
 async def test_restart_closes_an_alert_that_went_stale_instead_of_dialling(db, resident, monkeypatch):
     """A days-old open alert must not ring anyone when the process comes back.
 

@@ -15,7 +15,7 @@ uv venv && uv pip install -e . --group dev        # add ".[vision]" for the came
 make embedder  # ollama serve + pull nomic-embed-text (once)
 make seed      # Asha + 14 days of history plus today, today deliberately anomalous
 make run       # 0.0.0.0:8000
-make test      # 274 tests
+make test      # 340 tests
 make ip        # the URL to paste into the React Native app
 ```
 
@@ -31,6 +31,17 @@ Config is env vars, all with working defaults — see `.env.example`. Nothing he
 needs an API key: with no `OPENAI_API_KEY` the narrative and chat layers fall
 back to the local Ollama model if `CHAT_FALLBACK_MODEL` is set and to plain
 templates if it is not, and the whole demo runs offline.
+
+There is one text-LLM client and it is `app/llm.py`: a single `complete()` that
+POSTs to OpenAI's `/v1/chat/completions` (`gpt-5.6-terra`, `reasoning_effort:
+"none"`, 8 s timeout, one retry on 429/503) with the `httpx` this project
+already depends on. No vendor SDK, no LangChain, no prompt-template library —
+one endpoint, one JSON body, one field read back, and the package would bring
+its own retry and timeout defaults that this module overrides anyway. It fails
+closed to `None` on absolutely anything, because every call site
+(`app/rag.py`, `app/summaries.py`) already owns a deterministic template.
+Embeddings (`nomic-embed-text`) and the camera lane's VLM (`qwen2.5vl:3b`) are
+local, through Ollama, and are a different path entirely.
 
 **There is no authentication.** No login, no API key, no band key, no token on
 the websocket. The notice at the top of `app/main.py` is the full statement;
@@ -51,6 +62,15 @@ camera worker → observation → dedup → meal_observed / activity_observed
 
 Verified end to end against a live server. The voice calls are a stub that logs
 and emits `call_placed`; swapping in real Twilio does not touch the FSM.
+
+One fall is one ladder. `alerts.open_alert` reuses an alert that is already open
+for the same resident and kind rather than starting a second one, so a band that
+retries its POST, or a second press of "Simulate a fall", does not leave two sets
+of timers dialling behind one cancel button. Two transitions that arrive at once
+are settled by a compare-and-swap on the state that was read: the winner writes,
+emits and dials, the loser writes nothing at all — which is what stops a timer
+firing into the gap after an ack from dialling the family for an alert a human
+had already taken.
 
 | Area | State |
 |---|---|
@@ -122,12 +142,25 @@ Marked `# ponytail:` in the code, with upgrade paths:
   consistent — anything that writes then queries immediately (tests, scripts)
   must `await rag.drain_embeddings()` first. `make seed` already does.
 - No vector index. Brute-force cosine in numpy, fine to ~50k events on a laptop.
+  Everything else the app reads is indexed in `db.ensure_indexes`, including the
+  three reads that used to be collection scans: the ladder replay behind
+  `/alerts/{id}` (`events` on `payload.alert_id` + `ts_epoch`, compound because
+  that read is always sorted by it), the same alert's call log (`calls` on
+  `alert_id` + `started_at`) and the fingerprint fetch on every `/ingest/rf`
+  scan (`fingerprints` on `resident_id`).
 - **No auth at all**, and one tenant. Not two shared secrets, not JWT: nothing.
   Put real auth back before this is reachable from anywhere but the demo LAN.
-- Room-localization HMM state, the camera dedup's open episodes and the
-  monitor tick are all process-local, so they reset on restart.
-- `/alerts/{id}` reconstructs its call log from `source="voice"` events; there is
-  no separate `calls` collection yet.
+- Room-localization HMM state, the camera dedup's open episodes, the monitor
+  tick and the one buffered frame per camera are all process-local, so they
+  reset on restart. The escalation ladder's timers are in memory too, but they
+  are the exception: `alerts._rearm_pending` re-arms every non-terminal alert at
+  startup, measuring the remaining wait from the alert's own `updated_at` so an
+  alert 28 seconds into a 30 second cancel window resumes with two left. Under
+  `uvicorn --reload` that runs on every file save.
+- `/alerts/{id}` reads its call log from the `calls` collection, which
+  `app/voice.py`'s stub and the Twilio adapter both write. It falls back to
+  reconstructing the log from `source="voice"` events for alerts raised before
+  that collection existed.
 - The camera lane exists (below) but does not feed `app/location.py`: room
   localization is still RF-only, and the camera's zone rides on its events for
   the learner and staff without ever reaching a family surface.
@@ -194,10 +227,13 @@ One camera in one room, a local detector and a local vision-language model, and
 a sentence. The worker is a separate process (`backend/vision/`, `python -m
 vision`), not an asyncio task in the API, for three reasons: the macOS camera
 prompt attaches to the process that opens the device, a blocking model call must
-never sit on the event loop next to a fall ingest, and it makes the privacy
-claim structural: **the API process never has a frame to leak.** The full
-design and every measured number is in `VLM_PLAN.md` §3; this section is what
-you need to run it and what will bite.
+never sit on the event loop next to a fall ingest, and it keeps the frame out of
+the process that answers every other request. The API used to hold no frame at
+all; it now holds exactly one per camera, in RAM, so the app's camera screen can
+show the same picture the hub window shows — see "The picture channel" below for
+what that costs and how to turn it off. The full design and every measured
+number is in `VLM_PLAN.md` §3; this section is what you need to run it and what
+will bite.
 
 ### Install and run
 
@@ -319,7 +355,11 @@ bbox posture with `wide` degraded to unknown rather than a fall.
   `tests/test_vision_gate.py` walks the package's AST and fails the build if
   that stops being true; a third exception has to argue its case in that test's
   docstring. Frames live in a RAM ring of at most one JPEG, freed on flush.
-- **Frames cross exactly one socket:** loopback to Ollama. The API gets text.
+- **Frames cross two sockets, both of them deliberate:** loopback to Ollama, and
+  — since the app grew a camera screen — an annotated JPEG to
+  `POST /v1/ingest/camera/frame` on the LAN, at about 5 fps, held in RAM and
+  never stored. `VISION_STREAM=0` turns the second one off. Everything else the
+  API gets is text.
 - **Consent is checked before the camera device is opened** and on every 10 s
   config poll. A config fetch that fails means *no consent*, not "carry on".
   A config naming a `bedroom` or `bathroom` zone is refused by the worker too,
@@ -327,12 +367,15 @@ bbox posture with `wide` degraded to unknown rather than a fall.
   because a server said so is not a gate. A 403 from the ingest stops the camera
   until the next poll.
 - **The API fails closed as well, with no auth in front of it.** `POST
-  /ingest/camera` and `POST /ingest/camera/monitor` write nothing on consent
-  off, a live pause, or an unknown camera (`_live_camera`). `POST
-  /cameras/{id}/resume` returns 403 when she paused it herself. No family route
-  returns a zone, an `evidence` sentence, a posture or a movement quality; that
-  filter is server-side (`_family_item`, `rag.search(family=True)`), because a
-  client-side filter is not a privacy control.
+  /ingest/camera`, `POST /ingest/camera/monitor` and `POST /ingest/camera/frame`
+  write nothing and buffer nothing on consent off, a live pause, or an unknown
+  camera (`_live_camera`). `POST /cameras/{id}/resume` returns 403 when she
+  paused it herself, and a heartbeat from the hub can never erase a pause the
+  app set. No family route returns a zone, an `evidence` sentence or a movement
+  quality; that filter is server-side (`_family_item`, `rag.search(family=True)`,
+  and `GET /events/{id}` now too), because a client-side filter is not a privacy
+  control. Posture is the one thing that moved: it is on the live console tick
+  and nowhere else (`API_CONTRACT_V3.md` V3.1).
 - `movement: "unsteady"` is downgraded to `"unclear"` before posting. Gait is
   staff-only and this lane has no staff surface: do not record what you will not
   show.
@@ -350,18 +393,25 @@ the API accepts and defaults to false).
 ### The monitor channel
 
 The hub console and the app's camera screen are fed by `POST
-/v1/ingest/camera/monitor`, a tick the worker sends at most once a second
-(`TUNING["monitor_s"]`): fps, person count, **normalised** box geometry, the
-gate state (`idle` / `motion` / `person` / `thinking`), the model, the latency
-and the same activity/spot sentence `GET /presence` already returns. No pixel,
-no zone, no `evidence`, no posture, no movement quality. `MonitorIn` in
+/v1/ingest/camera/monitor`, a tick the worker sends about three times a second
+(`TUNING["monitor_s"]`, 0.33 s, `MONITOR_S` to override — at one a second the
+words visibly trailed the picture they described): fps, person count,
+**normalised** box geometry, the gate state (`idle` / `motion` / `person` /
+`thinking`), the model, the latency, the posture, the food, dish and seating
+words the open-vocabulary pass actually named, and the same activity/spot
+sentence `GET /presence` already returns. No pixel, no zone, no `evidence`, no
+movement quality. The posture and the structural words are on the console
+because it is the one screen whose job is to show what the camera is working
+from, and they reach nothing else: `_family_item` and `rag.search(family=True)`
+are untouched, so no observation, no timeline row and no chat answer carries
+them. `MonitorIn` in
 `app/routers/camera.py` is the allowlist that enforces that: a Pydantic model
 drops any field it does not declare, so a worker that starts sending `evidence`
 cannot leak it by accident, and a box in pixel coordinates is a 422. The
 sentence goes through `rag.scrub_rooms` like every other family string.
 
 The API keeps the last tick per camera in a module-level dict, never in Mongo
-(telemetry at 1 Hz with a useful life of one second; resets on restart).
+(telemetry with a useful life of one second; resets on restart).
 `GET /v1/cameras/{id}/monitor` returns `{camera, online, tick}`, with `tick`
 null once the last one is older than `MONITOR_STALE_S = 15`: an honest empty
 shape, never a fabricated tick. The same tick is broadcast on `/v1/live` as
@@ -369,6 +419,26 @@ shape, never a fabricated tick. The same tick is broadcast on `/v1/live` as
 and the ingest for it fails closed exactly as the observation ingest does.
 `GET /v1/cameras` lists cameras with a heartbeat-based `online`, stale after
 `HEARTBEAT_STALE_S = 75` (two missed 30 s beats).
+
+### The picture channel
+
+Beside the tick, the worker POSTs the annotated frame itself — the same subject
+box in green that `--preview` draws — to `POST /v1/ingest/camera/frame`, encoded
+in memory at about 5 fps and dropped rather than queued when the network is
+slow, so a bad link costs the app a frame and never the cascade a millisecond.
+The API holds exactly one JPEG per camera in RAM and serves it from
+`GET /v1/cameras/{id}/frame`, which 404s rather than hand back one older than
+`FRAME_STALE_S = 5` — shorter than the tick's 15 s, because a stale sentence is
+merely old and a stale picture is actively wrong about the room right now. A
+body over `FRAME_MAX_BYTES` (512 KB) is a 413.
+
+This is the one privacy rule in this lane that has been relaxed, and it is worth
+saying plainly: until the app had a camera screen, nothing but the hub's own
+window ever saw a pixel. Nothing is written to disk on either side, nothing
+reaches Mongo, the ingest fails closed on consent and the pause like every other
+device route, and `POST /cameras/{id}/pause` drops the buffered frame along with
+the tick — but there is no auth on this build, so anything on the LAN can pull
+the picture. `VISION_STREAM=0` turns the push off.
 
 ### Measured on this machine
 

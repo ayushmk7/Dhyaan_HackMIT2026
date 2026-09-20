@@ -17,8 +17,8 @@ What to build, and where it's specified:
   - §4.6  Tool definitions (`mark_ok`, `escalate`, `request_callback`, `end_call`)
 
 Env vars (already in .env.example, unused by the stub below):
-  TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, DEEPGRAM_API_KEY,
-  PUBLIC_BASE_URL
+  TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_E164, DEEPGRAM_API_KEY,
+  PUBLIC_WSS, PUBLIC_HTTPS
 
 Wire in the real thing with:
     from app.voice import set_impl

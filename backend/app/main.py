@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
-from .routers import camera, chat, ingest, live, residents, setup
+from .routers import camera, chat, demo, ingest, live, residents, setup
 
 
 @asynccontextmanager
@@ -60,6 +60,10 @@ app.include_router(chat.router)
 app.include_router(live.router)
 app.include_router(camera.device)
 app.include_router(camera.family)
+# Mounted here, unconditionally and BEFORE the bridge below: FastAPI serves the
+# first route registered for a path, so the bridge's own /demo/force_ack is
+# shadowed by this one and needs no edit (it is frozen alongside the firmware).
+app.include_router(demo.router)
 
 # Live voice: mount the Twilio/Deepgram bridge and swap the scripted stub for
 # real calls only when credentials exist, so `./dev.sh` stays zero-config.

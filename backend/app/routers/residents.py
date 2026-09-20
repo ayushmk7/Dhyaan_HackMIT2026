@@ -31,19 +31,24 @@ router = APIRouter(prefix="/v1", tags=["app"])
 
 _SEVERITY_RANK = {"critical": 3, "urgent": 2, "warn": 1, "info": 0}
 
-# app/alerts.py owns the FSM's TERMINAL_STATES; MANUALLY_RESOLVED is ours (the
-# staff "resolve" button, which isn't a transition its table models — see
-# resolve_alert below). Falls back to a hardcoded copy if alerts.py isn't
-# importable yet (it's owned by another agent).
+# app/alerts.py owns the answer to "is this alert finished?" — CLOSED_STATES,
+# which is the FSM's TERMINAL_STATES plus MANUALLY_RESOLVED (the staff "resolve"
+# button below, which isn't a transition its table models). This file used to
+# add MANUALLY_RESOLVED itself, so there were two spellings of that set and
+# alerts.py's own dedup used the one without it: staff resolved an alert, this
+# endpoint correctly stopped listing it as open, and the next real fall for that
+# resident was silently folded into the resolved one. One definition, there.
+# Falls back to a hardcoded copy if alerts.py isn't importable yet (it's owned
+# by another agent).
 _FALLBACK_TERMINAL_STATES = {"RESOLVED_OK", "CANCELLED", "ACKNOWLEDGED", "EXHAUSTED"}
 
 
 def _terminal_states() -> set[str]:
     try:
-        from ..alerts import TERMINAL_STATES
+        from ..alerts import CLOSED_STATES
     except ImportError:
         return _FALLBACK_TERMINAL_STATES | {"MANUALLY_RESOLVED"}
-    return TERMINAL_STATES | {"MANUALLY_RESOLVED"}
+    return CLOSED_STATES
 
 
 def _ser(doc: dict) -> dict:
@@ -179,9 +184,19 @@ async def timeline(
 @router.get("/residents/{resident_id}/location")
 async def location(resident_id: str):
     d = db()
+    # NOT `zone_exited`. A room change writes the pair `zone_exited <old>` and
+    # `zone_entered <new>` microseconds apart, and both carry a zone — so this
+    # query, sorted on a second-resolution `ts_epoch`, could return the EXIT and
+    # report the room she just left as the room she is in. That is what "it says
+    # living room while I stand in the kitchen" was: the filter had committed
+    # correctly and this read the wrong half of its own pair.
+    #
+    # Sorted on `ts` as well, so the tie inside one second is broken by the
+    # microseconds that actually distinguish the two.
     ev = await d.events.find_one(
-        {"resident_id": resident_id, "zone": {"$ne": None}},
-        sort=[("ts_epoch", -1)],
+        {"resident_id": resident_id, "zone": {"$ne": None},
+         "type": {"$ne": "zone_exited"}},
+        sort=[("ts_epoch", -1), ("ts", -1)],
     )
     if not ev:
         return {"zone": None, "since": None, "confidence": None, "method": None}

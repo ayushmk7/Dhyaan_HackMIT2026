@@ -16,11 +16,12 @@ these still ask whether the resident said yes, and they fail closed:
 
 | Gate | Where | What it does |
 |---|---|---|
-| Camera ingest | `_live_camera` in `routers/camera.py`, on `/ingest/camera` and `/ingest/camera/monitor` | `404` unknown `camera_id` or camera not registered to that `resident_id`; `403` `consent_camera` off; `403` `paused_until` in the future. Nothing is written on any of those |
-| Her pause wins | `POST /cameras/{id}/resume` | `403` when `paused_by == "resident"`. The app can only lift a pause the app set |
+| Camera ingest | `_live_camera` in `routers/camera.py`, on `/ingest/camera`, `/ingest/camera/monitor` and `/ingest/camera/frame` | `404` unknown `camera_id` or camera not registered to that `resident_id`; `403` `consent_camera` off; `403` `paused_until` in the future. Nothing is written or buffered on any of those |
+| Her pause wins | `POST /cameras/{id}/resume` | `403` when `paused_by == "resident"`. The app can only lift a pause the app set, and that is ownership, not liveness: an expired pause of hers is still hers |
+| A heartbeat cannot undo a pause | `POST /ingest/camera/heartbeat` | The hub reports what it is doing; it never writes `paused_until` or `paused_by` over a `family` pause. One `watching` tick used to erase a pause the app had just set and reopen the ingest gate |
 | Memory needs consent | `POST /residents/{id}/profile/facts` | `403` when `consent_memory` is off; `/camera/config` withholds `appearance` and `spots_line` for the same reason |
 | Deleting is deliberate | `DELETE /residents/{id}/memory` | `422` unless `confirm` equals `display_name` exactly. A confirmation, not a credential |
-| The family never sees a room | `_family_item`, `rag.search(family=True)`, `rag.FAMILY_EXCLUDED_TYPES`, `rag.scrub_rooms`, `MonitorIn` | Applied server-side on `/activity`, `/presence`, `/chat` citations and the monitor tick, unconditionally, because there is no role to condition on |
+| The family never sees a room | `_family_item`, `rag.search(family=True)`, `rag.FAMILY_EXCLUDED_TYPES`, `rag.scrub_rooms`, `MonitorIn` | Applied server-side on `/activity`, `/presence`, `/timeline`, `GET /events/{id}`, `/chat` citations, the `event.new` socket message and the monitor tick, unconditionally, because there is no role to condition on |
 
 These protect the resident from the system. They do not protect the server
 from the network; that is what the deleted auth did, and nothing does now.
@@ -30,7 +31,7 @@ from the network; that is what the deleted auth did, and nothing does now.
 | POST | `/ingest/camera` | device | `{camera_id, resident_id, ts, span_s, n_frames, person_count, activity, posture, movement, spot, assistive_device, plate_or_cup_present, food_visible, hand_to_mouth_observed, confidence, evidence, model, latency_ms, simulated}` (all enums as in §3.5 plus `"absent"`; `food_visible` is broader than `plate_or_cup_present`: food in a hand, a wrapper, a snack) | `201 {observation_id, presence, event_ids: []}`; `403` when consent off/paused; `404` unknown camera; `422` bad enum |
 | POST | `/ingest/camera/heartbeat` | device | `{camera_id, state: "watching"\|"paused"\|"offline"\|"no_consent", paused_until?, fps, dropped_batches}` | `204` |
 | GET | `/camera/config?camera_id=` | device | — | `{resident_id, name, consent_camera, paused_until, zone, zone_label, zone_hint, appearance, spots_line, demo_fast}` |
-| GET | `/residents/{id}/presence` | app | — | `{status: "in_view"\|"out_of_view"\|"paused"\|"camera_off"\|"no_camera", activity, spot_is_usual, since, last_observation_at, sentence, camera: {online, consent, paused_until, paused_by}}` — **no zone, no evidence** |
+| GET | `/residents/{id}/presence` | app | — | `{status: "in_view"\|"out_of_view"\|"paused"\|"camera_off"\|"no_camera", activity, spot_is_usual, since, last_observation_at, sentence, camera: {online, consent, paused_until, paused_by}}` — **no zone, no evidence**. `paused_until` and `paused_by` are reported only while the pause is still live; `camera.online` is heartbeat-based (`HEARTBEAT_STALE_S`), not `state` alone |
 | GET | `/residents/{id}/activity?date=YYYY-MM-DD` | app | — | `{date, tiles: {meals, walks, out_of_house, night_ups, in_view_minutes}, items: [{id, ts, ts_end, type, sentence, kind: "observed"\|"pattern", confidence}]}` — family filter applied, `zone` stripped |
 | GET | `/residents/{id}/profile` | app | — | `{name, appearance, consent: {falls, camera, memory, signed_by, relationship, signed_at}, camera: {camera_id, zone, zone_hint, state, paused_until}, usual_spots: [string], facts: [Fact]}` |
 | PUT | `/residents/{id}/profile` | app | `{name?, appearance?, consent?: {...}, camera?: {zone, zone_hint}}` | the profile; `422` for bedroom/bathroom zone, appearance > 200 chars |
@@ -44,10 +45,18 @@ from the network; that is what the deleted auth did, and nothing does now.
 `Fact = {id, key, text, source, author, active, supersedes, superseded_by, created_at}`.
 
 Websocket additions on `/v1/live`:
-`{"t": "presence.update", "resident_id", "presence": <same as GET>}` after every
+`{"t": "presence.update", "resident_id", "presence": <same as GET>}` on every
 observation, every heartbeat state change, `POST /cameras/{id}/pause`,
-`POST /cameras/{id}/resume` and `DELETE /memory`. `event.new` already fires.
-The full message census for the socket is in V3.1 below.
+`POST /cameras/{id}/resume` and `DELETE /memory` — but only when the presence a
+person could see actually changed. A live camera posts two or three
+observations a second, each one handed the app a new presence object, and the
+home screen re-rendered at that rate with its hero re-mounting because it is
+keyed on the sentence. `_push_presence` compares status, activity,
+`spot_is_usual`, `since`, sentence and the camera block, and drops the push when
+they match; `last_observation_at` is deliberately not in that comparison,
+because it moves on every observation and the app's own refetch timer is the
+right cadence for "noticed 4 minutes ago". `event.new` already fires. The full
+message census for the socket is in V3.1 below.
 
 ---
 
@@ -86,7 +95,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 | Var | Default | Effect |
 |---|---|---|
 | `DEMO_FAST` | off | Scales every dedup gap and minimum duration to a tenth, so a 30-second stage lunch becomes one `meal_observed`. Reported back to the worker as `demo_fast` on `/camera/config`. |
-| `CHAT_FALLBACK_MODEL` | *(unset)* | When set (the demo uses `qwen3-vl:8b`), chat answers fall back to a local Ollama text call when there is no OpenAI key. Unset, the fallback is a kind-grouped template answer. |
+| `CHAT_FALLBACK_MODEL` | *(unset)* | When set (`dev.sh` defaults it to `qwen2.5vl:3b`, the camera lane's model called with no images), chat answers fall back to a local Ollama chat call when there is no OpenAI key. Unset, the fallback is a kind-grouped template answer. |
+| `VISION_STREAM` | on | The worker's annotated-frame push (`POST /ingest/camera/frame`). `VISION_STREAM=0` turns it off and the app's camera screen shows no picture; everything else is unchanged. |
 
 ## New event types (§6.3)
 
@@ -97,11 +107,21 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 ## Notes that matter
 
 - **The family never sees a room.** `zone` rides on the event for staff and the
-  baseline learner, and is stripped server-side from `/activity`, `/presence`
-  and every retrieval citation. A client-side filter is not a privacy control.
+  baseline learner, and is stripped server-side from `/activity`, `/presence`,
+  `/timeline`, `GET /events/{id}`, the `event.new` socket message and every
+  retrieval citation. A client-side filter is not a privacy control: the app's
+  own `scrubRooms` only ever knew seven room names, and the raw record was
+  reaching the phone either way.
 - **`/ingest/camera` fails closed.** No camera doc, consent off, or paused →
   nothing is written. A rogue or stale worker cannot create an observation.
-- **No endpoint returns image bytes.** The API process never holds a frame.
+- **No endpoint returns image bytes** — **relaxed for the demo in V3.1.** The
+  rule held until the app grew a camera screen: `POST /ingest/camera/frame` and
+  `GET /cameras/{id}/frame` now carry one annotated JPEG per camera, in RAM,
+  5 s old at most. Nothing else changed — no frame is written to disk on either
+  side, nothing goes to Mongo, the ingest fails closed on consent and the pause
+  like every other device route, and a `POST /pause` drops the buffered frame.
+  What the relaxation costs is stated where the routes are, under *The picture
+  channel*.
 - **Dedup lives in `app/presence.py`, not the worker.** The same lunch must not
   become six events: observations fold into one interval per
   `(resident_id, event_type)`, closed by a 30 s sweeper.
@@ -121,15 +141,19 @@ the caller lane only, everything is under `/v1`.
 
 ## The monitor tick
 
-The hub worker posts one small JSON tick per cascade cycle (at most 1/s, see
-`vision/__init__.py TUNING["monitor_s"]`) so the app can render a live CCTV
-console. It is **telemetry, not data**: the API keeps only the latest tick per
-camera, in a module-level dict, and it is gone on restart. It is never written
-to MongoDB and it is never an observation.
+The hub worker posts one small JSON tick per cascade cycle (about 3/s — see
+`vision/__init__.py TUNING["monitor_s"]`, default 0.33 s, `MONITOR_S` to
+override) so the app can render a live CCTV console. One a second was a
+readable rate for a log and a visibly laggy one next to a 5 fps picture: the
+words trailed the frame they described. It is **telemetry, not data**: the API
+keeps only the latest tick per camera, in a module-level dict, and it is gone on
+restart. It is never written to MongoDB and it is never an observation.
 
 | Method | Path | Auth | Body | Returns |
 |---|---|---|---|---|
 | POST | `/ingest/camera/monitor` | device | the tick, below | `204`; `403` consent off/paused; `404` unknown camera; `422` bad box or gate |
+| POST | `/ingest/camera/frame?camera_id=` | device | one JPEG, `Content-Type: image/jpeg` | `204`; `400` empty body; `413` over `FRAME_MAX_BYTES` (512 KB); `403` consent off/paused; `404` unknown camera |
+| GET | `/cameras/{camera_id}/frame` | app | — | `image/jpeg`, `Cache-Control: no-store`; `404` when there is no frame or the last one is older than `FRAME_STALE_S` (5 s) |
 | GET | `/cameras` | app | — (optional `?resident_id=`) | `[{id, resident_id, state, consent, paused_until, last_heartbeat_at, online}]` |
 | GET | `/cameras/{camera_id}/monitor` | app | — | `{camera, online, tick}` — see below; `404` unknown camera |
 | POST | `/cameras/{camera_id}/pause` | app | `{hours: float}` (0 < h ≤ 24, default 2) | `{paused_until, paused_by: "family", presence}` |
@@ -148,6 +172,10 @@ to MongoDB and it is never an observation.
   "latency_ms": 690,                       // of the last VLM call
   "batch_frames": 1,
   "activity": "eating",                    // the §3.5 enum, or null before the first observation
+  "posture": "seated",                     // console only — see below; or null
+  "food": ["cereal"],                      // what the open-vocabulary pass named, ≤ 8 words of ≤ 24 chars
+  "dishes": ["bowl"],
+  "seating": ["dining chair"],
   "sentence": "eating at the table",       // activity + spot, scrubbed; "" before the first one
   "confidence": 0.82,                      // or null
   "simulated": false                       // true on --source synthetic
@@ -180,26 +208,89 @@ Websocket, on the existing `/v1/live`, fired on every tick:
 {"t": "camera.monitor", "camera_id": "cam_mac_01", "ts": "...", "fps": 3.1,
  "person_count": 1, "boxes": [[0.31, 0.34, 0.75, 0.99]], "gate": "person",
  "model": "qwen2.5vl:3b", "latency_ms": 690, "batch_frames": 1,
- "activity": "eating", "sentence": "eating at the table", "confidence": 0.82,
+ "activity": "eating", "posture": "seated", "food": ["cereal"],
+ "dishes": ["bowl"], "seating": ["dining chair"],
+ "sentence": "eating at the table", "confidence": 0.82,
  "simulated": false, "resident_id": "res_eleanor"}
 ```
 
 ### Why this is family-visible, and what enforces it
 
-A tick carries counts, normalised geometry and the same activity/spot sentence
-`GET /presence` already returns. It carries **no zone, no evidence, no posture,
-no movement quality and no pixel** — and `MonitorIn` in `app/routers/camera.py`
-is what enforces that, because a Pydantic model is an allowlist: a field it does
-not declare simply vanishes at the boundary. `sentence` goes through the same
-`rag.scrub_rooms` filter `/activity` uses. `POST /ingest/camera/monitor` fails
-closed exactly as `/ingest/camera` does — a paused camera has no live console,
-or the pause would not mean anything.
+A tick carries counts, normalised geometry, the posture and the structural words
+the detector is working from, and the same activity/spot sentence `GET /presence`
+already returns. It carries **no zone, no evidence, no movement quality and no
+pixel** — and `MonitorIn` in `app/routers/camera.py` is what enforces that,
+because a Pydantic model is an allowlist: a field it does not declare simply
+vanishes at the boundary. `sentence` goes through the same `rag.scrub_rooms`
+filter `/activity` uses. `POST /ingest/camera/monitor` fails closed exactly as
+`/ingest/camera` does — a paused camera has no live console, or the pause would
+not mean anything.
+
+`posture`, `food`, `dishes` and `seating` are on the console and nowhere else.
+They used to stop at the hub, and a family screen got *"she is sitting at the
+table"* with nothing under it; the console is the one screen whose whole job is
+to show what the camera is working from, and *why did it decide that?* is
+unanswerable without them. Every other surface is untouched: `_family_item` and
+`rag.search(family=True)` are unchanged, so no observation, no timeline row and
+no chat answer carries a posture. Adding a field here is therefore a decision to
+show it to the family, which is why this paragraph sits next to the model.
+
+### The picture channel
+
+The app's camera screen shows the same annotated picture the hub's `--preview`
+window shows: subject box in green, everyone else grey. The worker encodes one
+JPEG in memory at about 5 fps (quality 60, dropped rather than queued when the
+network is slow) and POSTs it to `/ingest/camera/frame`; the API holds exactly
+one frame per camera in a module-level dict and hands it to
+`GET /cameras/{id}/frame`, which 404s rather than serve one older than five
+seconds. A picture that is quietly thirty seconds old is the one failure this
+screen must not have — shorter than the tick's fifteen, because a stale sentence
+is merely old and a stale picture is actively wrong about the room right now.
+
+This is a **demo-only relaxation** of the camera lane's oldest rule, and it is
+worth being blunt in the place someone will read it: until V3.1 nothing but the
+hub's own window ever saw a pixel, and the app got geometry and a sentence. What
+has not changed: no frame is written to disk on either side (the AST test in
+`tests/test_vision_gate.py` still forbids `imwrite`/`VideoWriter`, and this path
+encodes to memory), nothing reaches MongoDB, the buffer is overwritten several
+times a second, consent off, paused or unknown camera means the worker cannot
+post at all, and `POST /cameras/{id}/pause` drops the buffered frame along with
+the tick. What it costs: on this build there is no auth on any route,
+so anything on the same LAN can pull the frame. `VISION_STREAM=0` turns the
+push off. Before this is ever more than a demo, the route goes behind auth and
+behind the resident's consent record, and the family screen asks for the stream
+rather than receiving it by default.
 
 ### Pausing
 
-`paused_by` is the whole control. The app writes `"family"`; the hub's own `p`
-key writes `"resident"`. `POST /resume` refuses (**403**) to lift a pause it did
-not set, which is `PRODUCT_SPEC.md` §8.3 rule 1 as a status code.
+`paused_by` is the whole control, and it records **who owns the pause**, not who
+is currently looking. The app writes `"family"` (`POST /cameras/{id}/pause`);
+the hub's own `p` key writes `"resident"`, via the `state: "paused"` heartbeat.
+Three rules, and they are three because each one was a separate way to lose a
+pause:
+
+1. **A heartbeat can never erase a pause the server set.** The heartbeat reports
+   what the hub is doing. It writes `paused_until` only on a `paused` tick, and
+   it writes `paused_by: "resident"` only when the camera is not already owned by
+   `"family"`. Before that, one `watching` tick erased a pause the app had just
+   set and reopened the fail-closed ingest gate, and one `paused` tick relabelled
+   the family's own pause as hers, so their Resume started returning `403` a
+   heartbeat later.
+2. **A resident-owned pause cannot be lifted by the family.** `POST /resume`
+   returns **403** whenever `paused_by == "resident"` — on ownership, not on
+   liveness. An expired pause of hers is still hers to lift, so `/resume` checks
+   `paused_by` alone and does not also test whether `paused_until` is still in
+   the future. This is `PRODUCT_SPEC.md` §8.3 rule 1 as a status code.
+3. **A resident-owned pause is lifted by her hub looking again.** A `watching`
+   heartbeat clears `paused_until` and `paused_by` when the camera is not
+   family-owned. That is the only thing that clears hers; `POST /resume` is the
+   only thing that clears the family's.
+
+One consequence worth knowing before it surprises someone: `GET /presence`
+reports `camera.paused_by` only while the pause is live, so after a resident
+pause expires the app sees `paused_by: null` and `/resume` still answers `403`.
+The rule above is the contract; the presence shape is the thing that does not
+say enough (`DECISIONS.md` F-17).
 
 ## One alert shape, REST and websocket
 
@@ -254,18 +345,31 @@ read and discarded.
 
 | `t` | Fired by | Shape |
 |---|---|---|
-| `event.new` | every `events.emit()` | `{t, event: {id, ...}}`, the raw event doc with `_id` renamed; **not** family-filtered |
+| `event.new` | every `events.emit()` whose type is not in `rag.FAMILY_EXCLUDED_TYPES` | `{t, event: {id, ts, ts_end, type, sentence, kind, confidence, resident_id}}` — the same `_family_item` shape `/activity` and `/timeline` return, plus `resident_id` so a client can route on it |
 | `alert.update` | every FSM transition, ack, resolve | `{t, alert: <alert_response>}`, identical to `GET /alerts/{id}` |
-| `presence.update` | observation, heartbeat state change, pause, resume, memory delete | `{t, resident_id, presence: <GET /presence>}` |
+| `presence.update` | observation, heartbeat state change, pause, resume, memory delete — and only when the presence changed | `{t, resident_id, presence: <GET /presence>}` |
 | `camera.monitor` | every monitor tick | the tick, **flat**: fields spread into the envelope next to `t`, plus `resident_id` |
 | `ping` | 25 s idle | `{t}` |
 
-`event.new` is the one message that is not family-safe: it carries `zone` and
-the raw `embedding_text` for every type, including `zone_entered` and
-`bathroom_prolonged`. (The `evidence` sentence never reaches an event; it stays
-on the `observations` row.) A family surface should treat `event.new` as a
-signal to refetch `/activity` and `/presence`, not as something to render. A
-family-scoped socket is specified in `TECHNICAL_PRD.md` §10.5 and not built.
+`event.new` used to be the one message that was not family-safe: it pushed the
+raw Mongo doc, so `zone` and the raw `embedding_text` ("Asha moved into the
+bathroom") reached every client on the LAN — the same D-001 leak `/timeline`
+had. It now goes through the same `_family_item` shaper as `/activity` and
+`/timeline`, so a row cannot be safe on one path and not the other, and the
+whole categories in `FAMILY_EXCLUDED_TYPES` (`zone_entered`, ladder chatter) are
+dropped before the fan-out rather than sent and hidden. (The `evidence` sentence
+never reaches an event at all; it stays on the `observations` row.) There is
+still no role on the socket: one shape goes to everyone, and it is the family
+one. A staff socket that carries rooms is specified in `TECHNICAL_PRD.md` §10.5
+and not built.
+
+`broadcast` fans out in parallel with a **2 s per-socket deadline**, and a
+socket that misses it is dropped and left to reconnect on its own backoff.
+`events.emit()` awaits its subscribers, so this sits on the fall-ingest path:
+one phone on bad venue wifi that never finished its send used to block every
+other client's event and, behind the per-socket lock, queue the next one behind
+it. Two seconds is long enough for a slow phone and short enough that the ladder
+does not wait for it.
 
 ## `--source synthetic`: the lane with no webcam
 

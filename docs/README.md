@@ -5,7 +5,10 @@ platform (24 hours, HackMIT 2026) built around one event store. An arm-worn
 band detects a fall and locates a resident room-by-room from ESP32 anchors; a
 voice agent calls her before anyone's family does; and a camera lane on the hub
 laptop (motion gate, an open-vocabulary detector, a pose model, then a local
-VLM) turns frames into sentences without a pixel ever leaving the machine. The
+VLM) turns frames into sentences. Every model that reads a pixel runs on that
+laptop and no frame is ever written to disk; the one thing that changed under
+that promise is that the hub now relays its annotated preview to the app over
+the LAN, RAM only — `VLM_PLAN.md` §5.2 and §5.3 say what that costs. The
 family app has no login and shows no room; the facility app shows both. The
 repo root [`README.md`](../README.md) has the pitch, the architecture diagram,
 the measured numbers and the run commands; this page indexes everything under
@@ -28,11 +31,12 @@ the measured numbers and the run commands; this page indexes everything under
 | [`VLM_PLAN.md`](./VLM_PLAN.md) | Camera lane implementation plan: cascade, privacy mechanism, known ceilings |
 | **Contracts (frozen; code implements these exactly)** | |
 | [`API_CONTRACT_V2.md`](./API_CONTRACT_V2.md) | Setup/admin surface: band pairing, RF survey, contact ladder, push, `/admin/simulate` |
-| [`API_CONTRACT_V3.md`](./API_CONTRACT_V3.md) | Camera lane wire contract: `/ingest/camera`, `/camera/config`, presence |
+| [`API_CONTRACT_V3.md`](./API_CONTRACT_V3.md) | Camera lane wire contract: `/ingest/camera`, `/camera/config`, the monitor and frame channels, presence |
 | [`HARDWARE_INTEGRATION.md`](./HARDWARE_INTEGRATION.md) | Swapping the band simulator for the real band, endpoint by endpoint |
 | **Per-lane guides** | |
 | [`backend-README.md`](./backend-README.md) | Run the API; the band contract; voice and camera integration seams |
 | [`voice-README.md`](./voice-README.md) | Twilio/Deepgram voice slice; runs and tests fully offline |
+| [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) | What is still wrong, and the defects we chose not to fix, with the reason for each |
 | [`frontend-DESIGN.md`](./frontend-DESIGN.md) | App design law: blue/white/black, light only, Liquid Glass + brutalism, the six-step type scale, the primitives, the copy rules |
 | [`../frontend/src/lib/copy/README.md`](../frontend/src/lib/copy/README.md) | Where every user-facing sentence in the app lives, and why none are in screens |
 | **Hardware bring-up** | |
@@ -42,7 +46,7 @@ the measured numbers and the run commands; this page indexes everything under
 | **Sponsor write-ups** | |
 | [`DROPBOX_CHALLENGE.md`](./DROPBOX_CHALLENGE.md) | Turning a family's care-document folder into structure Claude can act on |
 | [`META_CHALLENGE.md`](./META_CHALLENGE.md) | How offloading "is she okay?" gives a family their conversation back |
-| [`../SUBMISSIONS.md`](../SUBMISSIONS.md) | Copy-paste blurbs for all 8 sponsor-challenge submissions |
+| [`../SUBMISSIONS.md`](../SUBMISSIONS.md) | Copy-paste blurbs for all 9 sponsor-challenge submissions |
 | [`../COST.md`](../COST.md) | How the camera lane and RAG spend almost nothing on LLM calls |
 
 The detector latency bench (`testcam/`) that chose the open-vocabulary model

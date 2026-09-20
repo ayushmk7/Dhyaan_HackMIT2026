@@ -18,7 +18,9 @@ The largest deltas since the plan was written: the person gate is an open-vocabu
 `qwen2.5vl:3b` writing one sentence from one frame (§3.1, §3.5); the cascade runs at ~15 fps and
 posts the moment what it sees changes (§3.4); posture comes from pose landmarks, not a bounding
 box (§3.4); visitor detection is off by default (§3.5); there is a live monitor channel (§6.1);
-and the API has no authentication at all (§6.1). The seeded resident's display name is now
+the API has no authentication at all (§6.1); and the family app now shows the hub's annotated
+frame over a RAM-only relay, which is a deliberate relaxation of this plan's oldest rule and is
+argued where it is broken (§5.2, §5.3). The seeded resident's display name is now
 *Asha* (`fa81785`, display name only; ids such as `res_eleanor` and the example sentences below
 are unchanged). The `testcam/` bench this plan cites was removed in `12d53ff`; every number
 from it is quoted inline here and the bench itself is recoverable at commit `56e2237`.
@@ -32,7 +34,9 @@ from it is quoted inline here and the bench itself is recoverable at commit `56e
 - Watch **one room** (the room the family points the camera at: kitchen, living or dining room)
   and turn what it sees into a handful of plain sentences per hour: *having something to eat at
   the table*, *settled in the armchair*, *up and moving about*, *out of view since 10:12*,
-  *someone is visiting*. Locally, with no frame ever leaving the process that captured it.
+  *someone is visiting*. Locally: every model that reads a pixel runs on this machine, and no frame
+  is written to disk anywhere. The plan's stronger claim — no frame ever leaving the process that
+  captured it — no longer holds; the hub relays its annotated preview to the app (§5.2, §5.3).
 - Keep a **local memory of her** — what the family told us in onboarding, how the camera's
   room is laid out, a text description of what she looks like, and the spots she is usually
   found in at each time of day — and use it to condition every vision call.
@@ -68,17 +72,19 @@ chat questions (one contrast answer, one useful visitor answer, one refusal); an
 ```
   MacBook Pro M5 Pro, 48 GB — everything below runs here
  ┌───────────────────────────────────────────────────────────────────────────────┐
- │  vision worker (separate process, the ONLY process that ever holds pixels)    │
+ │  vision worker (separate process, the only one that runs a model on pixels)   │
  │  webcam/Continuity Camera/phone ─► capture ─► privacy mask ─► motion (MOG2)   │
  │      ─► scene (YOLO-World, MPS) ─► keyframe rules ─► Ollama VLM (own thread)  │
  │            ~13 ms, posts on change     loopback only     qwen2.5vl:3b, 1 frame │
- │  frames: RAM ring, ≤1 JPEG (batch_size), freed on flush. No disk. No socket   │
- │  but loopback.                                                                 │
+ │  frames: RAM ring, ≤1 JPEG (batch_size), freed on flush. No disk, ever.       │
+ │  Loopback to Ollama, + a 5 fps annotated JPEG to the API (§5.2).               │
  └───────────────┬──────────────────────────────────▲────────────────────────────┘
                  │ POST /v1/ingest/camera            │ GET /v1/camera/config (consent,
                  │ {activity, spot, evidence…} JSON  │  paused_until, hints) every 10 s
                  │ POST /v1/ingest/camera/monitor    │
                  │ {fps, boxes (normalised), gate…}  │  at most 1 Hz, RAM only on the API
+                 │ POST /v1/ingest/camera/frame      │
+                 │ annotated JPEG, ~5 fps            │  one per camera, stale after 5 s
  ┌───────────────▼──────────────────────────────────┴────────────────────────────┐
  │  FastAPI (existing process)                                                    │
  │  routers/camera.py ─► presence.py (dedup, episodes, presence state)            │
@@ -91,7 +97,7 @@ chat questions (one contrast answer, one useful visitor answer, one refusal); an
                  │ LAN, no auth of any kind (§6.1)
  ┌───────────────▼────────────────────────────────────────────────────────────────┐
  │  Expo app (adult child's phone): onboarding ─► Today / Her day / Ask            │
- │  / Settings. Never receives a zone, a frame, or evidence text.                  │
+ │  / Settings / Camera. Never a zone or evidence text; the frame, yes (§5.2).     │
  └────────────────────────────────────────────────────────────────────────────────┘
        MongoDB: events, residents, profile_facts, cameras, observations (+TTL)
 ```
@@ -102,6 +108,7 @@ chat questions (one contrast answer, one useful visitor answer, one refusal); an
 | Detector observation | `vision/gate.py` + `vlm.from_scene()` | Every sampled frame with motion, and every 5 s while she is believed present; posted when person count / food / dishes / posture band changes | An `Observation` with `model: yolov8s-worldv2` | `POST /v1/ingest/camera` |
 | VLM call | `vision/vlm.py` → Ollama `/api/chat`, loopback, on a worker thread | A keyframe (see §3.4) | An `Observation` JSON (text only), YOLO's counts merged in | `POST /v1/ingest/camera` |
 | Monitor tick | `vision/worker.py::monitor` | At most 1 Hz | Nothing; the API keeps the last tick in RAM | `POST /v1/ingest/camera/monitor`, `camera.monitor` on WS, `GET /cameras/{id}/monitor` |
+| Frame relay | `vision/worker.py::_stream` (`VISION_STREAM=1` by default, never in `--dry-run`) | ~5 Hz while watching | Nothing; the API keeps one JPEG per camera in RAM, ≤512 KB, dropped once 5 s stale | `POST /v1/ingest/camera/frame`, `GET /cameras/{id}/frame` |
 | Config poll | `vision/worker.py` | Every 10 s | — | `GET /v1/camera/config` (fail closed) |
 | Ingest + dedup | `app/routers/camera.py`, `app/presence.py` | Each observation POST; a 30 s sweeper | `observations` row, `cameras.presence`, then `events` via `emit()` | `event.new`, `presence.update` on WS; `GET /presence`, `GET /activity` |
 | Memory | `app/memory.py` | Onboarding PUT/POST, settings edits, delete | `residents.{appearance, usual_spots, consent_*}`, `profile_facts` | `GET/PUT /profile`, facts routes |
@@ -111,8 +118,10 @@ chat questions (one contrast answer, one useful visitor answer, one refusal); an
 **Why a separate worker process and not an asyncio task in FastAPI.** Three reasons, all cheap:
 the macOS camera permission prompt attaches to the process that opens the device, and we want that
 to be a terminal we control, not uvicorn's reloader; a blocking VLM call must never sit on the
-API's event loop next to a fall ingest; and it makes the privacy claim structural: *the API process
-never has a frame to leak*. The cost is two ingest endpoints and one config poll, all frozen below.
+API's event loop next to a fall ingest; and it kept the privacy claim structural for as long as it
+held: *the API process never has a frame to leak*. The frame relay in this build ends that half of
+it — the API now keeps one JPEG per camera in RAM (§5.2) — while the two reasons before it stand
+unchanged. The cost is three ingest endpoints and one config poll, all frozen below.
 Ceiling: `events.subscribe` fan-out is in-process, so the worker must POST rather than call
 `emit()` directly (otherwise no websocket push, no embedding). That is the design, not a bug.
 
@@ -176,8 +185,9 @@ of numpy. Set on the hub at install; the app never sees a frame, so the app neve
 default 3, so it is not a postage stamp on a 5K display) with the masked frame, the motion mask
 inset, every person box (the followed subject in green, anyone else in grey), and four text lines:
 last activity and posture, people and FOOD, DRINK/DISH and seating, worker state and cascade
-status. It answers "is it seeing this?" without a log or the database. This is the only screen that
-ever shows a frame. Key `p` pauses the camera for 2 h (posts a `paused` heartbeat, §6.1), the
+status. It answers "is it seeing this?" without a log or the database. It was the only screen that
+ever showed a frame; the family camera console now shows the same annotated view over the relay in
+§5.2, which is a deliberate relaxation of that rule and is argued in §5.3. Key `p` pauses the camera for 2 h (posts a `paused` heartbeat, §6.1), the
 resident's control, on her hub, per `PRODUCT_SPEC.md` §8.3; `q` or Esc quits.
 
 ### 3.3 The cascade
@@ -377,6 +387,19 @@ that row is the detector's name. Measured (`ea69a47`): gaps between observations
 median 6 s to a median 0 s, because `min_gap_s` was the perceived lag once the detector answered
 in ~13 ms.
 
+Two rules the plan never specified now govern that path, both because it is a second route to a
+conclusion the keyframe lane had already made hard to reach. **It posts at most once a second**
+(`quick_min_s`): `posture_band` flips at the landmark visibility boundary — a desk edge, a table,
+a blanket — and without a floor each flip was a write, ~15 a second, for ever. The change is
+collapsed, not lost: `_last_shape` only advances when a post actually goes out, so a change held
+back fires on the next frame past the floor. **And it cannot report `on_floor` off one frame.**
+This path went straight from one rectangle to an observation and so walked around
+`on_floor_confirm` entirely — a nap on the sofa or a sideways bend became *“she appeared to be on
+the floor at 3:14 pm”*. It now reads `selector.floor_confirmed` and drops a `wide` band to `None`
+without it, borrowing the selector's run rather than counting a second one. It lags one frame
+(`selector.update()` for the current frame runs after it), which costs nothing: a body that has
+been on the floor for two frames has been there for three.
+
 **The keyframe selector rations the VLM only.** Values from `TUNING` (`vision/__init__.py`):
 
 ```python
@@ -385,20 +408,31 @@ on_person_appear_gap_s=30,  # "appear": first person-positive frame after >=30 s
 on_dwell_s=60,              # "dwell": while she stays in view, one keyframe a minute
 aspect_tall=1.6, aspect_wide=0.8,   # bbox bands, now only the fallback (see posture below)
 on_floor_confirm=2,         # consecutive wide frames before "on_floor" is believed
-on_floor_cooldown_s=30,     # ...and at most one such jump-the-queue call per 30 s
+on_floor_cooldown_s=30,     # ...and at most one such jump-the-queue call per 30 s,
+                            #    which a run of 2x on_floor_confirm is allowed through
+pose_wide_run=3,            # POSE_WIDE_RUN: consecutive pose reads before the band
+                            #    itself says `wide` at all (gate.posture_band)
+quick_min_s=1.0,            # QUICK_MIN_S: floor between two detector-change posts
 batch_size=1,               # frames per VLM call (the plan said 3)
 max_batch_wait_s=30,        # flush a short batch after this long (moot at batch_size 1)
 absent_after_s=30,          # no person for 30 s -> one "absent" observation, no VLM call
 vlm_every_n=1,              # VLM_EVERY_N: a model call on every keyframe; N>1 posts the
                             # detector's observation on the ones in between
-DEMO = dict(min_gap_s=4, on_dwell_s=8, max_batch_wait_s=15, absent_after_s=12)   # --demo
+DEMO = dict(min_gap_s=4, on_dwell_s=8, max_batch_wait_s=15, absent_after_s=12,
+            on_person_appear_gap_s=12)                              # --demo
                             # MIN_GAP_S and ON_DWELL_S are env knobs
 ```
 
 Reasons are `appear`, `posture`, `dwell`, `on_floor`, `absent`. `on_floor` is the one that jumps
 the `min_gap` queue and force-flushes the ring; `on_floor_confirm` is load-bearing, not
 belt-and-braces: on a real clip the aspect flickered across the 0.8 line frame to frame and a
-bare "became wide" fired on almost every frame. `--demo` was 6/15 s and is now 4/8 s because at
+bare "became wide" fired on almost every frame. `on_floor_cooldown_s` caps what is left — a
+subject who is merely wide, cropped at the waist by a low camera, can otherwise re-arm every
+second or two and spend a VLM call each time — but **a cooldown armed by a false read must not
+sit on a real fall**, which is what it did: the reason was ANDed away and `min_gap_s` then ate the
+fall-through, so the fall surfaced 20–30 s late. A run of `2 * on_floor_confirm` (four
+consecutive wide frames where two normally suffice) is strictly more evidence than the read that
+armed the cooldown ever had, and goes through it. `--demo` was 6/15 s and is now 4/8 s because at
 15 s the VLM spoke about once a minute and its sentences were drowned 45:1 by the detector's
 templates across a whole run (`59966b8`).
 
@@ -420,6 +454,24 @@ alone has not earned a fall. After the change: seated at a desk `unclear` 20/20,
 `upright` 20/20, `on_floor` across 60 frames 0. Not verified: a real fall. Nobody lay on the
 floor, so `on_floor` being *correct* still rests on synthetic-landmark tests (`test_posture.py`).
 Ceiling: `num_poses=1`, single occupant.
+
+Two behaviours of that module are not in the plan's version of it, and both make `wide` harder to
+reach. **A body foreshortened along the lens axis is `unclear`, not `seated`.** Lying with the head
+toward the camera projects the shoulders and hips almost on top of each other: `torso_len` collapses, the tilt reads ~0 (i.e.
+vertical), the knees sit in front of the hips, and it came back `seated` at full confidence — a
+real fall confidently contradicted, with the VLM lane then never asked. A torso projecting
+shorter than the shoulders are wide is not a torso seen side-on, whatever its angle says, so that
+branch returns `unclear`. It can only ever withhold an answer, never assert one: two normalised
+landmarks cannot separate lying-toward-the-camera from leaning-hard-toward-it, and guessing the
+wrong one puts *“she appeared to be on the floor”* on a family's screen. The upgrade is MediaPipe's
+world landmarks, whose z is in metres; that depth cue is what would turn the branch into a
+positive. **And one frame is not a fall even from the landmarker.** Measured over a morning on
+this machine, 104 of 2091 observations came back `on_floor` — 5%, with nobody ever on the floor —
+because the landmarker puts the hips somewhere plausible when it cannot really see them, and a hip
+guessed a little sideways of the shoulders is a torso past 55°. So `wide` is reported only after
+`pose_wide_run` (3) uninterrupted reads, about 0.2 s at this frame rate, and a marginal read
+before then is `None`, not `mid` — the run lives in `posture_band` rather than in the selector so
+that every consumer inherits it, which is what closed the detector-post path above.
 
 **One subject, followed by IoU.** `gate.pick_subject` follows the person box that overlaps the one
 it was already watching (IoU ≥ 0.2) instead of the largest box each frame. Found by lying on the
@@ -746,7 +798,7 @@ next to each one.
 
 | | Family app | Retained on the hub |
 |---|---|---|
-| Frames | Never. No endpoint returns image bytes; the API process never has one. The monitor tick (§6.1) carries normalised box geometry, never pixels, and `MonitorIn` rejects pixel coordinates. | At most `batch_size` (1) JPEG in RAM, freed on flush. Nothing on disk, ever. No `frames/` directory exists. |
+| Frames | **Yes, on one screen, in this build.** The plan said never, and the monitor tick (§6.1) still carries normalised geometry rather than pixels (`MonitorIn` rejects pixel coordinates) — but the hub now relays the annotated frame it draws to `POST /ingest/camera/frame` at ~5 fps, and the family camera console renders it from `GET /cameras/{id}/frame`. Nothing is recorded: the API holds one JPEG per camera in RAM, ≤512 KB, and 404s rather than serve one older than `FRAME_STALE_S` (5 s). `VISION_STREAM=0` turns the relay off. | At most `batch_size` (1) JPEG in the worker's RAM ring, freed on flush, plus the one relay JPEG in the API's RAM. Nothing on disk, ever, on either side. No `frames/` directory exists. |
 | Room | Never for *her* location (D-001). The camera's own room appears once in Settings as installer config. | `zone` on camera events, for staff and the learner. |
 | Observations (`evidence` sentence, posture, movement) | Never. Family gets the templated sentence only. | `observations`, text only, TTL 7 days. |
 | Activity episodes | Yes, as sentences via `/activity` and `/presence`. | `events`, sentence + structured payload. |
@@ -761,9 +813,22 @@ false positives, and "show me why" for the family. The first two are real and we
 knowingly; the observations rows (sentences) are the review queue we can afford. The third is the
 one we must not build — `docs/frontend-DESIGN.md` rule 3 and `PRODUCT_SPEC.md` §8.2 both say evidence
 is a sentence, never a picture. So: **no frames retained, structurally** — no disk write in the
-worker (grep the package for `imwrite`/`open(` in review), frames cross exactly one socket
-(loopback to Ollama), and the API cannot return what it never receives. The upgrade, if a review
-queue is ever needed, is a *separate* opt-in with its own consent grant, not a flag on this one.
+worker (the AST test in `tests/test_vision_gate.py` walks the package and fails on
+`imwrite`/`VideoWriter`/`open(`), nothing about a frame in Mongo, and nothing that outlives the
+request that carried it. The upgrade, if a review queue is ever needed, is a *separate* opt-in
+with its own consent grant, not a flag on this one.
+
+**What changed, and what it is worth being exact about.** *Retention* is untouched: it is still
+none, and it is still structural. *Reach* is not. The plan's second clause here — frames cross
+exactly one socket, loopback to Ollama — is no longer true. A frame now crosses two more: to the
+API, and from the API to the phone (§5.2). The distinction that survives is between a picture that
+is *shown* and a picture that is *kept*: the relay buffer is one JPEG, overwritten several times a
+second, unreachable once 5 s stale, and refused outright when consent is off or the camera is
+paused. The distinction that does not survive is "the API cannot return what it never receives",
+which was the sentence this section leaned on. On a build with no auth (§6.1), anything on the LAN
+can pull that frame. It is a demo affordance with a real cost, and shipping it would mean auth on
+the route, its own consent grant, and a screen that requests the stream rather than receiving it
+by default — the ceiling is written next to `_FRAME` in `routers/camera.py` for the same reason.
 
 ### 5.4 Consent copy (verbatim in the app; three separate grants)
 
@@ -806,7 +871,7 @@ Order of checks in `rag.answer()`, each before any retrieval:
    watch her, look at her, screenshot*), appearance (*wearing, look(s)? like, hair, weight, thin,
    fat*), live location (*right now, at the moment, which room, where is she*). Reply, no retrieval,
    `refused: true, refusal_kind: "surveillance"`, one of four fixed sentences by sub-kind, e.g.
-   *"Dhyaan doesn't keep or describe what she looks like, and there is no video to show — not to
+   *"Dhyaan doesn't keep or describe what she looks like, and nothing is recorded, so there is no footage to send — not to
    you, not to anyone. I can tell you what she's been doing."* / *"Dhyaan never listens, so there
    is nothing she said that I could tell you."* / *"Bedrooms and bathrooms are outside what Dhyaan
    notices, by design."* / *"I don't say where she is in the house. I can tell you she's at home
@@ -840,13 +905,24 @@ observations), visitors (count/duration), *"is she OK"* (presence + open alerts)
 
 ### 5.6 Consent gates in code (belt and braces)
 
-- Worker: top of the keyframe handler — `if not cfg.consent_camera or cfg.paused: drop frames`.
-  Config fetch failure = no consent (fail closed). No VLM call, no POST, no log line with pixels.
+- Worker: consent is checked **before the capture device is opened at all**, and on every 10 s
+  config poll thereafter. The plan had the check at the top of the keyframe handler — frames read
+  and dropped — and that is still what the loop does with the cascade (no mask, no motion, no
+  detector, no VLM, no POST, and `ring.take()` throws away anything already captured). What was
+  added is the device itself: the moment `state()` is not `watching`, `cam.close()` runs and the
+  camera is released, so the hardware light goes out with the screen. It was left open, and the
+  green LED burned through the whole privacy beat — the one moment in the demo where the hardware
+  has to agree with the app. A closed device is the only version of "it stopped looking" a
+  resident can check from across the room without trusting us. Coming back re-opens it, and a
+  device something else grabbed in the meantime is retried every poll rather than ending the lane.
+  Config fetch failure = no consent (fail closed). The console and the relay are cleared on the
+  same branch, sentence included: clearing the geometry but not the words left the hub reading
+  "eating at the table" all the way through the pause.
 - API: `POST /ingest/camera` returns **403** when `residents.consent_camera` is 0 or the camera
   is paused, **404** for an unknown camera or a camera not registered to that resident, and writes
   nothing in either case (`_live_camera` in `routers/camera.py`). `POST /ingest/camera/monitor`
-  goes through the same check: a paused camera that kept streaming its console would be the pause
-  not meaning anything. A rogue or stale worker cannot create an observation or a tick. On a 403
+  and `POST /ingest/camera/frame` go through the same check: a paused camera that kept streaming
+  its console — or its picture — would be the pause not meaning anything. A rogue or stale worker cannot create an observation or a tick. On a 403
   the worker sets itself to *no consent* and stops the camera until the next config poll says
   otherwise.
 - **Consent gates are not authentication.** The API has none (§6.1): any process on the LAN can
@@ -889,6 +965,8 @@ still fail closed. Ids come back as `id`, timestamps ISO-8601.
 | POST | `/ingest/camera` | device | `{camera_id, resident_id, ts, span_s, n_frames, person_count, activity, posture, movement, spot, assistive_device, plate_or_cup_present, food_visible, hand_to_mouth_observed, confidence, evidence, model, latency_ms, simulated}` (all enums as in §3.5 plus `"absent"`; `food_visible` added after the plan and silently dropped by the API until `ObservationIn` declared it) | `201 {observation_id, presence, event_ids: []}`; `403` when consent off/paused; `404` unknown camera; `422` bad enum |
 | POST | `/ingest/camera/heartbeat` | device | `{camera_id, state: "watching"\|"paused"\|"offline"\|"no_consent", paused_until?, fps, dropped_batches}` | `204`; a state change emits `camera_online` / `camera_paused` / `camera_offline` and a `paused` heartbeat records `paused_by: "resident"` |
 | POST | `/ingest/camera/monitor` | device | `MonitorIn`, below | `204`; `403` consent off/paused; `404` unknown camera; `422` a box outside 0..1 or a bad `gate` |
+| POST | `/ingest/camera/frame` | device | the annotated preview JPEG as the raw body, `Content-Type: image/jpeg` | `204`; `400` empty body; `413` over `FRAME_MAX_BYTES` (512 KB); `403` consent off/paused; `404` unknown camera. Added after the plan — see §5.2 and §5.3 |
+| GET | `/cameras/{id}/frame` | app | — | the latest JPEG, `Cache-Control: no-store`; `404` when there is none or the last is older than `FRAME_STALE_S = 5`. Never a stale picture |
 | GET | `/cameras?resident_id=` | app | — | `[{id, resident_id, state, consent, paused_until, last_heartbeat_at, online}]`; `online` is heartbeat-based (stale after `HEARTBEAT_STALE_S = 75`, two missed 30 s beats) |
 | GET | `/cameras/{id}/monitor` | app | — | `{camera, online, tick}`; `tick` is the last one received, or `null` when none has arrived or the last is older than `MONITOR_STALE_S = 15`; never a fabricated tick |
 | POST | `/cameras/{id}/pause` | app | `{hours}` (0 < h ≤ 24, default 2) | `{paused_until, paused_by: "family", presence}`; drops the live tick |
@@ -1142,7 +1220,7 @@ validation on zone/appearance/facts/confirm.
 | 2 · 0:20–0:45 | **Projector switches to the hub preview**: the presenter walks into frame; motion mask flickers, the green subject box appears, the text lines read `people 1  FOOD -`, then `FOOD sandwich` when the plate comes into view, and the status line shows the keyframe reason and `VLM queued`. | *"Every frame is dropped unless something moved. If something moved, a 25 MB detector that takes its vocabulary as plain words asks 'is that a person, is that food'. Only a keyframe goes to a vision model on this laptop, over loopback and nowhere else, and only to write the sentence. This screen is the last place a picture exists."* |
 | 3 · 0:45–1:15 | **Projector switches to the phone.** Presenter sits, picks up the fork, eats. Preview stays on the laptop only. The phone hero cross-fades: **"Eleanor is having something to eat at the table."** *Dhyaan saw · 3:41 pm.* The *Ate* tile becomes *1 meal so far*. | **The ten seconds that land it — say nothing until the sentence appears, then:** *"No video left that laptop. Her daughter got a sentence."* |
 | 4 · 1:15–1:35 | Presenter stands, walks out of frame. ~15 s later: **"Eleanor has been out of view since 3:43 pm."** *Around her usual walk time.* | *"It doesn't say she went for a walk — it can't see the door. It says she's out of view, and that Priya told us she usually walks about now."* |
-| 5 · 1:35–2:20 | **Ask** tab. Chip: *Has she eaten today?* → *"Yes — Dhyaan saw her eat at 3:41 pm today. You told us she usually has toast and tea around 8, so this was later and lighter than usual."* Citations: **You told us · breakfast**, **Dhyaan saw · 3:41 pm**. Typed: *What did she say to her visitor?* → **"Dhyaan never listens, so there is nothing she said that I could tell you. Someone visited on Tuesday for about 40 minutes."** Typed: *Show me the camera.* → **"There is no video to show — not to you, not to anyone. I can tell you what she's been doing."** | *"Three sources, always labelled: what you told us, what the camera saw, what her pattern is. And the questions it won't answer, it won't answer for anyone."* |
+| 5 · 1:35–2:20 | **Ask** tab. Chip: *Has she eaten today?* → *"Yes — Dhyaan saw her eat at 3:41 pm today. You told us she usually has toast and tea around 8, so this was later and lighter than usual."* Citations: **You told us · breakfast**, **Dhyaan saw · 3:41 pm**. Typed: *What did she say to her visitor?* → **"Dhyaan never listens, so there is nothing she said that I could tell you. Someone visited on Tuesday for about 40 minutes."** Typed: *Show me the camera.* → **"Nothing is recorded, so there is no footage to send you or anyone else. The live view on her camera screen is the only picture there is. I can tell you what she's been doing."** | *"Three sources, always labelled: what you told us, what the camera saw, what her pattern is. And the questions it won't answer, it won't answer for anyone."* |
 | 6 · 2:20–2:40 | **Settings → Forget her profile** → type *Eleanor* → confirm. Home returns to **"Nothing yet today."**; Settings shows *Nothing told to Dhyaan yet*. | *"And when she says stop, it's gone — the notes, the description, the observations. There was never a picture to delete."* |
 
 Fallback ladder: webcam fails → `simulate meal` (beat 3 shows the same sentence, say *"the camera

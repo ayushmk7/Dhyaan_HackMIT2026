@@ -154,6 +154,34 @@ async def test_resolve_alert(client, db, resident):
     assert alert["_id"] not in [a["id"] for a in r.json()]
 
 
+async def test_resolving_an_alert_frees_the_resident_for_the_next_fall(client, db, resident):
+    """The staff "resolve" button must not deafen us to her next fall.
+
+    `resolve` writes MANUALLY_RESOLVED, which the FSM table doesn't model, so
+    alerts.open_alert's one-fall-one-ladder dedup went on treating the resolved
+    alert as live and handed it back instead of starting a ladder — for up to a
+    full hour, the staleness bound. The list endpoint said "no open alerts"
+    while a real fall was being swallowed.
+    """
+    from app import alerts
+
+    first = await _open_alert(db, resident)
+    r = await client.post(
+        f"/v1/alerts/{first['_id']}/resolve", json={"resolution": "false_positive"},
+    )
+    assert r.status_code == 200
+
+    alerts.stop_timers()
+    second = await alerts.open_alert(
+        resident_id=resident, trigger_event_id="evt_second_fall",
+        kind="fall", severity="critical",
+    )
+    assert second["_id"] != first["_id"]
+
+    r = await client.get("/v1/alerts?state=open")
+    assert [a["id"] for a in r.json()] == [second["_id"]]
+
+
 # ---------------------------------------------------------------------------
 # 5. Feedback: writes feedback_given event, sets review_state
 # ---------------------------------------------------------------------------

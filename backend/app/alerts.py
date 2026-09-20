@@ -32,6 +32,16 @@ STATES = frozenset({
     "ESCALATED_FINAL", "ACKNOWLEDGED", "CANCELLED", "EXHAUSTED",
 })
 TERMINAL_STATES = {"RESOLVED_OK", "CANCELLED", "ACKNOWLEDGED", "EXHAUSTED"}
+# Every state in which an alert is finished, including the one the FSM never
+# sees: `routers/residents.py:resolve_alert` (the staff "resolve" button) writes
+# `MANUALLY_RESOLVED` straight into the document, outside TABLE. Ask "is this
+# alert still live?" with this set, never with TERMINAL_STATES — the dedup below
+# asked with the bare set and so kept counting a resolved alert as open, which
+# swallowed the resident's next real fall for a whole STALE_ALERT_S hour.
+# TERMINAL_STATES stays FSM-only because `STATES - TERMINAL_STATES - {"IDLE"}`
+# builds the ack transitions and the timer wheel out of it, and MANUALLY_RESOLVED
+# is not in STATES.
+CLOSED_STATES = TERMINAL_STATES | {"MANUALLY_RESOLVED"}
 
 CLASSIFICATIONS = {"okay", "fell_but_fine", "no_answer", "distress", "incoherent"}
 
@@ -290,7 +300,7 @@ async def _rearm_pending() -> int:
     """
     rearmed = 0
     now = datetime.now(timezone.utc)
-    async for alert in db().alerts.find({"state": {"$nin": list(TERMINAL_STATES)}}):
+    async for alert in db().alerts.find({"state": {"$nin": list(CLOSED_STATES)}}):
         pending = _pending_timer(alert.get("state", ""))
         if not pending:
             continue
@@ -448,7 +458,7 @@ async def open_alert(resident_id: str, trigger_event_id: str, kind: str, severit
     existing = await db().alerts.find_one({
         "resident_id": resident_id,
         "kind": kind,
-        "state": {"$nin": list(TERMINAL_STATES)},
+        "state": {"$nin": list(CLOSED_STATES)},
         "opened_at": {"$gte": open_since},
     })
     if existing:

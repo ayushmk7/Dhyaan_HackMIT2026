@@ -63,8 +63,13 @@ def _scan_vector(scan: dict) -> dict[str, float]:
     """Flatten an /ingest/rf payload into one {anchor_id: rssi} dict."""
     vec: dict[str, float] = {}
     for b in scan.get("beacons", []) or []:
-        key = b.get("uuid") or f"{b.get('major')}-{b.get('minor')}"
-        vec[str(key)] = float(b["rssi"])
+        # uuid:major:minor, ALWAYS. This keyed on the uuid alone when one was
+        # present, and every beacon on a site shares the site uuid by design —
+        # iBeacon puts the identity in major/minor. So both anchors collapsed
+        # into a single key, the last one written won, and every scan became
+        # one scalar: the rooms were mathematically indistinguishable and the
+        # classifier sat on whichever zone it committed to first at 0.99.
+        vec[f"{b.get('uuid')}:{b.get('major')}:{b.get('minor')}"] = float(b["rssi"])
     for w in scan.get("wifi", []) or []:
         vec[str(w["bssid"])] = float(w["rssi"])
     return vec
@@ -197,6 +202,10 @@ async def observe(resident_id: str, scan: dict, ts: datetime | None = None) -> d
     """
     fingerprints = await _fingerprints_for(resident_id)
     vec = _scan_vector(scan)
+    # Demo-day diagnostic: the one thing you cannot get any other way when the
+    # room reads wrong is what the band actually heard. RF_DEBUG=1 prints it.
+    if os.getenv("RF_DEBUG"):
+        print(f"[rf] heard {({k[-3:]: v for k, v in vec.items()})} -> {classify(vec, fingerprints)}", flush=True)
     state = _STATE.get(resident_id) or _new_state()
     now = ts or datetime.now(timezone.utc)
 
