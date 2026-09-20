@@ -28,7 +28,7 @@ cd frontend && npx expo start
   No `.env` → API boots voice-less (stub) with no error. Check startup: a live
   boot mounts `/twilio/*` routes (`curl -s localhost:8000/openapi.json | grep twilio`).
 - Seed honors `TEST_PHONE_E164` — whoever's phone is in `.env` is who Dhyaan
-  calls as Eleanor AND as first contact.
+  calls as Asha AND as first contact.
 
 ## The band (UNO Q) — venue steps
 
@@ -82,7 +82,7 @@ Set in the environment before `./dev.sh`.
 2. Board on venue WiFi (step above).
 3. Vision lane on Ayush's machine: `uv pip install -e ".[vision]"` once, then
    `make -C backend vision-demo`; needs `ollama` + `qwen2.5vl:3b` pulled.
-4. Phone that will be "Eleanor's" charged and on ring.
+4. Phone that will be "Asha's" charged and on ring.
 
 ## Recovery moves (fastest first)
 

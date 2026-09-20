@@ -1,6 +1,6 @@
 """Seed a demo resident with 14 days of plausible history plus today's anomaly.
 
-    uv run python -m scripts.seed          # Eleanor, 14 days, today she never walked
+    uv run python -m scripts.seed          # Asha, 14 days, today she never walked
     uv run python -m scripts.seed --wipe   # drop everything first
 
 The history is synthetic. The learner that runs on it is real. Say that to judges.
@@ -25,13 +25,13 @@ from app import db as dbmod
 from app import rag  # noqa: F401
 from app.events import emit
 
-# Live-call demos: point Eleanor (and the first ladder contact) at a phone that
+# Live-call demos: point Asha (and the first ladder contact) at a phone that
 # actually rings. Falls back to the fixture numbers when no .env is loaded.
 _TEST_PHONE = os.getenv("TEST_PHONE_E164", "").strip()
 
 RESIDENT = {
     "_id": "res_eleanor",
-    "display_name": "Eleanor",
+    "display_name": "Asha",
     "room": "214",
     "timezone": "America/New_York",
     "phone_e164": _TEST_PHONE or "+15551230000",
@@ -58,8 +58,8 @@ CAMERA = {
 # half of the three-source retrieval pool — without them the chat has nothing to
 # contrast an observation against and every answer is just "Dhyaan saw ...".
 FACTS = [
-    ("wake", "Eleanor is usually up around 6:30."),
-    ("breakfast", "Eleanor usually has toast and tea for breakfast at about 8."),
+    ("wake", "Asha is usually up around 6:30."),
+    ("breakfast", "Asha usually has toast and tea for breakfast at about 8."),
     ("lunch", "Lunch is usually soup and bread around 12:30."),
     ("dinner", "Dinner is early, usually around 5:30, and she cooks it herself."),
     ("walk", "She walks to the shops around 10 most mornings."),
@@ -86,14 +86,14 @@ ZONES = ["bedroom", "hallway", "kitchen", "living_room", "bathroom"]
 
 
 async def seed_day(day: datetime, anomalous: bool):
-    """One plausible day. Eleanor wakes ~06:40, eats 3x, walks ~3x."""
+    """One plausible day. Asha wakes ~06:40, eats 3x, walks ~3x."""
     r = "res_eleanor"
     date_s = day.strftime("%A %-d %B")
 
     wake = day.replace(hour=6, minute=40) + timedelta(minutes=random.randint(-25, 25))
     await emit(resident_id=r, source="camera", type="bed_exit", ts=wake, zone="bedroom",
                payload={"hour_local": wake.hour},
-               embedding_text=f"On {date_s} at {wake:%-I:%M %p}, Eleanor got out of bed.")
+               embedding_text=f"On {date_s} at {wake:%-I:%M %p}, Asha got out of bed.")
 
     for meal, hour in (("breakfast", 7), ("lunch", 12), ("dinner", 18)):
         if anomalous and meal == "lunch":
@@ -102,9 +102,9 @@ async def seed_day(day: datetime, anomalous: bool):
         await emit(resident_id=r, source="camera", type="meal_observed", ts=t,
                    zone="kitchen", confidence=0.85,
                    payload={"meal": meal, "seated_duration_s": random.randint(600, 1800)},
-                   embedding_text=f"On {date_s} at {t:%-I:%M %p}, Eleanor ate {meal} in the kitchen.")
+                   embedding_text=f"On {date_s} at {t:%-I:%M %p}, Asha ate {meal} in the kitchen.")
 
-    # Eleanor walks 4-6 times a day. That consistency is the point: at lambda~5 a
+    # Asha walks 4-6 times a day. That consistency is the point: at lambda~5 a
     # zero-walk day is p=0.007 (surprise 2.17 -> urgent), while at lambda~3 it is
     # only 1.28 and never clears the 1.3 warn cutoff. TECHNICAL_PRD §8.2's worked
     # example ("lambda=3.1, 0 walks -> urgent") does not clear its own threshold.
@@ -117,19 +117,19 @@ async def seed_day(day: datetime, anomalous: bool):
         await emit(resident_id=r, source="camera", type="walk_completed", ts=t,
                    zone="hallway", payload={"duration_s": dur},
                    ts_end=t + timedelta(seconds=dur),
-                   embedding_text=f"On {date_s} at {t:%-I:%M %p}, Eleanor walked for {dur // 60} minutes.")
+                   embedding_text=f"On {date_s} at {t:%-I:%M %p}, Asha walked for {dur // 60} minutes.")
 
     for i in range(random.randint(0, 2)):
         t = day.replace(hour=random.choice([1, 2, 3]), minute=random.randint(0, 59))
         await emit(resident_id=r, source="band", type="bed_exit", ts=t, zone="bathroom",
                    payload={"hour_local": t.hour, "night": True},
-                   embedding_text=f"On {date_s} at {t:%-I:%M %p}, Eleanor got up during the night.")
+                   embedding_text=f"On {date_s} at {t:%-I:%M %p}, Asha got up during the night.")
 
     for i, z in enumerate(random.sample(ZONES, 3)):
         t = day.replace(hour=9 + i * 4, minute=random.randint(0, 59))
         await emit(resident_id=r, source="band", type="zone_entered", ts=t, zone=z,
                    confidence=0.78, payload={"method": "ble"},
-                   embedding_text=f"On {date_s} at {t:%-I:%M %p}, Eleanor moved into the {z.replace('_', ' ')}.")
+                   embedding_text=f"On {date_s} at {t:%-I:%M %p}, Asha moved into the {z.replace('_', ' ')}.")
 
 
 async def main(wipe: bool, days: int):
@@ -184,7 +184,7 @@ async def main(wipe: bool, days: int):
     nb = await d.baselines.count_documents({})
     nsum = await d.events.count_documents({"type": "daily_summary"})
     ndev = await d.events.count_documents({"type": "baseline_deviation"})
-    print(f"seeded {n} events over {days + 1} days for Eleanor")
+    print(f"seeded {n} events over {days + 1} days for Asha")
     print(f"  {nb} baselines learned, {nsum} daily narratives, {ndev} deviations flagged")
     print(f"  {nf} onboarding facts, camera {CAMERA['_id']} in the {CAMERA['zone']}")
     print("today is deliberately anomalous: no walk, no lunch — the learner should flag it")

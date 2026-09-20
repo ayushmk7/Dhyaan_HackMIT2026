@@ -127,7 +127,7 @@ VOICEMAIL_MESSAGE = (
 )
 
 _DEFAULTS = {
-    "resident_name": "Eleanor",
+    "resident_name": "Asha",
     "resident_age": "81",
     "fall_time": "just now",
     "contact_name": "Priya",

@@ -23,7 +23,7 @@ PRIVATE_ZONES = {"bedroom", "bathroom"}
 # Used only by --dry-run when there is no API and no --config-json. A real run
 # fails closed instead; see _refresh_config.
 STANDIN_CONFIG = {
-    "resident_id": "res_eleanor", "name": "Eleanor", "consent_camera": 1,
+    "resident_id": "res_eleanor", "name": "Asha", "consent_camera": 1,
     "paused_until": None, "zone": "living_room", "zone_label": "living room",
     "zone_hint": "Living room. The dining table is on the left, her armchair by the window on the right.",
     "appearance": "", "spots_line": "", "demo_fast": False,

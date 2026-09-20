@@ -110,7 +110,7 @@ SCRIPT = "no_answer"
 # What the agent says when it reaches a family member. It does not ask them to
 # classify anything — acknowledgement comes from the app or the ladder times out.
 CONTACT_SCRIPT: list[tuple[str, str]] = [
-    ("agent", f"{SIM_TAG} Hi, this is Dhyaan calling about Eleanor. Her band detected a "
+    ("agent", f"{SIM_TAG} Hi, this is Dhyaan calling about Asha. Her band detected a "
               "possible fall and she did not answer when we called her."),
     ("agent", f"{SIM_TAG} Can you check on her? Acknowledge in the app and we will stop "
               "calling the rest of her contacts."),
