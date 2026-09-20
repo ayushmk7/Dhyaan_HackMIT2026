@@ -14,7 +14,7 @@ the same thing (see RESOLUTION_FOR_STATE below).
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from ulid import ULID
 
@@ -43,6 +43,13 @@ RETRY_WAIT_S = cfg.RETRY_WAIT_S
 # AMD / 20s-silence signals from the bridge; until then, if nobody calls
 # classify() before this fires, we escalate exactly like a bad answer.
 RESIDENT_RESPONSE_TIMEOUT_S = cfg.RESIDENT_RESPONSE_TIMEOUT_S
+# How long an alert can plausibly still be live. The whole ladder — cancel
+# window, two resident calls, two contacts, the final rung — runs in minutes, so
+# an hour is well past any of it. Past this line an open alert is not an
+# escalation in progress, it is one we lost: `open_alert` stops reusing it and
+# `_rearm_pending` closes it instead of dialling. Deliberately not an env knob;
+# it is a statement about the ladder, not a tuning parameter.
+STALE_ALERT_S = 3600
 
 log = logging.getLogger("dhyaan.alerts")
 
@@ -107,8 +114,16 @@ async def _final_escalation(alert, detail=None):
     for contact in contacts:
         if not contact.get("phone_e164"):
             continue
-        sid = await voice.place_call(contact["phone_e164"], "contact_final", alert["_id"])
-        await voice.speak_final_escalation(sid, name, address)
+        # One bad leg used to abort the whole loop: contact 1's call raises and
+        # contact 2 is never dialled at all. This is the last rung of a real
+        # fall — every remaining number is worth trying, and a number Twilio
+        # rejects is a reason to move to the next one, not to stop.
+        try:
+            sid = await voice.place_call(contact["phone_e164"], "contact_final", alert["_id"])
+            await voice.speak_final_escalation(sid, name, address)
+        except Exception as e:  # noqa: BLE001
+            log.warning("final escalation leg failed for alert %s, contact %s: %s",
+                        alert["_id"], contact.get("_id"), e)
 
 
 ACTIONS = {
@@ -201,6 +216,11 @@ del _s
 # ---------------------------------------------------------------------------
 
 _timers: dict[str, asyncio.Task] = {}
+# asyncio keeps only a weak reference to a running task, so the re-arm sweep can
+# be collected mid-flight, and a shutdown that beats it leaves it reading db()
+# after close(). Held here and cancelled in stop_timers, same as app/voice.py's
+# _bg_tasks.
+_rearm_task: asyncio.Task | None = None
 
 
 def _cancel_timer(alert_id: str) -> None:
@@ -281,7 +301,23 @@ async def _rearm_pending() -> int:
             since = now
         if since.tzinfo is None:
             since = since.replace(tzinfo=timezone.utc)
-        left = window_s - (now - since).total_seconds()
+        stale_s = (now - since).total_seconds()
+        # Anything already past due fires on the next tick, so without this an
+        # alert left open since last week dials the moment the process comes
+        # back — a real 3 a.m. call about a fall someone dealt with days ago.
+        # Under `uvicorn --reload` that is every file save. Write the terminal
+        # state straight in: EXHAUSTED is where the ladder would have ended, and
+        # no trigger in TABLE leads there from a state with a clock still on it.
+        if stale_s > STALE_ALERT_S:
+            await db().alerts.update_one(
+                {"_id": alert["_id"]},
+                {"$set": {"state": "EXHAUSTED", "resolution": "exhausted",
+                          "updated_at": now.isoformat()}},
+            )
+            log.info("alert %s was %.0f s past its last transition at restart; "
+                     "closed as EXHAUSTED instead of re-armed", alert["_id"], stale_s)
+            continue
+        left = window_s - stale_s
         _schedule(alert["_id"], max(0.1, left), trigger)
         rearmed += 1
     if rearmed:
@@ -292,8 +328,9 @@ async def _rearm_pending() -> int:
 def start_timers() -> None:
     """Lifespan hook. Kicks off the re-arm as a task because the lifespan calls
     this synchronously and the re-arm needs the database."""
+    global _rearm_task
     try:
-        asyncio.get_running_loop().create_task(_rearm_pending())
+        _rearm_task = asyncio.get_running_loop().create_task(_rearm_pending())
     except RuntimeError:
         # No loop (a synchronous test importing the module). Nothing in flight
         # to re-arm in that case either.
@@ -301,6 +338,10 @@ def start_timers() -> None:
 
 
 def stop_timers() -> None:
+    global _rearm_task
+    if _rearm_task and not _rearm_task.done():
+        _rearm_task.cancel()
+    _rearm_task = None
     for alert_id in list(_timers.keys()):
         _cancel_timer(alert_id)
 
@@ -392,8 +433,31 @@ async def open_alert(resident_id: str, trigger_event_id: str, kind: str, severit
     if severity not in ("warn", "critical"):
         raise ValueError(f"invalid severity {severity!r}, must be 'warn' or 'critical'")
 
+    # One fall, one ladder. The band retries its POST and the staff "Simulate a
+    # fall" button gets pressed twice; each one used to open its own alert with
+    # its own timers, and the cancel carries a single alert id — so the button
+    # stopped one ladder while the other kept dialling. Same resident, same
+    # kind, still open: it is the same fall.
+    #
+    # The `opened_at` bound is load-bearing, not a nicety. Without it one alert
+    # that got stuck non-terminal would swallow every later fall for that
+    # resident forever. ISO-8601 UTC strings sort chronologically, so the
+    # comparison is a plain string compare.
+    now_dt = datetime.now(timezone.utc)
+    open_since = (now_dt - timedelta(seconds=STALE_ALERT_S)).isoformat()
+    existing = await db().alerts.find_one({
+        "resident_id": resident_id,
+        "kind": kind,
+        "state": {"$nin": list(TERMINAL_STATES)},
+        "opened_at": {"$gte": open_since},
+    })
+    if existing:
+        log.info("alert %s is already open for %s (%s); reusing it",
+                 existing["_id"], resident_id, kind)
+        return existing
+
     alert_id = f"alt_{ULID()}"
-    now = datetime.now(timezone.utc).isoformat()
+    now = now_dt.isoformat()
     doc = {
         "_id": alert_id,
         "resident_id": resident_id,

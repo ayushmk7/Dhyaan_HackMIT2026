@@ -61,8 +61,13 @@ async def handle_voice_tool(alert_id: str, role: str, fn_name: str, args: dict) 
     try:
         if fn_name == "mark_ok":
             status = args.get("status", "fine")
-            await alerts.classify(alert_id, _TOOL_TO_CLASSIFICATION[("mark_ok", status)],
-                                  args.get("detail", ""))
+            # The model does not only send the two statuses the tool schema
+            # names. A subscript raised KeyError on anything else, and the
+            # `except ValueError` below does not catch that — it came back out
+            # of the bridge's websocket and the ladder never heard the answer at
+            # all. An answer we cannot read is what "incoherent" already means.
+            classification = _TOOL_TO_CLASSIFICATION.get(("mark_ok", status), "incoherent")
+            await alerts.classify(alert_id, classification, args.get("detail", ""))
         elif fn_name == "escalate":
             reason = args.get("reason", "incoherent")
             # PRD §4.4: silence and incoherence both escalate as critical.

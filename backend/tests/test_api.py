@@ -327,3 +327,59 @@ async def test_the_escalation_ladder_replays_in_order(client, db, resident):
     assert all(s["detail"] for s in ladder), "every row is a sentence the screen prints"
     assert ladder[-1]["detail"].startswith("Priya is on it")
     assert pushed[-1]["ladder"] == ladder, "REST and WS must not drift"
+
+
+# ---------------------------------------------------------------------------
+# The rollup trigger and the broadcast fan-out
+# ---------------------------------------------------------------------------
+
+async def test_rollup_rejects_an_unpadded_date_instead_of_500ing(client, resident):
+    """"2026-9-1" used to reach baseline._day_range_utc and die there, out of a
+    button the timeline screen presses. A caller's bad date is a 422."""
+    r = await client.post("/v1/admin/rollup",
+                          json={"resident_id": resident, "date": "2026-9-1"})
+    assert r.status_code == 422, r.text
+
+
+async def test_one_stalled_phone_does_not_hold_up_everyone_elses_event():
+    """`events.emit()` awaits its subscribers, so `broadcast` sits on the
+    fall-ingest path. Serially and without a clock, one phone on bad venue wifi
+    blocked every other client's event — and the fall behind it."""
+    import asyncio
+    import time
+
+    from app.routers import live
+
+    class _Stalled:
+        closed = False
+
+        async def send_json(self, msg):
+            await asyncio.sleep(5)
+
+        async def close(self):
+            self.closed = True
+
+    class _Fine:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, msg):
+            self.sent.append(msg)
+
+        async def close(self):
+            pass
+
+    stalled, fine = _Stalled(), _Fine()
+    for ws in (stalled, fine):
+        live._connections[ws] = {"resident_id": "res_eleanor", "lock": asyncio.Lock()}
+    try:
+        t0 = time.monotonic()
+        await live.broadcast({"t": "ping"}, "res_eleanor")
+        elapsed = time.monotonic() - t0
+    finally:
+        for ws in (stalled, fine):
+            live._connections.pop(ws, None)
+
+    assert elapsed < 3, f"broadcast waited {elapsed:.1f}s on one stalled socket"
+    assert fine.sent, "the healthy socket was starved by the stalled one"
+    assert stalled.closed and stalled not in live._connections

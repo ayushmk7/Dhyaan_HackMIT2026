@@ -104,3 +104,19 @@ async def test_every_escalate_reason_escalates(db, resident, reason, expected):
     await voice_adapter.handle_voice_tool(alert_id, "resident", "escalate", {"reason": reason})
     a = await db.alerts.find_one({"_id": alert_id})
     assert a["state"] == expected
+
+
+async def test_a_status_the_model_invented_escalates_instead_of_raising(db, resident):
+    """The tool schema names two statuses; the model sends a third.
+
+    `_TOOL_TO_CLASSIFICATION[("mark_ok", status)]` raised KeyError on anything
+    else, and the `except ValueError` in handle_voice_tool does not catch that —
+    it came back out of the bridge's websocket and the ladder never heard the
+    answer. An answer we cannot read escalates, like any other.
+    """
+    alert_id = await _open_fall(resident)
+    r = await voice_adapter.handle_voice_tool(alert_id, "resident", "mark_ok",
+                                              {"status": "shaken up"})
+    assert r["ok"] is True
+    a = await db.alerts.find_one({"_id": alert_id})
+    assert a["state"] == "CALLING_CONTACT_1"

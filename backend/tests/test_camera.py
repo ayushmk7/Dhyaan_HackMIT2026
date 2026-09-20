@@ -594,3 +594,83 @@ async def test_an_uncertain_frame_does_not_rewrite_the_sentence(client, camera, 
     # A genuinely new, confident reading still gets through.
     moved = await post(spot="armchair")
     assert moved["sentence"] != confident["sentence"], "a real move was swallowed"
+
+
+async def test_simulating_the_same_beat_twice_moves_the_tile_twice(client, camera, db):
+    """The canned steps are backdated, so the second run used to land inside the
+    first run's still-open episode: it extended that meal and emitted nothing,
+    and the operator pressing the stage fallback again saw the Today tile sit
+    still."""
+    for _ in range(2):
+        r = await client.post("/v1/admin/simulate",
+                              json={"resident_id": "res_eleanor", "kind": "meal"})
+        assert r.status_code == 200, r.text
+    assert await db.events.count_documents({"type": "meal_observed"}) == 2
+
+
+async def test_extending_an_episode_re_embeds_its_new_sentence(client, camera, db):
+    """The sentence changes as a meal runs on ("12:00–12:05" -> "12:00–12:10")
+    but the stored vector used to be the first version's, so the chatbot
+    retrieved a long lunch by how it started."""
+    from app import rag
+
+    start = datetime.now(timezone.utc) - timedelta(minutes=30)
+    for i in (0, 5):
+        await post(client, obs(ts=(start + timedelta(minutes=i)).isoformat()))
+    await rag.drain_embeddings()
+    first = await db.events.find_one({"type": "meal_observed"})
+
+    await post(client, obs(ts=(start + timedelta(minutes=10)).isoformat()))
+    await rag.drain_embeddings()
+    again = await db.events.find_one({"_id": first["_id"]})
+
+    assert again["embedding_text"] != first["embedding_text"]
+    assert again["embedding"] != first["embedding"], "the vector still describes the first five minutes"
+
+
+# ---------------------------------------------------------------------------
+# Who owns the pause. A heartbeat reports; it does not decide.
+# ---------------------------------------------------------------------------
+
+async def _heartbeat(client, camera, state, paused_until=None):
+    r = await client.post("/v1/ingest/camera/heartbeat", json={
+        "camera_id": camera, "state": state,
+        "paused_until": paused_until, "fps": 0.0, "dropped_batches": 0})
+    assert r.status_code == 204, r.text
+
+
+async def test_a_watching_heartbeat_does_not_erase_a_pause_the_family_set(client, camera, db):
+    """The hub heartbeats every 30 s. One `watching` tick used to write
+    `paused_until: None` over the family's pause, and the fail-closed ingest
+    gate swung open behind it."""
+    assert (await client.post(f"/v1/cameras/{camera}/pause", json={"hours": 2})).status_code == 200
+    await _heartbeat(client, camera, "watching")
+
+    await post(client, obs(), expect=403)
+    assert await db.observations.count_documents({}) == 0
+
+
+async def test_the_family_can_still_resume_the_pause_they_set(client, camera, db):
+    """The worker echoes the family's pause straight back as `state: paused`.
+    Stamping that echo `paused_by: "resident"` made the family's own Resume
+    403 one heartbeat after they pressed Pause."""
+    until = (await client.post(f"/v1/cameras/{camera}/pause", json={"hours": 2})).json()["paused_until"]
+    await _heartbeat(client, camera, "paused", paused_until=until)
+
+    cam = await db.cameras.find_one({"_id": camera})
+    assert cam["paused_by"] == "family"
+    assert (await client.post(f"/v1/cameras/{camera}/resume")).status_code == 200
+    await post(client, obs())
+
+
+async def test_her_hub_can_lift_her_own_pause_by_looking_again(client, camera, db):
+    """The other half of the same rule: `paused_by` is ownership, so her pause
+    has to be clearable by her, and the only thing she touches is the hub."""
+    until = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    await _heartbeat(client, camera, "paused", paused_until=until)
+    assert (await client.post(f"/v1/cameras/{camera}/resume")).status_code == 403
+
+    await _heartbeat(client, camera, "watching")
+    cam = await db.cameras.find_one({"_id": camera})
+    assert cam["paused_until"] is None and cam["paused_by"] is None
+    await post(client, obs())

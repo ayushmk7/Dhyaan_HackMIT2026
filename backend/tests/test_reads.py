@@ -179,3 +179,22 @@ async def test_get_event_by_id(client, resident):
 async def test_get_event_unknown_404s(client, resident):
     r = await client.get("/v1/events/evt_does_not_exist")
     assert r.status_code == 404
+
+
+async def test_get_event_never_hands_the_family_a_room_name(client, resident):
+    """The family app opens this route from a timeline row, so it is shaped
+    server-side like every other family read. The client has a `scrubRooms` of
+    its own, but a client-side filter is not a privacy control — it is the last
+    line of a defence that has to hold here first (D-001)."""
+    doc = await emit(
+        resident_id=resident, source="derived", type="zone_entered",
+        embedding_text="Eleanor moved into the bathroom", zone="bathroom",
+        confidence=0.9, payload={"from_zone": "hallway"},
+    )
+    r = await client.get(f"/v1/events/{doc['_id']}")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "zone" not in body
+    assert "derived_from" not in body
+    assert "bathroom" not in body["embedding_text"]
+    assert "bathroom" not in r.text

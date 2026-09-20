@@ -5,6 +5,7 @@ window, per-contact wait, exhaustion — runs in well under a second per test.
 """
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -227,7 +228,13 @@ async def test_ack_beats_a_firing_timer_to_one_transition(db, resident, monkeypa
 
     fresh = await db.alerts.find_one({"_id": alert["_id"]})
     assert fresh["state"] == "ACKNOWLEDGED"
+    assert fresh["resident_call_attempts"] == 0
     assert await _call_events(db, resident) == []
+    # The loser must not emit either: the ladder is replayed from `events`, and
+    # a transition that never happened would show up in the timeline as one.
+    assert await db.events.count_documents(
+        {"payload.alert_id": alert["_id"], "payload.to_state": "CALLING_RESIDENT"}
+    ) == 0
 
 
 async def test_restart_rearms_an_alert_waiting_on_a_classification(db, resident, monkeypatch):
@@ -252,3 +259,95 @@ async def test_restart_rearms_an_alert_waiting_on_a_classification(db, resident,
     alerts.start_timers()
 
     await _wait_for_state(db, alert["_id"], "CALLING_CONTACT_1")
+
+
+async def test_a_retried_fall_reuses_the_alert_it_already_opened(db, resident, monkeypatch):
+    """One fall, one ladder.
+
+    The band retries its POST and the staff "Simulate a fall" button gets pressed
+    twice. Each one used to open its own alert with its own timers, and the
+    cancel carries a single alert id — so the band button stopped one ladder
+    while the other went on dialling her daughter.
+    """
+    monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 5)
+    first = await alerts.open_alert(resident, "evt_band1", kind="fall", severity="critical")
+    second = await alerts.open_alert(resident, "evt_band2", kind="fall", severity="critical")
+
+    assert second["_id"] == first["_id"]
+    assert await db.alerts.count_documents({}) == 1
+    # One ladder started, not two (the open event is the one carrying the trigger).
+    assert await db.events.count_documents(
+        {"type": "escalation_started", "payload.trigger_event_id": {"$exists": True}}
+    ) == 1
+
+
+async def test_a_stuck_alert_does_not_swallow_the_next_fall(db, resident, monkeypatch):
+    """The dedup above is bounded, and the bound is the whole point.
+
+    An alert that got stuck non-terminal — the process died between rungs, a
+    state nothing drives out of — would otherwise match forever, and every later
+    fall for that resident would quietly return the dead one and dial nobody.
+    """
+    monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 5)
+    stuck = await alerts.open_alert(resident, "evt_old", kind="fall", severity="critical")
+    alerts.stop_timers()
+    await db.alerts.update_one(
+        {"_id": stuck["_id"]},
+        {"$set": {"opened_at": (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()}},
+    )
+
+    fresh = await alerts.open_alert(resident, "evt_new", kind="fall", severity="critical")
+    assert fresh["_id"] != stuck["_id"]
+    assert fresh["state"] == "LOCAL_CANCEL"
+
+
+async def test_restart_closes_an_alert_that_went_stale_instead_of_dialling(db, resident, monkeypatch):
+    """A days-old open alert must not ring anyone when the process comes back.
+
+    The remaining wait is measured from `updated_at` and anything past due fires
+    on the next tick, so an alert still open from last week used to place a real
+    call the moment the API restarted — at whatever hour that happened to be.
+    """
+    monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 30)
+    alert = await alerts.open_alert(resident, "evt_stale", kind="fall", severity="critical")
+    assert alert["state"] == "LOCAL_CANCEL"
+
+    alerts.stop_timers()
+    await db.alerts.update_one(
+        {"_id": alert["_id"]},
+        {"$set": {"updated_at": (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()}},
+    )
+    alerts.start_timers()
+
+    doc = await _wait_for_state(db, alert["_id"], "EXHAUSTED")
+    assert doc["resolution"] == "exhausted"
+    assert await _call_events(db, resident) == []
+
+
+async def test_one_bad_leg_does_not_stop_the_last_rung(db, resident, monkeypatch):
+    """`ESCALATED_FINAL` dials every contact, so one refusal must not end the loop.
+
+    The two `await voice.*` calls sat bare in the `for contact` loop: Twilio
+    rejecting contact 1's number raised straight out of the action and contact 2
+    — the person who might actually be home — was never dialled.
+    """
+    monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 0.05)
+    monkeypatch.setattr(alerts, "RESIDENT_RESPONSE_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(cfg, "CONTACT_WAIT_S", 0.05)
+    monkeypatch.setattr(cfg, "EXHAUSTED_AFTER_S", 0.05)
+
+    dialled = []
+    real_place_call = alerts.voice.place_call
+
+    async def flaky(to_e164, role, alert_id):
+        dialled.append((role, to_e164))
+        if role == "contact_final" and to_e164 == "+15551231111":  # Priya, rung 1
+            raise RuntimeError("twilio rejected the leg")
+        return await real_place_call(to_e164, role, alert_id)
+
+    monkeypatch.setattr(alerts.voice, "place_call", flaky)
+
+    alert = await alerts.open_alert(resident, "evt_lastrung", kind="fall", severity="critical")
+    await _wait_for_state(db, alert["_id"], "EXHAUSTED")
+
+    assert ("contact_final", "+15551232222") in dialled  # Sam, rung 2

@@ -3,6 +3,8 @@ also exercise the 404/422 trust-boundary paths, not just the happy path.
 (There is no 401: the API has no auth. See app/main.py.)
 """
 
+from datetime import datetime, timedelta, timezone
+
 from app import location as location_mod
 
 FALL_PAYLOAD = {
@@ -115,3 +117,43 @@ async def test_rf_scan_bad_rssi_422(client, resident):
     }
     r = await client.post("/v1/ingest/rf", json=scan)
     assert r.status_code == 422
+
+
+async def test_low_battery_is_reported_on_the_crossing_not_on_every_beat(client, resident, db):
+    """A band at 10% heartbeats every 60 s all night. Level-triggered, that was
+    ~480 identical events (and ~480 embedding tasks) by morning; the family gets
+    told once, when the battery crosses."""
+    for _ in range(2):
+        r = await client.post(
+            "/v1/ingest/heartbeat",
+            json={"band_id": "band_a3f2", "battery_pct": 10},
+        )
+        assert r.status_code == 204
+    assert await db.events.count_documents({"type": "band_low_battery"}) == 1
+
+
+async def test_the_scan_is_timed_by_the_band_not_by_our_clock(client, resident, db):
+    """A band that buffered an hour offline replays it in one burst. Stamping
+    each scan with `now` collapses the gap into a single zone with near-zero
+    dwell, so a fifteen-minute bathroom stay is never reported."""
+    location_mod._STATE.clear()
+
+    await db.fingerprints.insert_one({
+        "resident_id": resident, "zone": "bathroom",
+        "vectors": [{"bcn_bath": -50}, {"bcn_bath": -52}],
+    })
+
+    async def scan_at(ts):
+        r = await client.post("/v1/ingest/rf", json={
+            "band_id": "band_a3f2", "ts": ts.isoformat(),
+            "beacons": [{"uuid": "bcn_bath", "rssi": -51}], "wifi": [],
+        })
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    t = datetime.now(timezone.utc) - timedelta(hours=2)
+    await scan_at(t)                       # dwell hysteresis: two ticks to commit
+    assert (await scan_at(t))["zone"] == "bathroom"
+    await scan_at(t + timedelta(seconds=location_mod.BATHROOM_THRESHOLD_S + 1))
+
+    assert await db.events.count_documents({"type": "bathroom_prolonged"}) == 1
