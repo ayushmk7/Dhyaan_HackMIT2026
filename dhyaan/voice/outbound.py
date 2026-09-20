@@ -38,9 +38,17 @@ def _attr(v: str) -> str:
     return escape(v, {'"': "&quot;"})
 
 
-def build_twiml(*, alert_id: str, role: str, call_id: str, attempt: int = 1) -> str:
+def build_twiml(*, alert_id: str, role: str, call_id: str, attempt: int = 1,
+                extra: dict[str, str] | None = None) -> str:
     """Bidirectional media stream: <Connect><Stream> (NOT <Start><Stream>, which is
-    receive-only). Every interpolated value is attribute-escaped — B2.1."""
+    receive-only). Every interpolated value is attribute-escaped — B2.1.
+    `extra` rides along as more customParameters — settings.build_settings reads
+    resident_name/contact_name/relationship/fall_time from them so the agent
+    greets the person the DB knows, not the _DEFAULTS placeholder."""
+    rows = "".join(
+        f'\n      <Parameter name="{_attr(k)}" value="{_attr(v)}" />'
+        for k, v in (extra or {}).items() if v
+    )
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
@@ -48,19 +56,20 @@ def build_twiml(*, alert_id: str, role: str, call_id: str, attempt: int = 1) -> 
       <Parameter name="alert_id" value="{_attr(alert_id)}" />
       <Parameter name="call_id"  value="{_attr(call_id)}" />
       <Parameter name="role"     value="{_attr(role)}" />
-      <Parameter name="attempt"  value="{_attr(str(attempt))}" />
+      <Parameter name="attempt"  value="{_attr(str(attempt))}" />{rows}
     </Stream>
   </Connect>
 </Response>"""
 
 
-def place_call(*, to_e164: str, alert_id: str, role: str, call_id: str, attempt: int = 1) -> str:
+def place_call(*, to_e164: str, alert_id: str, role: str, call_id: str, attempt: int = 1,
+               extra: dict[str, str] | None = None) -> str:
     """§5.3 verbatim params. timeout=25 ≈ 4 rings; AsyncAmd so TwiML (and our
     stream) starts immediately and the AMD verdict lands on /twilio/amd."""
     call = _client().calls.create(
         to=to_e164,
         from_=_env("TWILIO_FROM_E164"),
-        twiml=build_twiml(alert_id=alert_id, role=role, call_id=call_id, attempt=attempt),
+        twiml=build_twiml(alert_id=alert_id, role=role, call_id=call_id, attempt=attempt, extra=extra),
         timeout=25,
         machine_detection="Enable",
         async_amd="true",

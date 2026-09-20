@@ -185,10 +185,11 @@ class _TwilioVoice:
         from dhyaan.voice import outbound
 
         call_id = f"cal_{alert_id}_{role}"
+        extra = await self._call_context(alert_id, role, to_e164)
         # outbound.place_call is sync (the Twilio SDK is), so keep the loop free.
         sid = await asyncio.to_thread(
             outbound.place_call, to_e164=to_e164, alert_id=alert_id,
-            role=role, call_id=call_id,
+            role=role, call_id=call_id, extra=extra,
         )
         await db().calls.update_one(
             {"_id": call_id},
@@ -197,6 +198,36 @@ class _TwilioVoice:
             upsert=True,
         )
         return sid
+
+    async def _call_context(self, alert_id: str, role: str, to_e164: str) -> dict:
+        """Names and times for the agent's greeting (settings.build_settings
+        reads these customParameters; without them it greets the _DEFAULTS
+        placeholder person). Best-effort: an empty dict just means defaults."""
+        ctx: dict[str, str] = {}
+        try:
+            alert = await db().alerts.find_one({"_id": alert_id})
+            if not alert:
+                return ctx
+            res = await db().residents.find_one({"_id": alert["resident_id"]})
+            if res and res.get("display_name"):
+                ctx["resident_name"] = res["display_name"]
+            if opened := alert.get("opened_at"):
+                from datetime import datetime
+                from zoneinfo import ZoneInfo
+                tz = ZoneInfo((res or {}).get("timezone") or "America/New_York")
+                dt = datetime.fromisoformat(str(opened).replace("Z", "+00:00"))
+                ctx["fall_time"] = dt.astimezone(tz).strftime("%-I:%M %p")
+            # Who we're talking TO (contact legs) or ABOUT passing a message to
+            # (resident leg): the contact being dialed, else the first rung.
+            q = {"resident_id": alert["resident_id"]}
+            contact = await db().contacts.find_one({**q, "phone_e164": to_e164})                 if role.startswith("contact") else None
+            contact = contact or await db().contacts.find_one(q, sort=[("ladder_order", 1)])
+            if contact:
+                ctx["contact_name"] = contact.get("name") or ""
+                ctx["relationship"] = contact.get("relationship") or ""
+        except Exception as e:
+            log.warning("call context lookup failed for %s: %s", alert_id, e)
+        return ctx
 
     async def hangup(self, call_sid: str) -> None:
         from dhyaan.voice import outbound
