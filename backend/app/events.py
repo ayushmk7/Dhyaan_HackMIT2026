@@ -17,6 +17,12 @@ EVENT_TYPES = {
     "fall_suspected", "fall_confirmed", "fall_cancelled", "band_motion_high",
     "band_still", "prolonged_inactivity", "band_offline", "band_low_battery",
     "button_pressed", "gait_summary",
+    # activity_classified: the band's on-device neural classifier changed its
+    # voted label (walking/sitting/standing/lying). Deliberately NOT
+    # activity_observed — that type feeds the camera lane's fallcheck
+    # auto-cancel and presence logic, and a band label must never cancel a
+    # fall alert.
+    "activity_classified",
     # camera + vlm
     "person_present", "meal_observed", "meal_skipped", "walk_started",
     "walk_completed", "bed_exit", "room_exit", "room_entry", "night_activity",

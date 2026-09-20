@@ -30,6 +30,7 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 import gait  # noqa: E402  # [claude] gait window math (pure, unit-tested)
+import har  # noqa: E402  # [claude] neural activity classifier (walking/sitting/standing/lying)
 from ble_scan import scan_ibeacons_sync, wifi_scan_bssids  # noqa: E402
 from payloads import (  # noqa: E402
     BATTERY_PCT_PLACEHOLDER,
@@ -124,6 +125,15 @@ class FallbandAgent:
         self.gait_buf: list[dict[str, float]] = []
         self._pending_gait: dict[str, Any] | None = None
         self._last_gait = time.time()
+        # [claude] HAR: raw-accel stream -> numpy CNN -> voted activity label.
+        # Weights missing (fresh checkout without har_weights.npz) degrades to
+        # "no classifier", never to a crash — the fall path must not care.
+        self.har: har.HarClassifier | None = None
+        if (cfg.get("har") or {}).get("enabled", True):
+            try:
+                self.har = har.HarClassifier()
+            except Exception as e:
+                log.warning("HAR classifier unavailable (%s) — stream ignored", e)
         self._last_hb = 0.0
         self._last_ble = 0.0
         self._last_wifi = 0.0
@@ -274,6 +284,12 @@ class FallbandAgent:
         gait_cutoff = now - self._gait_window_s()
         self.gait_buf = [s for s in self.gait_buf if s["t"] >= gait_cutoff]
 
+    def on_accel_win(self, csv):
+        # [claude] "accel_win" notify: one CSV batch of ~10 xyz samples @52 Hz
+        # (milli-g ints; sketch.ino HAR stream). Ring/inference in har.py.
+        if self.har is not None:
+            self.har.on_batch(str(csv))
+
     # [claude] ---- gait -------------------------------------------------------
 
     def _gait_window_s(self) -> float:
@@ -330,6 +346,9 @@ class FallbandAgent:
             "step_min_peak_g": imu.get("step_min_peak_g"),
             "step_min_interval_ms": imu.get("step_min_interval_ms"),
             "demo_chirp": 1.0 if imu.get("demo_chirp_impact_only") else 0.0,
+            # [claude] HAR stream kill switch: no classifier -> stop the MCU
+            # from wasting Bridge bandwidth on accel batches nobody reads.
+            "stream_accel": 1.0 if self.har is not None else 0.0,
         }
         cal = self.cfg.get("calibration") or {}
         if cal.get("f_min"):
@@ -417,6 +436,9 @@ class FallbandAgent:
             profile_rev=self.profile_rev,
             activity=activity,
             gait=gait_summary,
+            # [claude] current voted activity label (walking/sitting/standing/
+            # lying) from the on-device CNN; None until the first stable vote.
+            activity_label=self.har.label if self.har is not None else None,
         )
         resp = self.uplink.post("/v1/ingest/heartbeat", body, critical=False)
         self._signal_uplink()
@@ -537,6 +559,9 @@ def main(argv: list[str] | None = None) -> None:
     Bridge.provide("cancel", agent.on_cancel)
     Bridge.provide("button", agent.on_button)
     Bridge.provide("step", agent.on_step)
+    # [claude] raw-accel stream for the HAR classifier (same provide pattern
+    # as App Lab's real-time-accelerometer example).
+    Bridge.provide("accel_win", agent.on_accel_win)
 
     def loop():
         agent.tick()

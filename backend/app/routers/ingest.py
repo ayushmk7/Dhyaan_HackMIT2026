@@ -190,17 +190,44 @@ class HeartbeatIn(BaseModel):
     # no new trust boundary). Persisted below as a gait_summary event so the
     # nightly baseline rollup can learn cadence.
     gait: GaitSummaryIn | None = None
+    # Voted label from the band's on-device neural activity classifier
+    # (band/fallband/python/har.py). Stored on the band doc; a CHANGE vs the
+    # stored label becomes an activity_classified event. Raw IMU never
+    # crosses the wire — this one word is the entire payload.
+    activity_label: Literal["walking", "sitting", "standing", "lying"] | None = None
 
 
 @router.post("/heartbeat", status_code=204)
 async def ingest_heartbeat(body: HeartbeatIn):
     now = datetime.now(timezone.utc).isoformat()
+    update = {"last_seen_at": now, "battery_pct": body.battery_pct}
+    if body.activity_label is not None:
+        update["last_activity_label"] = body.activity_label
     prev = await db().bands.find_one_and_update(
         {"_id": body.band_id},
-        {"$set": {"last_seen_at": now, "battery_pct": body.battery_pct}},
+        {"$set": update},
     )
     if prev is None:
         raise HTTPException(404, f"unknown band_id {body.band_id!r}")
+
+    # find_one_and_update returned the PRE-update doc, so this is a genuine
+    # edge detector: one event per label change, not one per heartbeat.
+    if (body.activity_label is not None
+            and body.activity_label != prev.get("last_activity_label")):
+        await emit(
+            resident_id=prev["resident_id"], source="band",
+            type="activity_classified",
+            embedding_text=(
+                f"Band {body.band_id} activity classifier: "
+                f"{prev.get('last_activity_label') or 'unknown'} -> {body.activity_label}"
+            ),
+            source_id=body.band_id, confidence=1.0,
+            payload={
+                "label": body.activity_label,
+                "prev_label": prev.get("last_activity_label"),
+                "simulated": body.simulated,
+            },
+        )
 
     if body.gait is not None:
         g = body.gait

@@ -55,6 +55,9 @@
     "window_s": 60,
     "min_steps": 10
   },
+  "har": {
+    "enabled": true
+  },
   "calibration": {
     "f_min": 0.0,
     "drop_height_m": 0.5,

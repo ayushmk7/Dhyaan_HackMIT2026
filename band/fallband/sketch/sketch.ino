@@ -53,6 +53,22 @@ FallDetector det;
 float biasX = 0, biasY = 0, biasZ = 0;
 float gainX = 1, gainY = 1, gainZ = 1;
 
+// [claude] HAR stream (§ activity classifier): the Linux side runs a small
+// CNN over raw acceleration. Pattern copied from App Lab's
+// inspirational/common/real-time-accelerometer example, which streams the
+// Modulino Movement accel to Python via Bridge.notify at 62.5 Hz per-sample;
+// we decimate the existing 208 Hz reads by 4 (52 Hz) and batch 10 samples per
+// notify (~5/s) as one CSV string of milli-g ints, because RPClite's
+// DEFAULT_RPC_BUFFER_SIZE is 256 bytes (one msgpack string is also the safest
+// payload — see getStatus). Values clamp to ±4 g: the classifier only cares
+// about activity-range motion, the fall cascade keeps the full ±16 g.
+static const uint8_t  HAR_DECIM = 4;    // 208 Hz / 4 = 52 Hz
+static const uint8_t  HAR_BATCH = 10;   // ~0.19 s per notify, ~215 B worst case
+bool     streamAccel = true;            // set_param("stream_accel", 0/1)
+char     harBuf[HAR_BATCH * 20 + 2];
+uint16_t harLen = 0;
+uint8_t  harCount = 0, harSkip = 0;
+
 uint32_t tNext = 0;
 uint32_t i2cErrors = 0, i2cErrorRun = 0, droppedSamples = 0, sampleCount = 0;
 uint32_t tLastImuFix = 0;
@@ -154,6 +170,11 @@ static void setParam(String name, float v) {
   else if (name == "gain_y")            gainY = (v != 0.0f) ? v : 1.0f;
   else if (name == "gain_z")            gainZ = (v != 0.0f) ? v : 1.0f;
   else if (name == "calibrate")         calibrateMode = (v != 0.0f);
+  // [claude] kill switch for the HAR accel stream (default ON).
+  else if (name == "stream_accel") {
+    streamAccel = (v != 0.0f);
+    if (!streamAccel) { harLen = 0; harCount = 0; harSkip = 0; }
+  }
   else if (name == "demo_chirp")        demoChirp = (v != 0.0f);
 }
 
@@ -352,6 +373,23 @@ void loop() {
       const float wy = (int16_t)(g6[3] << 8 | g6[2]) * G_SCALE;
       const float wz = (int16_t)(g6[5] << 8 | g6[4]) * G_SCALE;
       gyro = sqrtf(wx * wx + wy * wy + wz * wz);
+    }
+  }
+
+  // [claude] HAR stream: same samples the detector sees, decimated ×4. The
+  // snprintf appends ~20 chars per decimated sample (cheap next to the I2C
+  // burst above); the notify itself fires only every HAR_BATCH samples.
+  if (streamAccel && ++harSkip >= HAR_DECIM) {
+    harSkip = 0;
+    const float cx = fminf(fmaxf(ax, -4.0f), 4.0f);
+    const float cy = fminf(fmaxf(ay, -4.0f), 4.0f);
+    const float cz = fminf(fmaxf(az, -4.0f), 4.0f);
+    harLen += snprintf(harBuf + harLen, sizeof(harBuf) - harLen, "%d,%d,%d;",
+                       (int)lroundf(cx * 1000.0f), (int)lroundf(cy * 1000.0f),
+                       (int)lroundf(cz * 1000.0f));
+    if (++harCount >= HAR_BATCH || harLen >= sizeof(harBuf) - 21) {
+      Bridge.notify("accel_win", harBuf);
+      harLen = 0; harCount = 0; harBuf[0] = '\0';
     }
   }
 
