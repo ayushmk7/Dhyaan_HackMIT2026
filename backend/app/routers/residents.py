@@ -20,6 +20,7 @@ from pymongo import ReturnDocument
 
 from . import live
 from ..baseline import COUNT, FEATURE_META
+from .. import config as cfg
 from ..db import db
 from ..deps import require_app_key
 from ..events import EVENT_TYPES, emit, recent
@@ -291,28 +292,60 @@ async def resident_summaries(resident_id: str, days: int = Query(7, ge=1, le=90)
     if not await d.residents.find_one({"_id": resident_id}, {"_id": 1}):
         raise HTTPException(404, "resident not found")
 
-    summaries = await d.events.find(
+    # A day has ONE story, and it is the most recently written one.
+    #
+    # The rollup appends a `daily_summary` event every time it runs rather than
+    # superseding, and it stamps each with the moment it ran — so `sort(ts_epoch)`
+    # ordered by rollup time, not by the day being described. With a seed that
+    # writes fifteen days in one pass, every story shares a timestamp and the
+    # `days` window was decided by tie order: asking for 7 days returned an
+    # arbitrary 7 of 15, usually not including today. Re-running the rollup then
+    # left two contradictory stories for the same date ("ate breakfast, dinner"
+    # and "not seen eating at all"), and both were shown.
+    #
+    # Fixed on read rather than by rewriting history: group by the day each
+    # story is ABOUT, keep the newest row per day, then take the most recent
+    # `days` of those. Superseding on write is the better fix and belongs in
+    # rag.daily_narrative; this makes the read correct either way.
+    rows = await d.events.find(
         {"resident_id": resident_id, "type": "daily_summary"}
-    ).sort("ts_epoch", -1).limit(days).to_list(None)
+    ).sort("ts_epoch", 1).to_list(None)
+
+    by_day: dict[str, dict] = {}
+    for row in rows:
+        payload = row.get("payload") or {}
+        date_local = payload.get("date_local") or row["ts"][:10]
+        by_day[date_local] = row          # ascending scan, so last write wins
 
     out = []
-    for s in summaries:
-        payload = s.get("payload") or {}
-        date_local = payload.get("date_local") or s["ts"][:10]
+    for date_local in sorted(by_day, reverse=True)[:days]:
+        row = by_day[date_local]
+        payload = row.get("payload") or {}
         deviations = await d.events.find({
             "resident_id": resident_id, "type": "baseline_deviation",
             "payload.date_local": date_local,
         }).sort("ts_epoch", 1).to_list(None)
+        # Same story for deviations: a re-run re-appends every one of them with a
+        # shifted baseline, so the family saw "about 4.2" and "about 3.6" for the
+        # same feature on the same day. One row per feature, newest kept.
+        latest_by_feature = {
+            (dv.get("payload") or {}).get("feature"): dv for dv in deviations
+        }
         out.append({
             "date": date_local,
-            "narrative": payload.get("narrative") or s.get("embedding_text"),
+            "narrative": payload.get("narrative") or row.get("embedding_text"),
             "deviations": [
                 {
                     "feature": (dv.get("payload") or {}).get("feature"),
                     "severity": (dv.get("payload") or {}).get("severity"),
-                    "text": dv.get("embedding_text"),
+                    # `payload.narrative` is the sentence written for a family;
+                    # `embedding_text` keeps the raw value, the baseline and the
+                    # z-score for retrieval and for staff. Prefer the readable
+                    # one, same precedence `_family_item` uses on /activity.
+                    "text": ((dv.get("payload") or {}).get("narrative")
+                             or dv.get("embedding_text")),
                 }
-                for dv in deviations
+                for dv in latest_by_feature.values()
             ],
         })
     return out
@@ -541,6 +574,12 @@ async def alert_response(a: dict) -> dict:
 
     out = _ser(a)
     out["closed_at"] = _closed_at(a)
+    # How long she has to cancel from the band before the ladder starts. The
+    # takeover draws a countdown ring against this, and it was hardcoded to 30
+    # in the app while the server reads it from CANCEL_WINDOW_S — a stage run
+    # with a shortened window had the ring counting down to a call that had
+    # already been placed.
+    out["cancel_window_s"] = cfg.CANCEL_WINDOW_S
     out["trigger_event"] = _ser(trigger) if trigger else None
     out["calls"] = [_ser(c) for c in call_events]
     out["ladder"] = ladder

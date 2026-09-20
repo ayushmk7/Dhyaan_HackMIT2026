@@ -261,6 +261,62 @@ def score(feature: str, value: float, state: dict) -> dict | None:
     return result
 
 
+# How each learned feature is said out loud. `embedding_text` is written for
+# retrieval and for staff — it carries the raw value, the baseline and the
+# z-score — but `/activity` puts a deviation on the FAMILY timeline, and
+# "Eleanor's longest inactivity s was 14340 (baseline 8040.0, z=3.50)" is a
+# debug line, not something a daughter should have to parse. `_family_item`
+# prefers `payload.narrative`, so the family sentence is written here, once,
+# beside the machine one.
+_FEATURE_PHRASE = {
+    "meal_count": ("meal", "meals"),
+    "walk_count": ("walk", "walks"),
+    "night_bed_exits": ("time up in the night", "times up in the night"),
+    "steps_day": ("step", "steps"),
+}
+
+
+def _hours(seconds: float) -> str:
+    h = seconds / 3600
+    if h < 1:
+        return f"{round(seconds / 60)} minutes"
+    return "an hour" if round(h) == 1 else f"{h:.0f} hours"
+
+
+def _family_text(name, feature, value, result, date_local) -> str:
+    """One plain sentence. No feature slugs, no z-scores, no em dashes, and no
+    number a daughter would have to convert out of seconds."""
+    if feature == "longest_inactivity_s":
+        usual = result.get("lam") or result.get("mu") or 0
+        if value > usual:
+            return (f"{name} went about {_hours(value)} without moving. "
+                    f"She usually settles for about {_hours(usual)}.")
+        return f"{name} was on her feet more than she usually is."
+
+    if feature == "night_bed_exits":
+        usual = result.get("lam") or result.get("mu") or 0
+        count, usual_r = round(value), round(usual)
+        was = "once" if count == 1 else f"{count} times"
+        norm = "once" if usual_r == 1 else ("not at all" if usual_r == 0 else f"{usual_r} times")
+        if count == 0:
+            return f"{name} slept through. She is usually up {norm}."
+        return f"{name} was up {was} in the night. She is usually up {norm}."
+
+    singular, plural = _FEATURE_PHRASE.get(feature, (feature.replace("_", " "),
+                                                     feature.replace("_", " ")))
+    usual = result.get("lam") if result.get("kind") == "poisson" else result.get("mu")
+    count = round(value)
+    had = f"{count} {singular if count == 1 else plural}"
+    if usual is None:
+        return f"{name} had {had}, which is unusual for her."
+    usual_r = round(usual)
+    usual_s = f"{usual_r} {singular if usual_r == 1 else plural}"
+    if count == 0:
+        return f"No {plural} today. She usually has {usual_s}."
+    direction = "Fewer" if value < usual else "More"
+    return f"{name} had {had}. {direction} than her usual {usual_s}."
+
+
 def _embedding_text(name, feature, value, result, date_local):
     label = feature.replace("_", " ")
     if result["kind"] == "poisson":
@@ -303,7 +359,10 @@ async def _emit_deviation(resident_id, feature, value, result, date_local, resid
     text = _embedding_text(name, feature, value, result, date_local)
     payload = {
         "feature": feature, "value": value, "date_local": date_local,
-        "severity": severity, "raw_severity": result["severity"], **result,
+        "severity": severity, "raw_severity": result["severity"],
+        # What the family reads. `_family_item` prefers this over embedding_text.
+        "narrative": _family_text(name, feature, value, result, date_local),
+        **result,
     }
     return await emit(
         resident_id=resident_id, source="derived", type="baseline_deviation",

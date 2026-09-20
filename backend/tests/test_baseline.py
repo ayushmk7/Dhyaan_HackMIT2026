@@ -118,3 +118,30 @@ async def test_feedback_false_positive_excludes_observation(resident, db):
         {"resident_id": resident, "feature": "walk_count", "date_local": target_day}
     )
     assert obs["weight"] == 0.0
+
+
+def test_deviation_family_sentence_is_plain_english():
+    """`/activity` puts a deviation on the FAMILY timeline, so its sentence has
+    to be readable. embedding_text keeps the raw value and the z-score for
+    retrieval and for staff; this is the half a daughter reads."""
+    from app.baseline import _family_text
+
+    cases = [
+        ("walk_count", 0, {"kind": "poisson", "lam": 4.2}),
+        ("meal_count", 2, {"kind": "poisson", "lam": 3.0}),
+        ("night_bed_exits", 3, {"kind": "poisson", "lam": 1.0}),
+        ("longest_inactivity_s", 14340, {"kind": "z", "mu": 8040.0}),
+    ]
+    for feature, value, result in cases:
+        text = _family_text("Eleanor", feature, value, result, "2026-09-19")
+        assert "_" not in text, f"raw feature slug leaked: {text}"
+        assert "z=" not in text and "surprise" not in text, f"score leaked: {text}"
+        assert "—" not in text, f"em dash in family copy: {text}"
+        assert text.endswith("."), text
+        # Seconds are never shown as seconds.
+        assert "14340" not in text
+
+    assert _family_text("Eleanor", "night_bed_exits", 1, {"kind": "poisson", "lam": 3.0},
+                        "2026-09-19") == "Eleanor was up once in the night. She is usually up 3 times."
+    assert "slept through" in _family_text(
+        "Eleanor", "night_bed_exits", 0, {"kind": "poisson", "lam": 2.0}, "2026-09-19")

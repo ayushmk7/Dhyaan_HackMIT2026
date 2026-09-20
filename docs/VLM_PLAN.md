@@ -521,8 +521,16 @@ observations), visitors (count/duration), *"is she OK"* (presence + open alerts)
 - API: `POST /ingest/camera` returns **403** when `residents.consent_camera` is 0 or the camera
   is paused, and writes nothing. A rogue or stale worker cannot create an observation.
 - Family app: `Settings → Camera → Stop the camera` sets `consent_camera: 0`; the worker stops
-  within 10 s. There is no family-side *pause* (that is her control on the hub) and no way to
-  re-enable from the app once she has paused — matches `PRODUCT_SPEC.md` §8.3 rule 1.
+  within 10 s, and there is no way to turn it back on from the app.
+- The Camera console can also pause for two hours (`POST /cameras/{id}/pause`, recorded as
+  `paused_by: "family"`). This sentence used to read "there is no family-side *pause*"; the console
+  made that false, so it is corrected here rather than left as a contradiction a reader has to
+  resolve. **The rule that matters is untouched**: `PRODUCT_SPEC.md` §8.3 rule 1 forbids a
+  family-side override of *a resident control*, and `POST /cameras/{id}/resume` returns **403**
+  when `paused_by == "resident"`. Dan can stop the camera and he can pause it; he cannot undo
+  Margaret's pause, and `p` on the hub preview still wins. A pause only ever removes observation,
+  so it cannot leak anything — the asymmetry to protect is the *un*-pause, and that is enforced
+  in code, with a test.
 
 ---
 

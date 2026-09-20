@@ -97,3 +97,23 @@ async def test_answer_no_data_says_so(resident, db):
     result = await rag.answer(resident, "has she been out for a walk")
     assert result["answer"] == "I don't have data for that."
     assert result["retrieved_count"] == 0
+
+
+def test_template_answer_never_leaks_event_ids():
+    """The app renders `answer` verbatim in a chat bubble, so anything in this
+    string is something a family reads. Ids belong in `citations`, which the
+    citation chips are built from — not in the prose."""
+    from app.rag import _template_answer
+
+    hits = [
+        {"id": "evt_01M2YCJPFNDAH17JN659HT272R", "kind": "observed",
+         "text": "Eleanor was up and moving about, 11:08 pm."},
+        {"id": "fact_0007", "kind": "told", "text": "She usually has toast at 8."},
+    ]
+    text = _template_answer(hits)
+    assert "evt_" not in text
+    assert "fact_" not in text
+    assert "[" not in text and "]" not in text
+    # ...and it still carries both sentences, labelled by kind.
+    assert "up and moving about" in text
+    assert "toast" in text

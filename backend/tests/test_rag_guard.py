@@ -233,3 +233,32 @@ async def test_chat_route_returns_refused_and_kinds(client, history):
     body = r.json()
     assert body["refused"] is False
     assert all(set(c) >= {"id", "kind", "ts", "text"} for c in body["citations"])
+
+
+async def test_family_retrieval_never_cites_the_machinery(db, resident):
+    """Chat quotes what it retrieves, so anything retrievable is something the
+    family reads. The escalation ladder and the voice bridge write their
+    `embedding_text` for a log file, not for a daughter."""
+    from app import rag
+    from app.events import emit
+
+    noise = {
+        "call_placed": "[SIMULATED CALL - no telephony wired up] Called contact_final +15551230000",
+        "escalation_started": "Alert alt_01M2Y: SUSPECTED -> LOCAL_CANCEL (window_open)",
+        "voice_response_classified": "Voice classified: no_answer",
+        "feedback_given": "Feedback on meal_observed: expected",
+        "memory_deleted": "Deleted 12 profile facts",
+        "profile_updated": "Profile updated: appearance",
+    }
+    for etype, text in noise.items():
+        await emit(resident_id=resident, source="derived", type=etype,
+                   embedding_text=text, payload={})
+    # One real observation, so the pool is not empty and a miss is meaningful.
+    await emit(resident_id=resident, source="camera", type="meal_observed",
+               embedding_text="Eleanor ate lunch at the table.", payload={})
+    await rag.drain_embeddings()
+
+    hits = await rag.search(resident, "what happened today", k=20, family=True)
+    types = {h.get("type") for h in hits}
+    assert types.isdisjoint(noise), f"machine log types reached family retrieval: {types & set(noise)}"
+    assert any("ate lunch" in h["text"] for h in hits), "the real observation was lost too"

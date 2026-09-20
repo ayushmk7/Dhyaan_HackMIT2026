@@ -161,40 +161,63 @@ def _day_range_utc(tz: ZoneInfo, date_local: str) -> tuple[int, int]:
 
 
 def _template_narrative(name: str, date_local: str, docs: list[dict]) -> str:
+    """The day in plain sentences, for when there is no Claude key.
+
+    This is what the family reads on Her day, so it is written to be read, not
+    logged: no leading date stamp, no "had 33 recorded events", no "bed exit(s)"
+    or "3 meal(s)", and no em dashes (DESIGN.md bans them in user-facing copy).
+    It also still has to work as a retrieval chunk, which is why meals are named
+    rather than counted: "she ate breakfast and dinner" is something a semantic
+    search for "has she been eating" can actually match, and "3 meals observed"
+    is the same sentence fifteen days running.
+    """
     if not docs:
-        return f"{date_local} — no observations were recorded for {name}. There may be a coverage gap."
+        return (f"Nothing was recorded for {name} on this day. "
+                "That is more likely a gap in what Dhyaan could see than a quiet day.")
+
+    def _join(words: list[str]) -> str:
+        if len(words) <= 1:
+            return "".join(words)
+        return f"{', '.join(words[:-1])} and {words[-1]}"
+
     by_type: dict[str, list[dict]] = {}
     for d in docs:
         by_type.setdefault(d["type"], []).append(d)
-    parts = [f"{date_local} — {name} had {len(docs)} recorded events."]
-    # Name the meals actually eaten, not just a count. Every day's narrative is a
-    # retrieval chunk, and "3 meal(s) observed" is the same sentence 15 days
-    # running — nothing for a semantic search of "has she been eating" to grab.
+
+    parts: list[str] = []
+
     if "meal_observed" in by_type:
         meals = [m for m in ("breakfast", "lunch", "dinner")
                  if any((d.get("payload") or {}).get("meal") == m for d in by_type["meal_observed"])]
-        eaten = ", ".join(meals) if meals else f"{len(by_type['meal_observed'])} meals"
-        missed = [m for m in ("breakfast", "lunch", "dinner") if m not in meals]
-        parts.append(f"{name} ate {eaten}.")
-        if missed:
-            parts.append(f"No {' or '.join(missed)} was observed — she skipped {' and '.join(missed)}.")
+        if meals:
+            parts.append(f"{name} ate {_join(meals)}.")
+            missed = [m for m in ("breakfast", "lunch", "dinner") if m not in meals]
+            if missed:
+                parts.append(f"Dhyaan did not see her have {_join(missed)}.")
+        else:
+            n = len(by_type["meal_observed"])
+            parts.append(f"{name} ate {n} time{'' if n == 1 else 's'}.")
     else:
-        parts.append(f"{name} was not seen eating at all today — this may be a gap, not an absence.")
-    if "walk_completed" in by_type:
-        parts.append(f"She walked {len(by_type['walk_completed'])} time(s).")
+        parts.append(f"Dhyaan did not see {name} eat today. "
+                     "That may be a gap in what it could see rather than a missed meal.")
+
+    walks = len(by_type.get("walk_completed", []))
+    if walks:
+        parts.append(f"She went for {'a walk' if walks == 1 else f'{walks} walks'}.")
     else:
-        parts.append("She did not walk at all today.")
-    if "bed_exit" in by_type:
-        night = sum(
-            1 for d in by_type["bed_exit"]
-            if 0 <= datetime.fromtimestamp(d["ts_epoch"], tz=timezone.utc).hour < 5
-        )
-        if night:
-            parts.append(f"{night} bed exit(s) overnight.")
+        parts.append("She did not go for a walk.")
+
+    night = sum(
+        1 for d in by_type.get("bed_exit", [])
+        if 0 <= datetime.fromtimestamp(d["ts_epoch"], tz=timezone.utc).hour < 5
+    )
+    if night:
+        parts.append(f"She was up {'once' if night == 1 else f'{night} times'} in the night.")
+
     if "fall_suspected" in by_type or "fall_confirmed" in by_type:
-        parts.append("A possible fall was flagged during the day.")
+        parts.append("Her band flagged a possible fall during the day.")
     if "visitor_present" in by_type:
-        parts.append("Had a visitor.")
+        parts.append("Someone came to see her.")
     return " ".join(parts)[:1000]
 
 
@@ -293,9 +316,23 @@ def _cosine(a, b) -> float:
 # Staff-and-learner telemetry. A chunk that is not in the pool cannot be cited —
 # this is the real control; the answer prompt is only the backstop (§5.5.4).
 FAMILY_EXCLUDED_TYPES = {
+    # Whereabouts. A family screen never names a room (D-001), and retrieval is
+    # a family screen the moment an answer quotes what it found.
     "zone_entered", "zone_exited", "zone_dwell", "bathroom_prolonged",
-    "location_unknown", "beacon_offline", "unsteady_gait", "band_motion_high",
-    "band_still", "camera_online", "camera_offline", "camera_paused",
+    "location_unknown", "beacon_offline",
+    # Sensor chatter, not events in her day.
+    "unsteady_gait", "band_motion_high", "band_still",
+    "camera_online", "camera_offline", "camera_paused",
+    # The machinery talking to itself. These carry `embedding_text` written for
+    # a log — "[SIMULATED CALL - no telephony wired up] Called contact_final",
+    # "Alert alt_01M2Y...: LOCAL_CANCEL -> CALLING_RESIDENT (cancel_timeout)" —
+    # and chat was retrieving them and citing them to the family as "Dhyaan
+    # saw". What the ladder did belongs on the alert screen, which reads the
+    # alert document directly; it is not something she did with her day.
+    "call_placed", "call_answered", "call_no_answer", "voice_response_classified",
+    "escalation_started", "escalation_acknowledged", "escalation_exhausted",
+    # Bookkeeping about the app itself.
+    "feedback_given", "profile_updated", "memory_deleted",
 }
 
 PATTERN_TYPES = {"daily_summary", "baseline_deviation", "baseline_updated"}
@@ -548,15 +585,21 @@ _KIND_LABEL = {"told": "You told us", "observed": "Dhyaan saw", "pattern": "From
 def _template_answer(hits: list[dict]) -> str:
     """Cut-list item 4: when there is no Claude key and no local chat model, the
     answer is the retrieved sentences grouped by kind — still labelled, so the
-    family can still tell observed from assumed."""
+    family can still tell observed from assumed.
+
+    No ids in the prose. This used to append `[evt_01M2Y...]` after every
+    sentence, and since the app renders `answer` verbatim into a chat bubble,
+    the family read raw ULIDs out of the database. They were never needed here:
+    every hit is already returned in `citations`, which is what the citation
+    chips under the answer are built from, and that is where an id belongs.
+    """
     if not hits:
         return "I don't have data for that."
     parts = []
     for kind in ("observed", "told", "pattern"):
         chunk = [h for h in hits if h["kind"] == kind][:3]
         if chunk:
-            parts.append(f"{_KIND_LABEL[kind]}: " +
-                         " ".join(f"{h['text']} [{h['id']}]" for h in chunk))
+            parts.append(f"{_KIND_LABEL[kind]}: " + " ".join(h["text"] for h in chunk))
     return " ".join(parts)
 
 

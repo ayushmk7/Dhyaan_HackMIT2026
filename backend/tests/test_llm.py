@@ -101,7 +101,14 @@ async def test_daily_narrative_falls_back_to_template_and_writes_event(resident,
 
     narrative = await rag.daily_narrative(resident, "2026-09-01")
     assert narrative
-    assert "2026-09-01" in narrative  # template's own format, proves no LLM ran
+    # The template used to lead with "2026-09-01 — ...", and this assertion used
+    # that date stamp as proof no LLM ran. The stamp is gone on purpose: this
+    # text is what the family reads on Her day, and a day's story does not open
+    # by reciting its own date. Pin the template's own wording instead, which
+    # proves the same thing and also pins the voice.
+    assert "She went for a walk." in narrative
+    assert "recorded events" not in narrative
+    assert "—" not in narrative  # DESIGN.md: no em dashes in user-facing copy
 
     stored = await db.events.find_one({"resident_id": resident, "type": "daily_summary"})
     assert stored is not None

@@ -335,10 +335,52 @@ async def get_activity(resident_id: str, date: str | None = Query(None)):
     except ValueError:
         raise HTTPException(422, "date must be YYYY-MM-DD") from None
 
+    # Two kinds of row, and they belong to a day in two different ways.
+    #
+    # An observation happened AT a moment, so it belongs to the day its
+    # `ts_epoch` falls in. A `daily_summary` or a `baseline_deviation` is ABOUT
+    # a day and is written whenever the rollup happened to run — which for the
+    # seed is all fifteen of them inside one second. Selecting those by
+    # `ts_epoch` put every story Eleanor has ever had onto today's feed ("2026
+    # -09-13 — Eleanor had 14 recorded events…" as something noticed today) and
+    # counted them in the day's totals. They are selected by the day they
+    # describe instead.
+    day_scoped = sorted(rag.PATTERN_TYPES)
+    observed_types = [t for t in _TILE_TYPES if t not in rag.PATTERN_TYPES]
+    excluded = sorted(rag.FAMILY_EXCLUDED_TYPES)
     rows = await db().events.find({
-        "resident_id": resident_id, "ts_epoch": {"$gte": start, "$lt": end},
-        "type": {"$in": _TILE_TYPES, "$nin": sorted(rag.FAMILY_EXCLUDED_TYPES)},
+        "resident_id": resident_id,
+        "type": {"$nin": excluded},
+        "$or": [
+            {"type": {"$in": observed_types}, "ts_epoch": {"$gte": start, "$lt": end}},
+            {"type": {"$in": day_scoped}, "payload.date_local": date},
+            # A pattern row written without `date_local` (an older row, or a
+            # writer that forgot) falls back to when it was written, so it is
+            # still reachable rather than silently invisible.
+            {"type": {"$in": day_scoped}, "payload.date_local": {"$exists": False},
+             "ts_epoch": {"$gte": start, "$lt": end}},
+        ],
     }).sort("ts_epoch", 1).to_list(length=1000)
+
+    # Every rollup run appends rather than supersedes, so a day that has been
+    # rolled up twice carries two stories and two copies of each deviation —
+    # and because the wording of a deviation has changed over time, the family
+    # saw the same fact stated two different ways in a row ("Eleanor's longest
+    # inactivity s was 14340 (baseline 8040.0, z=3.50)" directly above "Eleanor
+    # went about 4 hours without moving"). Collapse pattern rows to the newest
+    # per subject: one story per day, one line per feature.
+    #
+    # Superseding on write would be the better fix and belongs in the rollup;
+    # this keeps the read correct in the meantime, and stays correct after.
+    latest_pattern: dict[tuple, dict] = {}
+    kept: list[dict] = []
+    for ev in rows:
+        if ev["type"] in rag.PATTERN_TYPES:
+            subject = (ev["type"], (ev.get("payload") or {}).get("feature"))
+            latest_pattern[subject] = ev       # rows arrive ascending: last wins
+        else:
+            kept.append(ev)
+    rows = sorted(kept + list(latest_pattern.values()), key=lambda e: e["ts_epoch"])
 
     by_type: dict[str, list[dict]] = {}
     for ev in rows:
