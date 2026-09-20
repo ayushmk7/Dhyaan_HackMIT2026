@@ -536,9 +536,17 @@ class Worker:
                     # detector pass; `self.boxes` already persists between
                     # passes for precisely this reason, so nothing here is
                     # claiming to have looked at this frame.
+                    # The phone is a display too. This `continue` skipped the
+                    # relay as well as the cascade, so the app saw every SECOND
+                    # frame of a 24 fps camera while the window beside it saw
+                    # all of them: measured, 11 fps against 24, and exactly
+                    # what "slower than the camera" was. Same argument as the
+                    # line above it, and the same carried-over overlay, so
+                    # neither surface claims to have looked at this frame.
+                    unsampled = apply_mask(frame, self.mask)
+                    self._stream(unsampled, motion.fg, last_box)
                     if self.preview and not self._show(
-                            apply_mask(frame, self.mask), motion.fg,
-                            last_box, last_score, status):
+                            unsampled, motion.fg, last_box, last_score, status):
                         break
                     continue
 
@@ -993,7 +1001,17 @@ class Worker:
         if not self.stream:
             return
         now = time.monotonic()
-        if now - self._last_stream < 0.2:        # ~5 fps, plenty for a phone
+        # Every frame the loop reads, up to 30 a second. This was 0.2 (5 fps),
+        # which was the WHOLE of the lag people saw between the hub's own
+        # window and the phone: measured, a GET of the latest frame costs 1.0 ms
+        # median, so the relay was never the cost — the throttle was. The cap
+        # is only here so a faster camera cannot spend the loop on JPEG.
+        # 1/60, not 1/30. At 1/30 the gate is 33.3 ms and this camera delivers a
+        # frame every 34.5 ms, so jitter put about half of them just under the
+        # line and the app ran at 14 fps against a 29 fps camera. A cap has to
+        # sit well clear of the rate it is capping; this one exists only so a
+        # 120 fps camera cannot spend the loop on JPEG.
+        if now - self._last_stream < 1 / 60:
             return
         self._last_stream = now
         import cv2

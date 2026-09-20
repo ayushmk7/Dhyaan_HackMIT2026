@@ -51,9 +51,17 @@ const copy = family.camera;
 // 16:9 is what a webcam and Continuity Camera both hand the worker.
 const PANE_RATIO = 16 / 9;
 
-// Five a second. The worker encodes at that rate too (VISION_STREAM), so asking
-// faster only spends battery re-fetching a frame the hub has not replaced yet.
-const FRAME_MS = 200;
+// 25 a second. The hub's capture loop runs at ~29 fps and the relay answers in
+// about a millisecond, so this is the phone asking about as often as there is
+// something new to ask for, without spending a phone's battery matching a
+// camera frame for frame.
+//
+// This was 200 ms, and together with a 5 fps cap on the hub it was the entire
+// difference between this pane and the window on the hub's own screen: two
+// throttles in series, up to 400 ms of staleness. Measured, one GET of the
+// latest frame costs 1.0 ms median on the loopback, so the hop through the API
+// is not worth removing — there is nothing in it to remove.
+const FRAME_MS = 40;
 
 // ---------------------------------------------------------------------------
 // Tick hygiene
