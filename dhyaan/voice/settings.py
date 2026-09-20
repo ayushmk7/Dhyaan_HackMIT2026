@@ -90,7 +90,7 @@ Rules:
 - If you are unsure, escalate. A false escalation costs a phone call. A missed one does not.
 - After calling mark_ok (only then), ask once: "Anything you'd like me to tell {contact_name}?"
   If she gives a message, call leave_message with her words. If not, move on.
-- After calling mark_ok or escalate, say one short closing line, then call end_call.
+- After calling mark_ok or escalate, say one short closing line, then call end_call. After end_call, say NOTHING more - no second goodbye.
 - Never say the words "emergency services", "ambulance" or "911". You do not call them."""
 
 # §5.5: "The contact prompt swaps the goal: confirm a human is going to physically
@@ -108,7 +108,7 @@ Rules:
   detail="contact confirmed they are checking") — this acknowledges the alert.
 - If they say they cannot check on her or cannot be reached in time: escalate(reason="third_party").
 - If they sound confused or you are unsure: escalate(reason="third_party").
-- After calling a tool, say one short closing line, then call end_call.
+- After calling a tool, say one short closing line, then call end_call. After end_call, say NOTHING more - no second goodbye.
 - Never say the words "emergency services", "ambulance" or "911". You do not call them."""
 
 RESIDENT_GREETING = (
