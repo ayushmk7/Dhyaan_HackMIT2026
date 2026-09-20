@@ -70,6 +70,9 @@ async def list_residents():
 
     bands = await d.bands.find({"resident_id": {"$in": ids}}).to_list(None)
     battery_by_resident = {b["resident_id"]: b.get("battery_pct") for b in bands}
+    # The pendant's on-device activity label (walking/sitting/standing/lying)
+    # rides the same roster row - Home shows "Up and about" without a fetch.
+    activity_by_resident = {b["resident_id"]: b.get("last_activity_label") for b in bands}
 
     open_alerts = await d.alerts.find(
         {"resident_id": {"$in": ids}, "state": {"$nin": list(_terminal_states())}}
@@ -118,6 +121,7 @@ async def list_residents():
             "room": r.get("room"),
             "state": "alerting" if alert else "ok",
             "battery_pct": battery_by_resident.get(rid),
+            "activity_label": activity_by_resident.get(rid),
             "last_seen": last_seen_by_resident.get(rid),
             "location": {
                 "zone": zone["zone"],
