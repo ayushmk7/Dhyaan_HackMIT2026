@@ -464,12 +464,20 @@ export const family = {
     rec: 'REC',
     simulated: 'SIMULATED',
 
-    // The one switch on the screen. It reads as the thing it does, not as the
-    // mechanism: underneath, "off" is the pause the API already has, which is
-    // why the line above it says when it comes back.
+    // The one switch on the screen, and it is the real one: it starts and
+    // stops the worker on her hub, which is what opens and closes the camera
+    // itself. Off means the process is gone and the device is released, not
+    // that a screen stopped drawing.
     turnOff: 'Turn the camera off',
     turnOn: 'Turn the camera on',
-    offUntil: (until: string) => `It comes back on by itself at ${until}.`,
+    starting: 'Starting the camera…',
+    // The seconds between "on" and the first picture are real: the hub has to
+    // open the device and load its models. Saying nothing in that gap reads as
+    // a switch that did not work.
+    warmingUp: 'The camera is starting. It opens the lens and loads its models first, which takes a few seconds.',
+    // The hub was started with the switch disabled.
+    notControllable: 'This hub does not let the app start its camera. Start it on the hub itself.',
+    startFailed: 'The camera did not start. The hub wrote why to its log.',
     trouble: 'That didn’t go through, so nothing changed. The hub may not be reachable.',
   },
 

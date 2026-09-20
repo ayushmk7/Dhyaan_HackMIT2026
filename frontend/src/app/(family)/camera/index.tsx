@@ -40,7 +40,7 @@ import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
 import { family } from '@/lib/copy/family';
 import { ago, scrubRooms, whenOf } from '@/lib/format';
-import { useCameraMonitor, useCameras, useNow, useResidentLocation } from '@/lib/hooks';
+import { useCameraMonitor, useCameras, useCameraWorker, useNow, useResidentLocation } from '@/lib/hooks';
 import type { CameraMonitorTick, CameraSummary, ResidentLocation } from '@/lib/types';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
@@ -234,6 +234,7 @@ export default function CameraConsole() {
     cameras.data?.find((c) => c.resident_id === residentId) ?? cameras.data?.[0];
 
   const monitor = useCameraMonitor(cam?.id);
+  const worker = useCameraWorker(cam?.id);
   const location = useResidentLocation(residentId);
   const socketTick = asTick(useLive((s) => (cam ? s.monitor[cam.id] : undefined)));
   // The hub drops any tick older than 15 s (MONITOR_STALE_S), so a null from the
@@ -261,8 +262,9 @@ export default function CameraConsole() {
       await qc.invalidateQueries({ queryKey: ['cameras'] });
       await qc.invalidateQueries({ queryKey: ['monitor'] });
       await qc.invalidateQueries({ queryKey: ['presence'] });
+      await qc.invalidateQueries({ queryKey: ['worker'] });
     } catch {
-      setTrouble(copy.trouble);
+      setTrouble(key === 'switch' ? copy.startFailed : copy.trouble);
     } finally {
       setBusy(null);
     }
@@ -325,6 +327,16 @@ export default function CameraConsole() {
       return <ErrorState message={copy.monitorError} onRetry={() => monitor.refetch()} />;
     }
     if (!tick) {
+      // A worker that is up but has not spoken yet is STARTING, not silent:
+      // it opens the device and loads its models first, and calling that
+      // "nothing is running" for ten seconds made the switch look broken.
+      if (worker.data?.running) {
+        return (
+          <Card>
+            <EmptyState title={copy.starting}>{copy.warmingUp}</EmptyState>
+          </Card>
+        );
+      }
       return (
         <Card>
           <EmptyState
@@ -382,31 +394,35 @@ export default function CameraConsole() {
     );
   })();
 
-  // One switch, and it is the only control on the screen. Underneath it is the
-  // pause the API already has, so "off" has an end: the longest the contract
-  // allows is 24 hours (PauseIn caps it), and the camera coming back by itself
-  // is a safety property, not an oversight — a camera nobody remembers to turn
-  // on is the failure this product cannot have. The line under the switch says
-  // when, so the button never implies more than it does.
+  // One switch, and it is the real one: it starts and stops the worker process
+  // on the hub, which is the thing that holds the camera. Off releases the
+  // device, so the light on her laptop goes out — a switch that only stopped a
+  // screen from drawing would be the worst kind of lie this product could
+  // tell. It also sets the pause, so "off" survives someone restarting the
+  // worker by hand, and On lifts that pause in the same call.
   //
   // Her own pause is not offered here at all (§8.3): the family can lift a
   // pause they set and cannot lift hers, and a button that 403s is worse than
-  // no button.
+  // no button. Nor is the switch offered when the hub was started with
+  // VISION_CONTROL=0, which is the honest shape of "not from here".
   const hers = pausedUntil && cam?.paused_by === 'resident';
+  const running = !!worker.data?.running;
   const bar = cam && !hers ? (
     <View style={{ gap: sp(2.5) }}>
-      {pausedUntil ? (
-        <Btn
-          label={copy.turnOn}
-          busy={busy === 'switch'}
-          onPress={() => run('switch', () => api.resumeCamera(cam.id))}
-        />
-      ) : (
+      {worker.data && !worker.data.controllable ? (
+        <Txt kind="caption" tone="muted">{copy.notControllable}</Txt>
+      ) : running ? (
         <Btn
           kind="quiet"
           label={copy.turnOff}
           busy={busy === 'switch'}
-          onPress={() => run('switch', () => api.pauseCamera(cam.id, 24))}
+          onPress={() => run('switch', async () => { await api.stopCameraWorker(cam.id); })}
+        />
+      ) : (
+        <Btn
+          label={copy.turnOn}
+          busy={busy === 'switch'}
+          onPress={() => run('switch', async () => { await api.startCameraWorker(cam.id); })}
         />
       )}
       {!!trouble && <ErrorState inline message={trouble} />}

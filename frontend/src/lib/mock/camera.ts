@@ -457,7 +457,7 @@ class MockCamera {
     // 2. Hard surveillance, by sub-kind (§5.5).
     if (/photo|picture|image|video|footage|camera feed|show me|watch her|look at her|screenshot/.test(q)) {
       return reply(
-        'There’s no video to show. I can tell you what she’s been doing instead.',
+        'Nothing is recorded, so there’s no footage to show. I can tell you what she’s been doing instead.',
         [], true, 'surveillance',
       );
     }
@@ -481,7 +481,7 @@ class MockCamera {
     }
     if (/wearing|looks? like|\bhair\b|weight|thin\b|\bfat\b/.test(q)) {
       return reply(
-        'Dhyaan doesn’t keep or describe what she looks like, and there is no video to show. I can tell you what she’s been doing.',
+        'Dhyaan doesn’t keep or describe what she looks like, and nothing is recorded, so there is no footage to send you or anyone else. The live view on her camera screen is the only picture there is, and the next one replaces it. I can tell you what she’s been doing.',
         [], true, 'surveillance',
       );
     }

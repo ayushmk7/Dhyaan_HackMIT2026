@@ -745,3 +745,67 @@ async def test_a_paused_camera_can_neither_post_a_frame_nor_show_one(client, cam
     # ...and the worker cannot put another one there.
     assert (await client.post(f"/v1/ingest/camera/frame?camera_id={camera}", content=JPEG,
                               headers={"Content-Type": "image/jpeg"})).status_code == 403
+
+
+# ---- the switch that starts the worker --------------------------------------
+# These do not start anything. They pin the two properties that make a route
+# which opens a webcam survivable: nothing from the request reaches the
+# command, and pressing On twice does not start two workers on one device.
+
+async def test_the_command_takes_nothing_from_the_request(monkeypatch):
+    from app import vision_control
+
+    seen = {}
+
+    class FakeProc:
+        pid = 4242
+
+        def poll(self):
+            return None
+
+    def fake_popen(argv, **kw):
+        seen["argv"] = argv
+        return FakeProc()
+
+    monkeypatch.setattr(vision_control.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(vision_control, "_PROCS", {})
+    monkeypatch.setattr(vision_control, "_STARTED", {})
+
+    vision_control.start("cam_x; rm -rf /")
+    argv = seen["argv"]
+    # The camera id is the ONLY thing that varies, it is one argv element, and
+    # it is never a shell string: `shell=True` would make this a remote shell.
+    assert argv[:5] == [vision_control.sys.executable, "-m", "vision", "--source", "0"]
+    assert argv[-2:] == ["--camera-id", "cam_x; rm -rf /"]
+
+
+async def test_on_twice_does_not_start_two_workers(monkeypatch):
+    from app import vision_control
+
+    starts = []
+
+    class FakeProc:
+        pid = 1
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(vision_control.subprocess, "Popen",
+                        lambda argv, **kw: (starts.append(argv), FakeProc())[1])
+    monkeypatch.setattr(vision_control, "_PROCS", {})
+    monkeypatch.setattr(vision_control, "_STARTED", {})
+
+    vision_control.start("cam_a")
+    vision_control.start("cam_a")
+    assert len(starts) == 1
+    assert vision_control.status("cam_a")["running"] is True
+
+
+async def test_a_crowded_room_does_not_blank_the_console(client, camera):
+    """Twelve people is a busy room, not a bad request. `person_count` was
+    capped at six and `boxes` at six, so a crowded scene 422'd and the console
+    went blank in exactly the moment it matters. The worker no longer sends
+    boxes at all (the annotated frame carries them), and the count is data."""
+    await send_tick(client, tick(person_count=12, boxes=[], activity="standing"))
+    t = (await get_monitor(client))["tick"]
+    assert t["person_count"] == 12

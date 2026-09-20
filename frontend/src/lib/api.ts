@@ -6,7 +6,7 @@ import { httpApi } from './http';
 import { mockCamera } from './mock/camera';
 import { dhyaan } from './mock/dhyaan';
 import type {
-  ActivityDay, Alert, ChatMessage, Fact, MemoryDeleted, MemoryScope,
+  ActivityDay, Alert, CameraWorker, ChatMessage, Fact, MemoryDeleted, MemoryScope,
   Presence, Profile, ProfilePatch, SimulateKind, VoiceScript,
 } from './types';
 
@@ -119,6 +119,15 @@ const mockApi = {
   async getCameraMonitor(cameraId: string) { await wait(60); return mockCamera.getMonitor(cameraId); },
   async pauseCamera(_cameraId: string, hours = 2) { await wait(200); mockCamera.pauseCamera(hours); },
   async resumeCamera(_cameraId: string) { await wait(200); mockCamera.resumeCamera(); },
+  // There is no process to start under mocks, and saying there is would be the
+  // one lie this screen exists not to tell: `controllable: false` hides the
+  // switch rather than offering one that does nothing.
+  async getCameraWorker(_cameraId: string): Promise<CameraWorker> {
+    await wait(60);
+    return { running: true, pid: null, started_at: null, controllable: false, log: '' };
+  },
+  async startCameraWorker(cameraId: string) { await wait(200); mockCamera.resumeCamera(); return this.getCameraWorker(cameraId); },
+  async stopCameraWorker(cameraId: string) { await wait(200); mockCamera.pauseCamera(24); return this.getCameraWorker(cameraId); },
 
   // Onboarding — mock accepts anything plausible.
   async pairBand(code: string) {

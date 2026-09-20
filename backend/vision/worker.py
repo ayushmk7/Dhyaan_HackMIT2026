@@ -262,9 +262,14 @@ class Worker:
         if self.scene:
             self._scene_seen = {k: list(self.scene.get(k) or [])
                                 for k in ("food", "dishes", "seating")}
+        # No boxes. The app draws the annotated FRAME now, which already has
+        # every person outlined on it, so sending the geometry a second time
+        # was duplicate data — and it was worse than useless: a busy room made
+        # the list longer than the API's allowlist permits and the whole tick
+        # 422'd, so the console went blank in exactly the scenes it matters in.
         body = {"camera_id": self.camera_id,
                 "ts": datetime.now(timezone.utc).isoformat(),
-                "fps": round(self.fps, 2), "boxes": self.boxes,
+                "fps": round(self.fps, 2),
                 "gate": gate, "model": self.model, "simulated": self.synthetic,
                 **self.last_obs, **self._readings()}
         # Off the loop. This used to be a synchronous POST, which was fine at

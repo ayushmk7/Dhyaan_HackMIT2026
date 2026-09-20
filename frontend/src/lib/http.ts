@@ -18,7 +18,7 @@ import type {
   ChatMessage, Contact, DaySummary, Fact, KEvent, LadderStep, LocationMethod,
   TranscriptLine,
   LocationSegment, MemoryDeleted, MemoryScope, Presence, Profile,
-  ProfilePatch, Resident, ResidentLocation, CameraMonitorTick, CameraSummary,
+  ProfilePatch, Resident, ResidentLocation, CameraMonitorTick, CameraSummary, CameraWorker,
   SimulateKind, VoiceScript,
 } from './types';
 
@@ -683,6 +683,19 @@ export const httpApi = {
   resumeCamera: async (cameraId: string): Promise<void> => {
     await post(`/cameras/${cameraId}/resume`);
   },
+
+  // The switch on the camera page. `start` opens the webcam on the machine
+  // running the API and lifts a pause this app set; `stop` ends the process
+  // and sets the pause, so "off" survives someone restarting the worker by
+  // hand. Neither sends anything the hub uses to build its command.
+  getCameraWorker: (cameraId: string): Promise<CameraWorker> =>
+    get<CameraWorker>(`/cameras/${cameraId}/worker`),
+
+  startCameraWorker: (cameraId: string): Promise<CameraWorker> =>
+    post<CameraWorker>(`/cameras/${cameraId}/worker/start`),
+
+  stopCameraWorker: (cameraId: string): Promise<CameraWorker> =>
+    post<CameraWorker>(`/cameras/${cameraId}/worker/stop`),
 
   simulateCamera: async (kind: 'meal' | 'visitor' | 'out_of_view'): Promise<void> => {
     await post('/admin/simulate', { resident_id: residentId(), kind });

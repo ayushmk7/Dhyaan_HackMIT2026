@@ -300,6 +300,22 @@ export interface CameraMonitorTick {
   seating: string[];
 }
 
+/**
+ * Whether the vision worker PROCESS is running on the hub, which is a
+ * different question from whether the camera is consented or paused. The app
+ * can start and stop it; see backend/app/vision_control.py for what that is
+ * and what it deliberately is not.
+ */
+export interface CameraWorker {
+  running: boolean;
+  pid: number | null;
+  started_at: number | null;
+  /** false when the hub was started with VISION_CONTROL=0: no switch at all. */
+  controllable: boolean;
+  /** Where the hub writes this worker's output, for when it will not start. */
+  log: string;
+}
+
 /** The pose landmarker's five answers (backend/vision/vlm.py). */
 export type CameraPosture = 'upright' | 'seated' | 'reclined' | 'on_floor' | 'unclear';
 

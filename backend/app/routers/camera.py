@@ -27,7 +27,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
-from .. import memory, presence, rag
+from .. import memory, presence, rag, vision_control
 from ..db import db
 from ..events import emit
 
@@ -221,7 +221,12 @@ class MonitorIn(BaseModel):
     camera_id: str = Field(min_length=1)
     ts: datetime
     fps: float = Field(default=0.0, ge=0, le=120)
-    person_count: int = Field(default=0, ge=0, le=6)
+    # A real room holds more than six people, and the open-vocabulary detector
+    # will say twelve in a busy one. This was `le=6`, which turned a crowded
+    # scene into a 422 and a blank console: a count that is high is DATA, and
+    # rejecting the tick loses the sentence with it. Still bounded, because an
+    # unbounded number off a detector is not a number.
+    person_count: int = Field(default=0, ge=0, le=64)
     # Normalised 0..1, never pixels — the app must not be able to reconstruct a
     # frame geometry from this, and a box in a 448x252 buffer is one step closer
     # to that than a fraction is.
@@ -684,6 +689,72 @@ async def get_camera_monitor(camera_id: str):
     # camera row's own `online` stays heartbeat-based — it answers a different
     # question ("is the worker running at all").
     return {"camera": row, "online": tick is not None, "tick": tick}
+
+
+# ---------------------------------------------------------------------------
+# The switch: starting and stopping the worker process itself.
+#
+# Read the notice at the top of app/vision_control.py before touching these.
+# They open the webcam on the machine running this API, on a build with no
+# auth. The command is fixed and nothing in the request reaches it.
+# ---------------------------------------------------------------------------
+
+
+@family.get("/cameras/{camera_id}/worker")
+async def get_camera_worker(camera_id: str):
+    camera = await db().cameras.find_one({"_id": camera_id})
+    if not camera:
+        raise HTTPException(404, f"unknown camera_id {camera_id!r}")
+    return vision_control.status(camera_id)
+
+
+@family.post("/cameras/{camera_id}/worker/start")
+async def start_camera_worker(camera_id: str):
+    """Turn the camera on: start the worker, and lift a pause this app set.
+
+    Both halves, because a switch that starts a process which is then refused
+    at the ingest gate is a switch that did nothing and said it worked. Her
+    own pause is NOT lifted (§8.3) — the worker starts and writes nothing
+    until she lifts it, which is the correct shape of "she said no".
+    """
+    camera = await db().cameras.find_one({"_id": camera_id})
+    if not camera:
+        raise HTTPException(404, f"unknown camera_id {camera_id!r}")
+    if not vision_control.ENABLED:
+        raise HTTPException(409, "vision control is off on this hub")
+    if _is_paused(camera) and camera.get("paused_by") == "family":
+        await db().cameras.update_one({"_id": camera_id}, {"$set": {
+            "paused_until": None, "paused_by": None, "state": "watching"}})
+    try:
+        out = vision_control.start(camera_id)
+    except Exception as e:                                  # noqa: BLE001
+        raise HTTPException(500, f"could not start the camera: {e}") from e
+    await _push_presence(camera["resident_id"])
+    return out
+
+
+@family.post("/cameras/{camera_id}/worker/stop")
+async def stop_camera_worker(camera_id: str):
+    """Turn the camera off: stop the process, and drop what it left behind.
+
+    The pause is set as well as the process stopped. The process is the thing
+    that holds the device; the pause is the thing that survives a worker
+    someone restarts by hand, and "off" should mean off in both senses.
+    """
+    camera = await db().cameras.find_one({"_id": camera_id})
+    if not camera:
+        raise HTTPException(404, f"unknown camera_id {camera_id!r}")
+    out = vision_control.stop(camera_id)
+    until = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    await db().cameras.update_one({"_id": camera_id}, {"$set": {
+        "paused_until": until, "paused_by": "family", "state": "paused"}})
+    await emit(resident_id=camera["resident_id"], source="camera", type="camera_paused",
+               embedding_text="The camera is paused.",
+               payload={"state": "paused", "paused_by": "family"}, source_id=camera_id)
+    _MONITOR.pop(camera_id, None)      # a stopped camera has no live console
+    _FRAME.pop(camera_id, None)        # ...and no picture
+    await _push_presence(camera["resident_id"])
+    return out
 
 
 class PauseIn(BaseModel):

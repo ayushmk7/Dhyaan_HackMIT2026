@@ -132,6 +132,21 @@ export const useCameraMonitor = (cameraId: string | undefined) => {
 };
 
 /**
+ * Whether the worker process is up. Polled while the console is on screen: it
+ * takes a few seconds to open the device and load its models, and the switch
+ * has to stop saying "starting" on its own when it does.
+ */
+export const useCameraWorker = (cameraId: string | undefined) => {
+  const focused = useIsFocused();
+  return useQuery({
+    queryKey: ['worker', cameraId],
+    queryFn: () => api.getCameraWorker(cameraId!),
+    enabled: !!cameraId && focused,
+    refetchInterval: 3000,
+  });
+};
+
+/**
  * Which room the beacons put her in. Room level, never a position: the ESP32s
  * report RSSI and `app/location.py` classifies it against the survey, so the
  * answer is a room name and a confidence and nothing finer.
