@@ -278,13 +278,25 @@ static bool confirmPressed() {
       // A held finger persists ~200ms and passes; one-frame garbage cannot.
       if (boxAudioBusy()) boxAudioStop();
       delay(50);
+      // [claude] v4: two gated rounds. v3's single 2-of-4 still passed one
+      // ghost per ~18 min of chiming (observed live). A held finger sails
+      // through both rounds; bus garbage must now repeat across 600ms with
+      // the audio already silenced. Hold for about a second.
       int hits = 0;
       for (int i = 0; i < 4; i++) {
         if (lcd.getTouch(&x, &y) && y >= BTN_Y - 20) hits++;
         delay(40);
       }
-      Serial.printf("touch confirm hits=%d/4\n", hits);
-      if (hits >= 2) return true;
+      if (hits >= 3) {
+        delay(200);
+        int hits2 = 0;
+        for (int i = 0; i < 3; i++) {
+          if (lcd.getTouch(&x, &y) && y >= BTN_Y - 20) hits2++;
+          delay(40);
+        }
+        Serial.printf("touch confirm %d/4 then %d/3\n", hits, hits2);
+        if (hits2 >= 2) return true;
+      }
     }
   }
   return false;
