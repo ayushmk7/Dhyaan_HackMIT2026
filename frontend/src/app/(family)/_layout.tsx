@@ -57,6 +57,9 @@ const PAD = sp(1);
  * quiet ink pill that springs between tabs — the one transition here, and it
  * explains where you came from. Reduced motion: it simply appears.
  */
+/** Screens that live in this navigator but are not tabs. */
+const NOT_A_TAB = new Set(['search']);
+
 export function FloatingTabBar({
   state, descriptors, navigation, bottomInset, tone = 'neutral',
 }: BottomTabBarProps & {
@@ -74,13 +77,23 @@ export function FloatingTabBar({
 
   const reduced = useReducedMotion();
   const [width, setWidth] = useState(0);
-  const count = state.routes.length;
+  // Not every screen in this navigator is a tab. Search lives here so it gets
+  // the same native header and back behaviour as its siblings, and it is
+  // reached from Her day rather than from the bar. `href: null` does not help:
+  // expo-router implements it through `tabBarButton`/`tabBarItemStyle`, which
+  // a custom bar never reads, so the filter has to be here.
+  const tabRoutes = state.routes.filter((r) => !NOT_A_TAB.has(r.name));
+  const activeKey = state.routes[state.index]?.key;
+  // -1 while a non-tab screen is open, which is correct: no tab is selected,
+  // so the pill is not drawn rather than sitting under the wrong glyph.
+  const activeIdx = tabRoutes.findIndex((r) => r.key === activeKey);
+  const count = tabRoutes.length;
   const slot = width > 0 && count > 0 ? (width - PAD * 2) / count : 0;
 
   const x = useSharedValue(0);
   const placed = useRef(false);
   useEffect(() => {
-    const target = PAD + slot * state.index;
+    const target = PAD + slot * Math.max(activeIdx, 0);
     // The first real placement (once the bar has a width) is instant: nothing
     // animates unprompted. Every tab change after that springs.
     if (slot === 0 || !placed.current || reduced) {
@@ -89,7 +102,7 @@ export function FloatingTabBar({
       return;
     }
     x.value = withSpring(target, motion.enter);
-  }, [state.index, slot, reduced, x]);
+  }, [activeIdx, slot, reduced, x]);
   const pillStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
 
   // The bar used to switch to a night palette when Rounds was focused. Rounds
@@ -119,7 +132,7 @@ export function FloatingTabBar({
         onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
         style={{ height: TAB_BAR_HEIGHT, padding: PAD, flexDirection: 'row' }}
       >
-        {slot > 0 && (
+        {slot > 0 && activeIdx >= 0 && (
           <Animated.View
             pointerEvents="none"
             style={[
@@ -131,9 +144,9 @@ export function FloatingTabBar({
             ]}
           />
         )}
-        {state.routes.map((route, i) => {
+        {tabRoutes.map((route, i) => {
           const { options } = descriptors[route.key];
-          const focused = state.index === i;
+          const focused = activeIdx === i;
           const label = options.title ?? route.name;
           const color = focused ? ink : dim;
           const onPress = () => {

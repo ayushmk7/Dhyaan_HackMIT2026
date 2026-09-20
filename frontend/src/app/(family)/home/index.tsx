@@ -1,10 +1,22 @@
-// Today. Ordered by what the person opening it needs, in the order they need
-// it: is she alright right now (one sentence), can I reach her (one full-width
-// button), what has her day been like (four figures on one plate), and then
-// whatever is only sometimes true, in a short list at the bottom. Nothing on
-// this screen is a paragraph, and nothing on it is decorated: no avatar, no
-// glyph beside a label that already names the thing. Her day and Settings
-// hold the rest.
+// Today, as a board. Five panels, read in one pass: how she is (the one big
+// plate), the one thing to do about it (Call), her day in four figures, what
+// the camera is doing, and the short list of things that are only sometimes
+// true. Each reading has edges of its own, so nothing on this screen is a
+// paragraph with numbers buried in it.
+//
+// Panel order is the order a person needs it in, not the order the queries
+// resolve in: the answer, then the action, then the figures the answer is
+// drawn from, then the machine that drew them, then the occasional rows. The
+// camera panel sits UNDER the figures on purpose — two of those figures go
+// muted when nothing is watching, and the panel right below them is the
+// sentence that explains why.
+//
+// The hero is a Slab because a board needs one focal plate and this is it;
+// the figures, which used to be that plate, are four separate tiles now. One
+// Slab per screen still holds. Call stays the screen's only accent-filled
+// control, full width, directly under the answer: a board of readings still
+// needs one obvious thing to do, and burying it under the readings would be
+// the whole mistake.
 //
 // The sentence is set at `display` (30), not `hero` (40). The server keeps it
 // short; a short sentence at 30 with room around it reads as calm, and the
@@ -14,13 +26,20 @@
 //
 // The answer is the server's presence sentence, room-free by design: a
 // per-room breakdown is whereabouts, and whereabouts never reach a family
-// screen (VLM_PLAN §1/§5.2, D-001). Same reason there is no room-time bar here.
+// screen (VLM_PLAN §1/§5.2, D-001). Same reason there is no location panel
+// here, and no room-time bar.
+//
+// NOTHING ON THIS BOARD IS INVENTED. Every figure is a count the server sent;
+// a figure nobody has counted is the missing-value glyph, never a plausible
+// zero, and the two camera-counted figures go muted when nothing was watching
+// so that "0 meals" can never be read as "she did not eat". A panel with no
+// data says so in words.
 //
 // `activity.items` arrives newest-first (normalized in lib/http.ts), so
 // `items[0]` is genuinely the last thing noticed. Do not re-sort it.
 //
-// The optional rows are grouped at the bottom, after everything with a fixed
-// slot, so a query resolving late moves nothing above it.
+// The occasional rows are the last panel, after everything with a fixed slot,
+// so a query resolving late moves nothing above it.
 //
 // Every sentence this screen says lives in lib/copy/family.ts under `home`.
 import { useQueryClient } from '@tanstack/react-query';
@@ -28,7 +47,8 @@ import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Linking, Pressable, RefreshControl, View } from 'react-native';
 import {
-  Btn, Chevron, Entrance, ErrorState, LoadingState, Row, RowGroup, Screen, Slab, Txt,
+  Btn, Card, Chevron, DataLabel, Entrance, ErrorState, LoadingState, Marquee, Row, RowGroup,
+  Screen, Slab, Txt,
 } from '@/components';
 import { family } from '@/lib/copy/family';
 import {
@@ -52,7 +72,9 @@ const familySentence = (item: ActivityItem): string => {
 
 /** What the camera is doing. Never where she is. */
 function subline(p: Presence | undefined): string {
-  if (!p) return ' ';
+  // No presence at all is a state, not a blank line: the panel says it has
+  // nothing rather than rendering an empty row that looks like a bug.
+  if (!p) return copy.subline.unknown;
   if (p.status === 'no_camera') return copy.subline.noCamera;
   if (!p.camera.consent) return copy.subline.consentOff;
   if (p.status === 'paused') {
@@ -85,6 +107,24 @@ const NONE = '–';
 /** Three missed 15 s polls. Past this the cached answer is not today's news,
  *  it is the last thing the hub said before it stopped answering. */
 const PRESENCE_STALE_MS = 45_000;
+
+/**
+ * One figure tile: the count, the word under it. Four sit in one row and
+ * stretch to the same height, so a two-word label wrapping makes the row
+ * taller rather than making one tile look broken.
+ *
+ * `muted` is not decoration. It means this figure is the camera's to count
+ * and the camera was not watching, so the number is an absence of looking,
+ * not an absence of the thing.
+ */
+function FigureTile({ value, label, muted }: { value: string; label: string; muted: boolean }) {
+  return (
+    <Card style={{ flex: 1, padding: sp(3) }}>
+      <Txt kind="data" tone={muted ? 'muted' : undefined} numberOfLines={1}>{value}</Txt>
+      <Txt kind="caption" tone="muted" numberOfLines={2} style={{ marginTop: 2 }}>{label}</Txt>
+    </Card>
+  );
+}
 
 /**
  * One quiet row: a small label, the sentence under it, and a time on the
@@ -219,39 +259,31 @@ export default function Today() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.inkMuted} />
       }
     >
-      {/* Beat 0. The answer: her name, the sentence, what the camera is doing.
-          Bare paper, nothing around it, and room on every side. The sentence
-          is the screen's heading and announces itself when it changes. */}
+      {/* Panel 1. The answer, on the board's one focal plate: her name, then
+          the sentence. Nothing else goes on this plate — the freshness of it
+          is the camera panel's job, and saying it twice would make the top of
+          the board an argument with itself. The sentence is the screen's
+          heading and announces itself when it changes. */}
       <Entrance index={0} distance={26}>
-        <Txt kind="label" numberOfLines={1}>{residentName}</Txt>
-        <Txt
-          kind="display"
-          accessibilityRole="header"
-          accessibilityLiveRegion="polite"
-          style={{ marginTop: sp(3) }}
-        >
-          {sentence}
-        </Txt>
-        <Txt kind="caption" tone="muted" numberOfLines={1} style={{ marginTop: sp(4) }}>
-          {subline(presence)}
-        </Txt>
-        {/* The socket is down: say so once, quietly, under the line that is
-            already about how fresh this screen is. Nothing moves, nothing
-            turns red — a family does not need a connection dashboard, it
-            needs to know the screen may be behind. */}
-        {socketDown && (
-          <Txt kind="caption" tone="muted" numberOfLines={1} style={{ marginTop: sp(2) }}>
-            {copy.notLive}
+        <Slab>
+          <Txt kind="label" numberOfLines={1}>{residentName}</Txt>
+          <Txt
+            kind="display"
+            accessibilityRole="header"
+            accessibilityLiveRegion="polite"
+            style={{ marginTop: sp(2.5) }}
+          >
+            {sentence}
           </Txt>
-        )}
+        </Slab>
       </Entrance>
 
-      {/* Beat 1. Reach her. The most-used thing on the screen and the one that
-          ends the worry, so it is the app's one accent-filled control, full
-          width, right under the answer. Emphasis is size, place and the
-          plate; alarm keeps the only louder colour. With no number saved the
-          same slot says so, at the same height, so nothing below it moves. */}
-      <Entrance index={1} style={{ marginTop: sp(7) }}>
+      {/* Panel 2. Reach her. The most-used thing on the screen and the one
+          that ends the worry, so it is the app's one accent-filled control,
+          full width, directly under the answer. Emphasis is size, place and
+          the plate; alarm keeps the only louder colour. With no number saved
+          the same slot says so, at the same height, so nothing below moves. */}
+      <Entrance index={1} style={{ marginTop: sp(5) }}>
         {phone ? (
           <Btn
             kind="primary"
@@ -268,9 +300,11 @@ export default function Today() {
         )}
       </Entrance>
 
-      {/* Beat 2. The day in four figures, on the screen's one plate. The
-          figures are the summary, the tab is the detail. */}
-      <Entrance index={2} style={{ marginTop: sp(8) }}>
+      {/* Panel 3. Her day in four figures, four tiles under one hard rule.
+          The rule is the app's structural gesture and it is right here: these
+          are machine counts, and the heading is the only thing that names
+          them as a set. The detail is one tap away on the rule itself. */}
+      <Entrance index={2} style={{ marginTop: sp(7) }}>
         {activityError && (
           <ErrorState
             inline
@@ -280,34 +314,71 @@ export default function Today() {
             style={{ marginBottom: sp(3) }}
           />
         )}
-        <Slab
-          onPress={() => router.push('/(family)/timeline')}
-          accessibilityLabel={copy.openHerDay}
-        >
-          <Row gap={2} style={{ alignItems: 'flex-start' }}>
-            {figures.map((f) => (
-              <View key={f.label} style={{ flex: 1 }}>
-                <Txt kind="data" tone={f.camera && !watching ? 'muted' : undefined} numberOfLines={1}>
-                  {f.value}
-                </Txt>
-                <Txt kind="caption" tone="muted" numberOfLines={1} style={{ marginTop: 2 }}>
-                  {f.label}
-                </Txt>
-              </View>
-            ))}
-          </Row>
-          <Row gap={1} style={{ marginTop: sp(5), justifyContent: 'flex-end' }}>
-            <Txt kind="label">{copy.seeHerDay}</Txt>
-            <Chevron tone="ink" />
-          </Row>
-        </Slab>
+        <Marquee
+          first
+          title={copy.panels.day}
+          right={(
+            <Btn
+              kind="link"
+              size="small"
+              label={copy.seeHerDay}
+              onPress={() => router.push('/(family)/timeline')}
+            />
+          )}
+        />
+        <Row gap={2} style={{ alignItems: 'stretch' }}>
+          {figures.map((f) => (
+            <FigureTile key={f.label} value={f.value} label={f.label} muted={f.camera && !watching} />
+          ))}
+        </Row>
       </Entrance>
 
-      {/* Beat 3. Everything occasional, one line each, absent when empty.
-          Last on the screen, so a late row moves nothing above it. */}
+      {/* Panel 4. The machine that wrote the rest of the board: what the
+          camera is doing, and whether this screen is hearing from it live.
+          A machine label, because that is what this panel is about; the
+          sentence under it is still plain words. */}
+      <Entrance index={3} style={{ marginTop: sp(6) }}>
+        <Card>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={copy.openCamera}
+            onPress={() => router.push('/(family)/camera')}
+            style={({ pressed }) => (pressed ? { opacity: 0.55 } : null)}
+          >
+            <Row style={{ justifyContent: 'space-between' }} gap={3}>
+              <DataLabel>{copy.panels.camera}</DataLabel>
+              <Chevron size={11} />
+            </Row>
+            <Txt kind="body" numberOfLines={2} style={{ marginTop: sp(1.5) }}>
+              {subline(presence)}
+            </Txt>
+            {/* The socket is down: say so once, quietly, on the panel that is
+                already about how fresh this board is. Nothing moves, nothing
+                turns red — a family does not need a connection dashboard, it
+                needs to know the screen may be behind. */}
+            {socketDown && (
+              <Txt kind="caption" tone="muted" style={{ marginTop: sp(1.5) }}>
+                {copy.notLive}
+              </Txt>
+            )}
+          </Pressable>
+        </Card>
+      </Entrance>
+
+      {/* Panel 5. Everything occasional, one line each, absent when empty.
+          What is coming leads, then what was last seen, then her words and
+          the opener. Last on the board, so a late row moves nothing above. */}
       {hasRows && (
-        <Entrance index={3} style={{ marginTop: sp(8) }}>
+        <Entrance index={4} style={{ marginTop: sp(6) }}>
           <RowGroup>
+            {nextAppt && (
+              <QuietRow
+                label={copy.appointment}
+                time={nextAppt.when}
+                sentence={nextAppt.title}
+                onPress={() => router.push('/(family)/settings/carefile')}
+              />
+            )}
             {latest && (
               <QuietRow
                 label={copy.lastNoticed}
@@ -347,14 +418,6 @@ export default function Today() {
                 behind a disclosure that nobody opened at 3am. */}
             {!!opener && (
               <QuietRow label={copy.whenYouCall} sentence={opener} lines={2} />
-            )}
-            {nextAppt && (
-              <QuietRow
-                label={copy.appointment}
-                time={nextAppt.when}
-                sentence={nextAppt.title}
-                onPress={() => router.push('/(family)/settings/carefile')}
-              />
             )}
           </RowGroup>
         </Entrance>

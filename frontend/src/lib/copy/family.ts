@@ -46,6 +46,9 @@ export const family = {
 
     // What the camera is doing, under her name. Never where she is.
     subline: {
+      // No presence at all. The camera panel says it has nothing rather than
+      // rendering a blank line, which reads as a broken panel.
+      unknown: 'No word from the camera just now',
       noCamera: 'No camera set up yet',
       consentOff: 'Camera off · falls still watched',
       pausedFromApp: (until: string | null) => until ? `Paused from this app until ${until}` : 'Paused from this app',
@@ -76,14 +79,22 @@ export const family = {
 
     todayError: 'Couldn’t load today’s figures. The rest of the screen is still current.',
     tryAgain: 'Try again',
-    // The figures plate opens her day; this is the label on it.
+    // The board's panel headings. The figures sit under the one hard rule on
+    // the screen and that rule carries their heading; the camera panel wears
+    // a machine label instead, which DataLabel uppercases.
+    panels: {
+      day: 'Today so far',
+      camera: 'Camera',
+    },
+    // The link parked on the figures' rule, and the tap that opens the
+    // console from the camera panel.
     seeHerDay: 'Her day',
-    openHerDay: 'Open her day, hour by hour',
-    // Four figures on one plate, a QUARTER of a phone's width each. That is
+    openCamera: 'Open the camera console',
+    // Four figures, four tiles, a QUARTER of a phone's width each. That is
     // room for about one word at the caption step, so each label is one word
-    // or two short ones and every label sits on one line. Two words that wrap
-    // made two of the four columns taller than the others, which read as the
-    // plate being broken rather than as the labels being long.
+    // or two short ones. The tiles stretch to a shared height, so a label
+    // that does wrap makes the whole row taller rather than leaving one tile
+    // shorter than its neighbours, which read as the row being broken.
     tiles: {
       meals: 'Meals',
       minutesInView: 'Minutes',
@@ -91,7 +102,8 @@ export const family = {
       timesOut: 'Went out',
     },
 
-    // The rows under the plate. Each is one line and, sometimes, a tap.
+    // The board's last panel: what is coming, then what was last seen, then
+    // her own words. Each row is one line and, sometimes, a tap.
     lastNoticed: 'Last noticed',
     fromHer: (name: string) => `From ${name}`,
     replyBody: 'Got your message. ',
@@ -123,8 +135,13 @@ export const family = {
     dismiss: 'Dismiss',
     tryAgain: 'Try again',
 
-    previousDay: 'Previous day',
-    nextDay: 'Next day',
+    previousDay: 'Previous week',
+    nextDay: 'Next week',
+    // The day grid. The story is the all-day row at the top, the way a
+    // calendar puts an all-day event above the hours: it is the one thing
+    // about the day that has no time of its own.
+    allDay: 'All day',
+    pickDay: (label: string) => `Show ${label}`,
 
     loading: 'Reading her day…',
     loadError: 'Couldn’t load her day.',
@@ -139,22 +156,40 @@ export const family = {
         : 'Dhyaan writes the day’s story each evening. There isn’t one for this day.',
     writeError: 'Dhyaan couldn’t write it just now. Nothing was lost.',
 
-    whatItNoticed: 'What it noticed',
-    shownOf: (shown: number, total: number) => `${shown} of ${total}`,
-    // The landmarks in the list: each run of rows is headed by the part of
-    // the day it happened in, so scrolling always says where you are.
-    parts: {
-      overnight: 'Overnight',
-      morning: 'Morning',
-      afternoon: 'Afternoon',
-      evening: 'Evening',
-      night: 'Night',
-    },
+
     noActivity: (isToday: boolean) =>
       `No activity noticed ${isToday ? 'yet today' : 'on this day'}. Dhyaan only writes a line when it is confident enough to say a whole sentence.`,
     nothingUnder: (filter: string, isToday: boolean) =>
       `Nothing filed under “${filter}” ${isToday ? 'today' : 'on this day'}. Everything else from the day is still here.`,
     showAll: 'Show the whole day',
+    openRow: (sentence: string) => `${sentence} Opens the details.`,
+    rowLabel: (sentence: string, time: string) => `${sentence} ${time}`,
+  },
+
+  // ---- Search ---------------------------------------------------------------
+  // There is no search endpoint behind this screen. It filters the one feed the
+  // app already has open, which is today's, so every sentence here says "today"
+  // out loud. An empty result is allowed to mean "nothing today matched" and is
+  // not allowed to imply that anything older was looked at.
+  search: {
+    title: 'Search',
+    // The magnifier in Her day's header.
+    open: 'Search today',
+
+    fieldLabel: 'Search what Dhyaan noticed today',
+    placeholder: 'A meal, a visitor, a walk…',
+
+    loading: 'Reading today…',
+    loadError: 'Couldn’t read today, so there is nothing to search yet.',
+    tryAgain: 'Try again',
+
+    prompt: 'Type a word. Dhyaan looks through what it noticed today, and only today.',
+    nothingToSearch: 'Dhyaan hasn’t noticed anything today yet, so there is nothing here to search.',
+    noMatch: (q: string) =>
+      `Nothing from today mentions “${q}”. Dhyaan searched today only, so an older day may still have it.`,
+
+    results: 'From today',
+    matches: (n: number) => count(n, 'match', 'matches'),
     openRow: (sentence: string) => `${sentence} Opens the details.`,
     rowLabel: (sentence: string, time: string) => `${sentence} ${time}`,
   },
@@ -251,52 +286,17 @@ export const family = {
 
   // ---- Settings -------------------------------------------------------------
   settings: {
-    // Who a note is attributed to when the consent record has no name.
-    defaultTeller: 'Family',
-
-    // The quiet heading over each plate. The list is in runs, the way Her
-    // day's is: the notes, then what she agreed to, then what happens, then
-    // her records. Each heading names the run, so the rows under it can be
-    // short. The irreversible controls have no heading here; they sit apart
-    // under `profile.cannotUndo`.
-    groups: {
-      agreed: 'What she agreed to',
-      happens: 'When something happens',
-      records: 'Her records',
-    },
-
-    told: {
-      title: 'What Dhyaan was told about her',
-      notes: (n: number) => count(n, 'note', 'notes'),
-      loading: 'Loading her profile…',
-      loadError: 'Couldn’t load what Dhyaan was told.',
-      empty: 'Nothing told to Dhyaan yet. Until you add what you know, it will say it wasn’t told, rather than guess.',
-      howDescribed: 'How you described her',
-      usualSpots: 'Her usual spots',
-      about: 'About',
-      aboutKey: (key: string) => `About ${key.replace(/_/g, ' ')}`,
-      whatToRemember: 'What Dhyaan should remember',
-      keyPlaceholder: 'breakfast, walk, visitors',
-      sentencePlaceholder: 'A whole sentence',
-      cancel: 'Cancel',
-      save: 'Save',
-      saveError: 'Couldn’t save that note. What you typed is still here.',
-      deleteWarning: 'Dhyaan will stop knowing this. Answers it already gave keep the words they quoted.',
-      deleteNote: 'Delete this note',
-      deleteError: 'Couldn’t delete that note. It is still there.',
-      keepIt: 'Keep it',
-      addNote: 'Add a note',
-    },
+    // The screen's one heading, and the two things the plate under it can say
+    // before the profile has arrived. The irreversible controls have no
+    // heading; they sit apart under `profile.cannotUndo`.
+    agreed: 'What she agreed to',
+    loading: 'Loading…',
+    loadError: 'Couldn’t load what she agreed to.',
 
     camera: {
       title: 'Her camera',
       noCamera: 'No camera is set up. Start it on the computer in her home, then finish setup from there.',
-      // The one room name allowed on a family screen: where the family put
-      // the camera, not where she is.
-      whereInstalled: 'Where it’s installed',
       installedIn: (where: string) => `Installed in the ${where.toLowerCase()}.`,
-      notSetUp: 'Not set up',
-      state: 'State',
       stateWord: (state: string, pausedUntil: string | null) =>
         state === 'watching' ? 'Watching'
           : state === 'paused' ? (pausedUntil ? `Paused until ${pausedUntil}` : 'Paused')
@@ -308,40 +308,8 @@ export const family = {
       leaveRunning: 'Leave it running',
     },
 
-    ladder: {
-      title: 'Who it calls, in order',
-      contacts: (n: number) => count(n, 'contact', 'contacts'),
-      // "Priya, then Raj, then Meera": the order is the point.
-      inOrder: (names: string[]) => names.join(', then '),
-      loading: 'Loading…',
-      loadError: 'Couldn’t load her contacts.',
-      empty: 'Nobody on the list yet, so a call she doesn’t answer has nowhere to go. The list is written during setup, and there isn’t a way to change it from here yet.',
-    },
-
-    careFile: {
-      title: 'Care file',
-      summary: (medications: number, upcoming: number) =>
-        `${count(medications, 'medication', 'medications')} · ${upcoming} upcoming`,
-      intro: 'Med lists and letters become an emergency card for the alert screen and a note of what’s coming up on Today.',
-      open: 'Open her care file',
-      addFirst: 'Add the first document',
-    },
-
-    happens: {
-      title: 'What it does',
-      ifFall: 'If her band detects a fall',
-      ifFallBody: 'It gives her thirty seconds to cancel, then Dhyaan calls her. If she does not answer, it calls the people above, in order, and your phone is told at the same time.',
-      everythingElse: 'Everything else',
-      everythingElseBody: 'Meals, walks, visitors, a long stay in one place: these go on her timeline for you to read. Nobody is phoned about them.',
-      nothingToSwitch: 'There is nothing to switch here. A fall always calls; nothing else ever does. If that ever becomes a choice, it will be made here.',
-      // The one line the collapsed row shows.
-      short: 'A fall always calls. Nothing else ever does.',
-    },
-
     consent: {
       title: 'Consent',
-      // The plate's machine stamp: CONSENT  12/03/2026.
-      stamp: 'Consent',
       recorded: (name: string, by: string, relationship: string, on: string) =>
         `Recorded for ${name}${by ? ` by ${by}` : ''}${relationship ? ` (${relationship})` : ''}${on ? ` on ${on}` : ''}.`,
       falls: 'Fall detection',
@@ -352,14 +320,7 @@ export const family = {
     },
 
     profile: {
-      title: 'Her profile',
-      shareJson: 'Share her data as JSON',
-      shareJsonNote: 'Opens the share sheet with JSON text: her daily summaries, the last seven days of her timeline, and the notes you typed. It is not a printable report.',
-      exportTitle: (name: string) => `${name} export`,
-      exportError: 'Couldn’t put that together. Nothing was shared.',
-      tryAgain: 'Try again',
-
-      // Over the three irreversible controls, which sit apart from everything else.
+      // Over the two irreversible controls, which sit apart from everything else.
       cannotUndo: 'None of these can be undone.',
       forget: 'Forget her profile',
       forgetExplained: 'This deletes every note, every observation and everything Dhyaan learned about where she sits. It cannot be undone. Fall detection and the camera keep running, and you stay signed in.',
