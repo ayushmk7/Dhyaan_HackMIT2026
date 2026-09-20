@@ -29,7 +29,7 @@
     "ff_max_ms": 700,
     "drop_latch_ms": 0,
     "impact_g_after_ff": 2.2,
-    "impact_g_soft": 3.5,
+    "impact_g_soft": 5.0,
     "jerk_min_g_per_s": 30.0,
     "orient_change_deg": 25.0,
     "still_window_ms": 800,
