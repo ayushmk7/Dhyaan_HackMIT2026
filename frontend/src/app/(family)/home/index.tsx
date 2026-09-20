@@ -1,23 +1,24 @@
-// Today. A person card, then cards — never a column of prose. The status line
-// is the server's presence sentence, which is room-free by design: a per-room
-// breakdown is whereabouts, and whereabouts never reach a family screen
-// (VLM_PLAN §1/§5.2, D-001). That is also why there is no room-time bar here.
+// Today. A person, then dense grouped lists of one repeated row (MetricRow).
+// Human apps are documents of rows, not columns of widget-posters (DESIGN.md).
+// The status line is the server's presence sentence, room-free by design: a
+// per-room breakdown is whereabouts, and whereabouts never reach a family
+// screen (VLM_PLAN §1/§5.2, D-001). Same reason there is no room-time bar here.
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { Linking, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Linking, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Card, ErrorState, Hairline, KindTag, LoadingState, Row, SectionTitle, StatTile, Txt } from '@/components';
+import { Card, ErrorState, Hairline, LoadingState, MetricRow, Row, SectionTitle, Txt } from '@/components';
 import { Avatar } from '@/components/avatar';
 import { Entrance } from '@/components/entrance';
-import { Icon, IconBadge } from '@/components/icon';
+import { Icon } from '@/components/icon';
 import { useActivity, useLatestMessage, usePresence, useTalkAbout } from '@/lib/hooks';
 import { ago, timeOf } from '@/lib/format';
 import type { Presence } from '@/lib/types';
 import { useCareFile } from '@/store/carefile';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
-import { palette, sp, type } from '@/theme/tokens';
+import { hue, palette, sp } from '@/theme/tokens';
 
 const openerSymbol = (text: string): string => {
   const t = text.toLowerCase();
@@ -48,45 +49,6 @@ function statusLine(p: Presence | undefined, name: string): string {
   if (!p.camera.consent) return 'The camera is off';
   if (p.status === 'paused') return `${name} paused the camera`;
   return 'Nothing yet today';
-}
-
-// Small tonal pill for in-card actions ("Reply by text") — bare text links read
-// as a webpage; tonal pills read as iOS.
-function PillBtn({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => ({
-        backgroundColor: pressed ? '#DAE4EE' : palette.slateWash,
-        paddingHorizontal: sp(3.5), paddingVertical: sp(2), borderRadius: 999,
-      })}
-    >
-      <Text style={[type.caption, { fontWeight: '600', color: palette.slate }]}>{label}</Text>
-    </Pressable>
-  );
-}
-
-// Card row with badge + chevron (Settings-list grammar).
-function LinkRow({ icon, color, title, subtitle, onPress }: {
-  icon: string; color: string; title: string; subtitle: string; onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [{ paddingVertical: sp(3), opacity: pressed ? 0.55 : 1 }]}
-    >
-      <Row gap={3}>
-        <IconBadge name={icon} color={color} size={30} />
-        <View style={{ flex: 1 }}>
-          <Txt kind="caption" tone="muted">{title}</Txt>
-          <Txt kind="label" style={{ marginTop: 1 }} numberOfLines={2}>{subtitle}</Txt>
-        </View>
-        <Icon name="chevron.right" size={13} color="#C4BCAD" />
-      </Row>
-    </Pressable>
-  );
 }
 
 export default function Today() {
@@ -148,69 +110,37 @@ export default function Today() {
         showsVerticalScrollIndicator={false}
       >
         <Entrance index={0}>
-          <Card style={{ paddingVertical: sp(3.5) }}>
-            <Row gap={3} style={{ alignItems: 'flex-start' }}>
-              <Avatar name={residentName} size={54} />
-              <View style={{ flex: 1 }}>
-                <Txt kind="heading" numberOfLines={1}>{residentName}</Txt>
-                <Row gap={1.5} style={{ marginTop: 3, alignItems: 'flex-start' }}>
-                  <View style={{
-                    width: 8, height: 8, borderRadius: 4, marginTop: 6,
-                    backgroundColor: watching ? palette.moss : '#A9A192',
-                  }} />
-                  <Txt kind="label" style={{ flex: 1 }} numberOfLines={2}>
-                    {statusLine(presence, residentName)}
-                  </Txt>
-                </Row>
-                <Txt kind="caption" tone="muted" style={{ marginTop: 2 }} numberOfLines={1}>
-                  {subline(presence)}
-                </Txt>
-                {presence?.spot_is_usual && presence.status === 'in_view' && (
-                  <View style={{ marginTop: sp(2) }}>
-                    <KindTag kind="observed" detail="her usual spot" />
-                  </View>
-                )}
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Call ${residentName}`}
-                onPress={() => Linking.openURL('tel:+16175550100')}
-                style={({ pressed }) => ({
-                  width: 44, height: 44, borderRadius: 22,
-                  backgroundColor: pressed ? '#CBE9DA' : palette.slateWash,
-                  alignItems: 'center', justifyContent: 'center',
-                })}
-              >
-                <Icon name="phone.fill" size={19} color={palette.slate} />
-              </Pressable>
-            </Row>
-          </Card>
-        </Entrance>
-
-        {herMessage && (
-          <Entrance index={1}>
-            <Card style={{ marginTop: sp(3) }}>
-              <Row gap={2.5}>
-                <Avatar name={residentName} size={30} />
-                <Txt kind="caption" tone="muted">
-                  {residentName}, on her last call · {ago(herMessage.at)}
+          <Row gap={3} style={{ paddingVertical: sp(2), alignItems: 'flex-start' }}>
+            <Avatar name={residentName} size={48} />
+            <View style={{ flex: 1 }}>
+              <Txt kind="title" numberOfLines={1}>{residentName}</Txt>
+              <Row gap={1.5} style={{ marginTop: 2, alignItems: 'flex-start' }}>
+                <View style={{
+                  width: 7, height: 7, borderRadius: 4, marginTop: 6,
+                  backgroundColor: watching ? palette.moss : '#A8A8AD',
+                }} />
+                <Txt kind="body" style={{ flex: 1, fontSize: 16 }} numberOfLines={2}>
+                  {statusLine(presence, residentName)}
                 </Txt>
               </Row>
-              <Txt kind="title" style={{ marginTop: sp(2.5) }}>
-                “{herMessage.text}”
+              <Txt kind="caption" tone="muted" style={{ marginTop: 2 }} numberOfLines={1}>
+                {subline(presence)}
               </Txt>
-              <Row gap={2} style={{ marginTop: sp(3.5) }}>
-                <PillBtn
-                  label="Reply by text"
-                  onPress={() =>
-                    Linking.openURL(`sms:+16175550100&body=${encodeURIComponent('Got your message! ')}`)
-                  }
-                />
-                <PillBtn label="Call her" onPress={() => Linking.openURL('tel:+16175550100')} />
-              </Row>
-            </Card>
-          </Entrance>
-        )}
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Call ${residentName}`}
+              onPress={() => Linking.openURL('tel:+16175550100')}
+              style={({ pressed }) => ({
+                width: 40, height: 40, borderRadius: 20,
+                backgroundColor: pressed ? '#D6D6DB' : '#E5E5EA',
+                alignItems: 'center', justifyContent: 'center',
+              })}
+            >
+              <Icon name="phone.fill" size={17} color={palette.slate} />
+            </Pressable>
+          </Row>
+        </Entrance>
 
         <SectionTitle>Today</SectionTitle>
         {activityError && (
@@ -220,70 +150,81 @@ export default function Today() {
             </Txt>
           </Pressable>
         )}
-        <Row gap={2.5} style={{ alignItems: 'stretch' }}>
-          <StatTile
+        <Card style={{ paddingVertical: sp(1) }}>
+          <MetricRow
+            hue={hue.nutrition}
             icon="fork.knife"
-            state={tiles && tiles.meals > 0 ? 'ok' : 'unknown'}
+            label="Meals"
             value={tiles ? `${tiles.meals}` : '–'}
-            label={tiles?.meals === 1 ? 'meal so far' : 'meals so far'}
           />
-          <StatTile
+          <Hairline />
+          <MetricRow
+            hue={hue.activity}
             icon="figure.walk"
-            state={tiles && tiles.in_view_minutes > 0 ? 'ok' : 'unknown'}
-            value={tiles ? `${tiles.in_view_minutes}m` : '–'}
-            label="up and about"
+            label="Up and about"
+            value={tiles ? `${tiles.in_view_minutes}` : '–'}
+            unit="min"
           />
-        </Row>
-        <Row gap={2.5} style={{ marginTop: sp(2.5), alignItems: 'stretch' }}>
-          <StatTile
+          <Hairline />
+          <MetricRow
+            hue={hue.sleep}
             icon="moon.zzz.fill"
-            state={tiles && tiles.night_ups > 0 ? 'warn' : 'ok'}
-            value={tiles == null ? '–' : tiles.night_ups > 0 ? `Up ${tiles.night_ups}×` : 'Slept'}
-            label="overnight"
+            label="Overnight"
+            sentence={tiles == null ? '–' : tiles.night_ups > 0 ? `Up ${tiles.night_ups} time${tiles.night_ups === 1 ? '' : 's'}` : 'Slept through'}
           />
-          <StatTile
+          <Hairline />
+          <MetricRow
+            hue={hue.location}
             icon="figure.walk.motion"
-            state={tiles && tiles.out_of_house > 0 ? 'ok' : 'unknown'}
-            value={tiles && tiles.out_of_house > 0 ? `${tiles.out_of_house}×` : 'Home'}
-            label={tiles && tiles.out_of_house > 0 ? 'went out' : 'so far today'}
+            label="Out of the house"
+            sentence={tiles && tiles.out_of_house > 0 ? `Went out ${tiles.out_of_house}×` : 'Home so far'}
           />
-        </Row>
+        </Card>
 
-        {!!prompts?.length && (
-          <>
-            <SectionTitle>When you call her</SectionTitle>
-            <Card style={{ paddingVertical: sp(1) }}>
-              {prompts.map((p, i) => (
-                <View key={p}>
-                  {i > 0 && <Hairline />}
-                  <Row gap={3} style={{ paddingVertical: sp(3) }}>
-                    <Icon name={openerSymbol(p)} size={17} color={palette.slate} />
-                    <Txt kind="body" style={{ flex: 1 }} numberOfLines={2}>{p}</Txt>
-                  </Row>
-                </View>
-              ))}
-            </Card>
-          </>
-        )}
-
-        {(nextAppt || latest) && (
-          <Card style={{ marginTop: sp(5), paddingVertical: sp(1) }}>
-            {latest && (
-              <LinkRow
-                icon="clock"
-                color={palette.slate}
-                title={`Last noticed · ${timeOf(latest.ts)}`}
-                subtitle={latest.sentence}
-                onPress={() => router.push('/(family)/timeline')}
-              />
+        {(herMessage || !!prompts?.length || nextAppt || latest) && (
+          <Card style={{ marginTop: sp(3), paddingVertical: sp(1) }}>
+            {herMessage && (
+              <>
+                <MetricRow
+                  hue={hue.social}
+                  icon="quote.bubble"
+                  label={`From ${residentName}`}
+                  time={ago(herMessage.at)}
+                  sentence={`“${herMessage.text}”`}
+                  lines={3}
+                  onPress={() =>
+                    Linking.openURL(`sms:+16175550100&body=${encodeURIComponent('Got your message! ')}`)
+                  }
+                />
+                <Hairline />
+              </>
             )}
-            {nextAppt && latest && <Hairline />}
+            {(prompts ?? []).map((p) => (
+              <View key={p}>
+                <MetricRow hue={hue.social} icon={openerSymbol(p)} label="When you call" sentence={p} />
+                <Hairline />
+              </View>
+            ))}
+            {latest && (
+              <>
+                <MetricRow
+                  hue={hue.presence}
+                  icon="clock"
+                  label="Last noticed"
+                  time={timeOf(latest.ts)}
+                  sentence={latest.sentence}
+                  onPress={() => router.push('/(family)/timeline')}
+                />
+                {nextAppt && <Hairline />}
+              </>
+            )}
             {nextAppt && (
-              <LinkRow
+              <MetricRow
+                hue={hue.mind}
                 icon="calendar"
-                color={palette.ochre}
-                title="Coming up"
-                subtitle={`${nextAppt.title} · ${nextAppt.when}`}
+                label="Coming up"
+                time={nextAppt.when}
+                sentence={nextAppt.title}
                 onPress={() => router.push('/(family)/settings/carefile')}
               />
             )}

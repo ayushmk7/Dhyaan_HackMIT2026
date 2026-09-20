@@ -2,11 +2,13 @@
 // Palette from the bird: slate wing, rust back. Rust means "alert" — nothing else.
 
 export const palette = {
-  paper: '#F5F2EB',   // quiet warm ground (grouped-table background)
-  raised: '#FFFFFF',  // cards are pure white, borderless, soft shadow
-  ink: '#26221B',
-  inkMuted: '#6B6355',
-  line: '#ECE7DC',    // in-card separators only — never around cards
+  // Neutral chrome, transcribed from the Apple Health design sheet: cool gray
+  // ground, white cards, black text. Warmth was decoration; decoration is out.
+  paper: '#F2F2F7',   // iOS systemGroupedBackground
+  raised: '#FFFFFF',
+  ink: '#1C1C1E',
+  inkMuted: '#848489',
+  line: '#E5E5EA',    // in-card separators only — never around cards
 
   // Brand: one confident, saturated green (care = growth = "she's okay").
   // Washed-out palettes are the intern-firing offense; commit.
@@ -43,6 +45,19 @@ export const stateColor: Record<ResidentState, { fg: string; wash: string; word:
   alerting: { fg: palette.rust, wash: palette.rustWash, word: 'Needs someone now' },
   offline: { fg: palette.inkMuted, wash: palette.line, word: 'Band offline' },
 };
+
+// Category hues, transcribed from the Apple Health design sheet. Color is
+// taxonomy (a tiny glyph + label tint per data kind), never decoration.
+export const hue = {
+  activity: '#EC6330', // walks, movement
+  nutrition: '#67CE67', // meals
+  sleep: '#81CFFA',    // night
+  location: '#3A82F7', // rooms, out of view
+  heart: '#EB4B62',    // falls, safety rows (chrome alerts stay rust)
+  social: '#F1A33B',   // visitors, calls, messages
+  presence: '#B25FEA', // camera lane
+  mind: '#87E3E1',
+} as const;
 
 // Saturated, friendly zone hues — the day bar is a hero visual, not wallpaper.
 export const zoneColor: Record<string, string> = {
