@@ -11,6 +11,7 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { api } from '@/lib/api';
+import { useHydrateResident } from '@/lib/hooks';
 import { queryClient } from '@/lib/queryClient';
 import { useLive } from '@/store/live';
 import { useTheme } from '@/theme';
@@ -42,6 +43,16 @@ function AlertWatcher() {
     }
     if (!activeAlert) shownFor.current = null;
   }, [activeAlert, pathname]);
+  return null;
+}
+
+// Login returns her resident id but not her name, so the session opens on a
+// placeholder. This asks the profile once the id is known and writes the real
+// name back (widening only). It uses useQuery, so it must sit under the
+// QueryClientProvider, which is why it is a component beside AlertWatcher and
+// not a call in RootLayout.
+function SessionHydrator() {
+  useHydrateResident();
   return null;
 }
 
@@ -99,6 +110,7 @@ export default function RootLayout() {
           is honoured too: light glyphs on the night ground, dark on paper. */}
       <StatusBar style={t.isDark ? 'light' : 'dark'} />
       <AlertWatcher />
+      <SessionHydrator />
       <Stack
         screenOptions={{
           headerShown: false,

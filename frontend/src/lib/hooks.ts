@@ -1,5 +1,7 @@
 // TanStack Query owns anything cacheable (§10.3). Zustand owns what the socket mutates.
 import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useSession } from '@/store/session';
 import { api } from './api';
 
 export const useResidents = () =>
@@ -90,3 +92,30 @@ export const useCameraMonitor = (cameraId: string | undefined) =>
     enabled: !!cameraId,
     refetchInterval: 2000,
   });
+
+// ---- session hydration -------------------------------------------------------
+
+/**
+ * Teach the session what the server calls her.
+ *
+ * `POST /auth/login` returns a `resident_id` but not her name, so the store
+ * opens on a placeholder ("Eleanor", the seed's one resident) and every screen
+ * that greets her by name would keep showing it for a different account. This
+ * asks the profile once the id is known and writes the real name back.
+ *
+ * Mounted once, high in the tree. It renders nothing and returns nothing: a
+ * screen should read `residentName` from the session, not from here.
+ */
+export function useHydrateResident(): void {
+  const residentId = useSession((s) => s.residentId);
+  const signedIn = useSession((s) => !!s.user);
+  const setResidentName = useSession((s) => s.setResidentName);
+  const { data } = useQuery({
+    queryKey: ['profile', residentId],
+    queryFn: () => api.getProfile(residentId),
+    enabled: signedIn && !!residentId,
+  });
+  useEffect(() => {
+    if (data?.name) setResidentName(data.name);
+  }, [data?.name, setResidentName]);
+}

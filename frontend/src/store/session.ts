@@ -35,6 +35,8 @@ type Session = {
   camera: CameraDraft;
 
   signIn(user: AuthUser, token: string, residentId: string): void;
+  /** Her real name, once the server has been asked. See `useHydrateResident`. */
+  setResidentName(name: string): void;
   signOut(): void;
   setRole(r: Role): void;
   setConsent(input: {
@@ -51,6 +53,13 @@ type Session = {
 const emptyGrants: Grants = { falls: null, camera: null, memory: null };
 const emptyCamera: CameraDraft = { zone: null, zoneHint: '' };
 
+// ponytail: `res_eleanor` and `Eleanor` are the seed's one resident, and they
+// are the value the app opens with before anyone has signed in. They are a
+// placeholder, not a fact: `signIn` replaces the id with whatever
+// `POST /auth/login` returns, and `useHydrateResident` replaces the name with
+// what the server calls her. Ceiling: a first frame after sign-in can still
+// show the placeholder name for as long as the profile request takes. Upgrade:
+// return `display_name` from the login route so there is nothing to catch up.
 const blank = {
   user: null,
   token: null,
@@ -69,6 +78,13 @@ export const useSession = create<Session>((set) => ({
   ...blank,
 
   signIn: (user, token, residentId) => set({ user, token, residentId, role: 'family' }),
+
+  // Only ever widens: an empty or whitespace name from the server must not
+  // wipe the one already on screen.
+  setResidentName: (name) => {
+    const clean = name.trim();
+    if (clean) set({ residentName: clean });
+  },
   // Signing out drops everything, including the onboarding draft — the next
   // person to sign in on this phone must not inherit the last one's answers.
   signOut: () => set({ ...blank }),
