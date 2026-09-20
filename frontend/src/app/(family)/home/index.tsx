@@ -290,7 +290,7 @@ export default function Today() {
                 <Txt kind="data" tone={f.camera && !watching ? 'muted' : undefined} numberOfLines={1}>
                   {f.value}
                 </Txt>
-                <Txt kind="caption" tone="muted" numberOfLines={2} style={{ marginTop: 2 }}>
+                <Txt kind="caption" tone="muted" numberOfLines={1} style={{ marginTop: 2 }}>
                   {f.label}
                 </Txt>
               </View>

@@ -79,11 +79,15 @@ export const family = {
     // The figures plate opens her day; this is the label on it.
     seeHerDay: 'Her day',
     openHerDay: 'Open her day, hour by hour',
-    // Four figures on one plate, a quarter of the screen each: short words.
+    // Four figures on one plate, a QUARTER of a phone's width each. That is
+    // room for about one word at the caption step, so each label is one word
+    // or two short ones and every label sits on one line. Two words that wrap
+    // made two of the four columns taller than the others, which read as the
+    // plate being broken rather than as the labels being long.
     tiles: {
       meals: 'Meals',
-      minutesInView: 'Minutes seen',
-      upAtNight: 'Up at night',
+      minutesInView: 'Minutes',
+      upAtNight: 'Night ups',
       timesOut: 'Went out',
     },
 
