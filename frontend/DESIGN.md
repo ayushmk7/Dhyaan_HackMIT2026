@@ -8,6 +8,14 @@ References studied (real screenshots, not memory): Gentler Streak, How We Feel,
 Life360. What they share: a face or visual anchors every screen, bold black primary
 text, saturated committed brand color, mute chrome.
 
+## The first law
+
+**AI apps are columns of posters. Human apps are documents of repeated rows.**
+Never invent a bespoke block per feature. Screens are dense grouped lists of ONE
+row species — `MetricRow` (tiny tinted category glyph + label, black datum below,
+gray time + chevron, Health anatomy). Color is taxonomy (`hue.*` per data kind),
+never decoration. The alert takeover is the one sanctioned poster; it is an alarm.
+
 ## The five rules
 
 1. **Chrome is mute.** No caption ever explains a control ("Safe to press",
