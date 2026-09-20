@@ -138,7 +138,16 @@ def _on_event_created(doc):
     """
     if doc["type"] in NOISY_EVENT_TYPES:
         return
-    t = asyncio.create_task(_embed_and_store(doc["_id"], doc.get("embedding_text") or ""))
+    # A daily_summary's chunk is the full narrative in `payload`, not the
+    # 400-char embedding_text the event carries for display. daily_narrative()
+    # embeds it that way itself the moment emit() returns, and search() reads
+    # payload.narrative back as the hit text — but this hook was embedding the
+    # truncation, so the two writes raced and whichever landed second won. A
+    # day's vector was the whole story or its first two sentences depending on
+    # the network. Embedding the same text on both paths ends the race without
+    # leaving a summary emitted from anywhere else unembedded and unfindable.
+    text = (doc.get("payload") or {}).get("narrative") or doc.get("embedding_text") or ""
+    t = asyncio.create_task(_embed_and_store(doc["_id"], text))
     _embed_tasks.add(t)
     t.add_done_callback(_embed_tasks.discard)
 
@@ -351,10 +360,17 @@ _SPEECH = re.compile(
     r"hear|heard|hearing|audio|listen\w*|overheard|chat(?:ted|ting)? about)\b", re.I)
 _PRIVATE_ROOM = re.compile(
     r"\b(bathroom|toilet|loo|shower|bedroom|bed|undress\w*|naked|pyjamas?|pajamas?)\b", re.I)
+# "see her" on its own is not a request to look at her. "Has anyone come to see
+# her?" is the exact question the visitor_present lane exists to answer, and it
+# was earning a surveillance refusal. `watch` and `look at` still refuse bare,
+# because there is no innocent reading of "can I watch her"; `see` needs a
+# live-viewing word after it ("see her now", "see her live", "see her on the
+# camera") before it counts as one.
 _IMAGERY = re.compile(
     r"\b(photo|photograph|picture|image|video|footage|screenshot|webcam)\b|"
     r"camera\s*(feed|footage|view|stream)|live\s*camera|\bshow me\b|"
-    r"\b(watch|see|look at)\s+(her|him|them|mum|mom|eleanor)\b", re.I)
+    r"\b(watch|look at)\s+(her|him|them|mum|mom|eleanor)\b|"
+    r"\bsee\s+(her|him|them|mum|mom|eleanor)\s+(right\s+)?(now|live|on (the )?camera)\b", re.I)
 _APPEARANCE = re.compile(
     r"\bwearing\b|\bwear(s|ing)?\s+(today|now)\b|\b(outfit|clothes|clothing)\b|"
     r"\b(she|he|they|her|him|them)\s+look(s|ed|ing)?\s+like\b|"
@@ -368,13 +384,25 @@ _LIVE_LOCATION = re.compile(
 # they route to the existing bed_exit / night_activity lanes (§5.5.2).
 _SLEEP_OK = re.compile(r"\b(sleep|slept|sleeping|night|nights|overnight|rest(ed)?)\b", re.I)
 
+# The imagery/appearance line used to end "there is no video to show — not to you,
+# not to anyone". That stopped being true when the hub started relaying its
+# annotated frame to the camera screen (routers/camera.py:299,313): there is a
+# live view, and a refusal that denies something the family can see one tab over
+# reads as a lie about everything else in the answer. What is still true, and is
+# the whole point, is that nothing is recorded: the picture on that screen is
+# replaced by the next one and the last one is gone, so there is no footage for
+# anyone to hand over, and chat still neither holds nor describes it.
 REFUSALS = {
     "appearance": (
-        "Dhyaan doesn't keep or describe what she looks like, and there is no video to "
-        "show — not to you, not to anyone. I can tell you what she's been doing."),
+        "Dhyaan doesn't keep or describe what she looks like, and nothing is recorded, "
+        "so there is no footage to send you or anyone else. The live view on her camera "
+        "screen is the only picture there is, and the next one replaces it. "
+        "I can tell you what she's been doing."),
     "imagery": (
-        "Dhyaan doesn't keep or describe what she looks like, and there is no video to "
-        "show — not to you, not to anyone. I can tell you what she's been doing."),
+        "Dhyaan doesn't keep or describe what she looks like, and nothing is recorded, "
+        "so there is no footage to send you or anyone else. The live view on her camera "
+        "screen is the only picture there is, and the next one replaces it. "
+        "I can tell you what she's been doing."),
     "speech": (
         "Dhyaan never listens, so there is nothing she said that I could tell you."),
     "private_room": (
@@ -519,10 +547,19 @@ async def search(resident_id: str, query: str, k: int = 6, since: int | None = N
             q["ts_epoch"]["$gte"] = since
         if until is not None:
             q["ts_epoch"]["$lt"] = until
+    # Both conditions, never one or the other: a soft lane (`only_types`) narrows
+    # WHAT is asked about, the family filter says what a family may ever see, and
+    # the second is not the first one's business to switch off. As an `elif` this
+    # was safe only by accident — nothing in SOFT_TYPES happens to be excluded
+    # today — and the day a whereabouts type joins both sets, the family answer
+    # quietly starts citing rooms.
+    type_q: dict = {}
     if only_types:
-        q["type"] = {"$in": only_types}
-    elif family:
-        q["type"] = {"$nin": sorted(FAMILY_EXCLUDED_TYPES)}
+        type_q["$in"] = only_types
+    if family:
+        type_q["$nin"] = sorted(FAMILY_EXCLUDED_TYPES)
+    if type_q:
+        q["type"] = type_q
     docs = await db().events.find(q).to_list(length=50000)
     if include_facts:
         docs = docs + await _fact_candidates(resident_id, only_fact_keys)
@@ -590,6 +627,26 @@ def _apply_quota(ordered: list[str], by_id: dict[str, dict], k: int) -> list[str
 
 _KIND_LABEL = {"told": "You told us", "observed": "Dhyaan saw", "pattern": "From her pattern"}
 
+# `[evt_01M2ZFVN5Y8HHPETGG03GF9FEH]`, and the same shape for any other id we
+# put in the context. The system prompt asks the model to cite every statement
+# with its [id] — that instruction stays, because it is what keeps the answer
+# tied to retrieved sentences instead of invented ones — but the ids are for
+# US, not for her daughter. They come back in `citations`, which is what the
+# chips under the answer are built from, and that is where an id belongs.
+#
+# `_template_answer` was fixed for this months ago. The MODEL path was not, and
+# nobody saw it because the model path only runs with an OPENAI_API_KEY set: the
+# moment one was configured, every answer came back full of ULIDs.
+_ID_IN_PROSE = re.compile(r"\s*\[[a-z]{2,6}_[0-9A-HJKMNP-TV-Z]{26}\]")
+
+
+def _strip_ids(text: str) -> str:
+    """Take the ids out of prose and tidy what they leave behind."""
+    out = _ID_IN_PROSE.sub("", text)
+    # " ." and " ," where a citation sat between a word and its punctuation.
+    out = re.sub(r"\s+([.,;:!?])", r"\1", out)
+    return re.sub(r"[ \t]{2,}", " ", out).strip()
+
 
 def _template_answer(hits: list[dict]) -> str:
     """Cut-list item 4: when there is no OpenAI key and no local chat model, the
@@ -654,6 +711,14 @@ async def _llm_answer(question: str, hits: list[dict], resident_name: str) -> st
 # dev.sh runs the demo with CHAT_FALLBACK_MODEL=qwen2.5vl:3b (called with no images).
 CHAT_FALLBACK_MODEL = os.getenv("CHAT_FALLBACK_MODEL", "")
 CHAT_TIMEOUT_S = float(os.getenv("CHAT_TIMEOUT_S", "25"))
+
+# One budget over the whole chain, because each link only bounds itself: OpenAI
+# is 8s plus one 0.5s-backoff retry (app/llm.py), and Ollama is another 25s
+# behind it, so the worst honest case was ~41 seconds on a question a person is
+# waiting on. Ten seconds is past the point where a chat bubble feels broken,
+# and the deterministic template answer below is always right there — a slower
+# model is not worth more than a fast true sentence.
+ANSWER_BUDGET_S = 10.0
 
 
 async def _ollama_answer(question: str, hits: list[dict], resident_name: str) -> str | None:
@@ -723,10 +788,17 @@ async def answer_family(resident_id: str, question: str) -> dict:
     for h in hits:
         h["text"] = scrub_rooms(h["text"])
 
-    text = (await _llm_answer(q, hits, name)
-            or await _ollama_answer(q, hits, name)
-            or _template_answer(hits))
-    text = scrub_rooms(text)
+    async def _chain():
+        return (await _llm_answer(q, hits, name)
+                or await _ollama_answer(q, hits, name)
+                or _template_answer(hits))
+
+    try:
+        text = await asyncio.wait_for(_chain(), ANSWER_BUDGET_S)
+    except asyncio.TimeoutError:
+        log.info("the answer chain ran past %.0fs — answering from the template", ANSWER_BUDGET_S)
+        text = _template_answer(hits)
+    text = scrub_rooms(_strip_ids(text))
     if soft:
         text = f"{SOFT_PREFIX[soft]} {text}"
 

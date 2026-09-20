@@ -59,6 +59,11 @@ HARD = [
     ("imagery", "Can I see a picture of her?"),
     ("imagery", "Send me the video footage from this morning."),
     ("imagery", "I want to watch her for a minute."),
+    # The live-viewing phrasings that survived narrowing `see her` (B5). A
+    # request to look at her right now is still a refusal, however it is worded.
+    ("imagery", "Can I watch her right now?"),
+    ("imagery", "Let me see her live."),
+    ("imagery", "Can I see her on the camera?"),
     ("appearance", "What is she wearing today?"),
     ("appearance", "What does she look like now?"),
     ("appearance", "Has her weight changed?"),
@@ -138,6 +143,17 @@ async def test_a_useful_visitor_question_still_answers(history, db):
     assert "visitor" in texts or "cheryl" in texts
 
 
+async def test_asking_whether_anyone_visited_is_not_a_surveillance_question(history, db):
+    """"Has anyone come to see her?" is the exact question visitor_present
+    events exist to answer. `see her` used to match the imagery pattern, so the
+    answer was "there is no footage" to a question about company."""
+    result = await rag.answer_family(history, "Has anyone come to see her?")
+    assert result["refused"] is False, result["answer"]
+    assert result["retrieved_count"] > 0
+    texts = " ".join(c["text"] for c in result["citations"]).lower()
+    assert "visitor" in texts or "cheryl" in texts, result["citations"]
+
+
 async def test_sleep_questions_are_not_a_private_room_refusal(history, db):
     result = await rag.answer_family(history, "How were her nights this week?")
     assert result["refused"] is False
@@ -184,6 +200,19 @@ async def test_excluded_types_are_never_in_the_pool(history, db):
                             family=True, include_facts=True)
     assert all(h["type"] not in rag.FAMILY_EXCLUDED_TYPES for h in hits)
     assert not any("bathroom" in h["text"].lower() for h in hits)
+
+
+async def test_a_soft_lane_cannot_switch_off_the_family_filter(history, db):
+    """`only_types` narrows what is asked about; it is not permission to see it.
+    These were an if/elif, so a soft lane whose types overlapped
+    FAMILY_EXCLUDED_TYPES would have put staff telemetry in a family answer."""
+    hits = await rag.search("res_eleanor", "bathroom", k=20, family=True,
+                            only_types=["zone_entered", "bathroom_prolonged"])
+    assert hits == [], hits
+    # ...and the filter still narrows for a lane the family may see.
+    visitor = await rag.search("res_eleanor", "visitor", k=20, family=True,
+                               only_types=["visitor_present"])
+    assert visitor and all(h["type"] == "visitor_present" for h in visitor)
 
 
 async def test_room_names_are_scrubbed_out_of_the_answer_and_citations(resident, db, no_llm):
@@ -261,3 +290,22 @@ async def test_family_retrieval_never_cites_the_machinery(db, resident):
     types = {h.get("type") for h in hits}
     assert types.isdisjoint(noise), f"machine log types reached family retrieval: {types & set(noise)}"
     assert any("ate lunch" in h["text"] for h in hits), "the real observation was lost too"
+
+
+def test_no_database_ids_reach_the_prose():
+    """The system prompt asks the model to cite every statement with its [id],
+    and the app renders `answer` verbatim into a chat bubble. Without this the
+    family reads raw ULIDs. `_template_answer` was fixed for this long ago; the
+    MODEL path was not, and it only shows once an OPENAI_API_KEY is configured.
+    """
+    from app.rag import _strip_ids
+
+    got = _strip_ids(
+        "She ate at 7:25 AM [evt_01M2ZFVN5Y8HHPETGG03GF9FEH] and rested "
+        "[evt_01M2ZGTKQBMRZ4DKVS4EQ7RY0M]."
+    )
+    assert got == "She ate at 7:25 AM and rested."
+    assert "evt_" not in got
+
+    # A sentence with no citations is untouched, punctuation and all.
+    assert _strip_ids("She walked twice, then rested.") == "She walked twice, then rested."
