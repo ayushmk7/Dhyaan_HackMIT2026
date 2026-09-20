@@ -206,6 +206,7 @@ async def test_close_without_tool_call_defaults_incoherent(monkeypatch):
 
 
 async def test_end_call_hangs_up_after_agent_audio_done(monkeypatch):
+    monkeypatch.setenv("HANGUP_GRACE_S", "0")  # no farewell beat in tests
     dg, tw, hangups = FakeDG(), FakeTwilioWS(), []
     async with running_bridge(monkeypatch, dg, tw, hangups):
         await tw.push(START)
@@ -258,6 +259,7 @@ async def test_transcripts_appended(monkeypatch):
 
 
 async def test_voicemail_advances_as_no_answer_not_incoherent(monkeypatch):
+    monkeypatch.setenv("HANGUP_GRACE_S", "0")  # no farewell beat in tests
     dg, tw, hangups = FakeDG(), FakeTwilioWS(), []
     async with running_bridge(monkeypatch, dg, tw, hangups):
         await tw.push(START)

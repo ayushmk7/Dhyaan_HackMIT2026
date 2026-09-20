@@ -115,7 +115,7 @@ static bool     btnWasDown    = false;
 #define USE_BOOT_BUTTON 0
 #define POLL_MS      2000
 #define THANKS_MS    5000
-#define CHIME_MS     10000        // [claude] soft chime period while ALERT is open
+#define CHIME_MS     20000        // [claude] chime period; longer = more bus-quiet windows for touch
 
 static uint32_t nextChimeAt = 0;  // [claude] next chime while in ST_ALERT
 
@@ -269,13 +269,23 @@ static bool confirmPressed() {
   // apart: bus garbage never repeats consistently; a real finger does.
   if (haveDisplay && state == ST_ALERT) {
     int32_t x, y;
-    bool ok = true;
-    for (int i = 0; i < 3; i++) {
-      if (!(lcd.getTouch(&x, &y) && y >= BTN_Y - 20)) { ok = false; break; }
-      Serial.printf("touch sample %d: x=%d y=%d\n", i, (int)x, (int)y);
-      delay(40);
+    if (lcd.getTouch(&x, &y) && y >= BTN_Y - 20) {
+      // [claude] v3 of this check. v1 (single read) phantom-acked during audio:
+      // the codec shares I2C with touch, and the spoken prompt corrupts reads.
+      // v2 (3 consecutive clean reads) ate REAL taps for the same reason - the
+      // bus is noisy exactly while the box is talking. v3: the first plausible
+      // hit SILENCES the audio (frees the bus), then 4 clean reads decide.
+      // A held finger persists ~200ms and passes; one-frame garbage cannot.
+      if (boxAudioBusy()) boxAudioStop();
+      delay(50);
+      int hits = 0;
+      for (int i = 0; i < 4; i++) {
+        if (lcd.getTouch(&x, &y) && y >= BTN_Y - 20) hits++;
+        delay(40);
+      }
+      Serial.printf("touch confirm hits=%d/4\n", hits);
+      if (hits >= 2) return true;
     }
-    if (ok) return true;
   }
   return false;
 }
