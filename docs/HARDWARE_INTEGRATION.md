@@ -3,8 +3,9 @@
 `scripts/simulate_band.py` stands in for the Arduino UNO Q + LSM6DSOX band
 (and the ESP32 BLE beacons) so the backend, the escalation ladder, and the
 app can be built and demoed before any hardware exists. It posts the **exact
-JSON the firmware will post**, to the **exact endpoints**, with the **exact
-`X-Band-Key` header**. If the simulator and the firmware ever disagree on
+JSON the firmware will post**, to the **exact endpoints**. (It still sends an
+`X-Band-Key` header; the API no longer checks it, there is no auth at all —
+see `app/main.py`.) If the simulator and the firmware ever disagree on
 shape, `fixtures/*.json` are wrong — fix the fixture, not the firmware.
 
 Contract source of truth: `app/routers/ingest.py` (read the module docstring
@@ -19,26 +20,26 @@ first, it's the fill-in template Utsav codes against).
 | `POST /v1/ingest/heartbeat` | `fixtures/heartbeat.json` | Every ~60s per band, cheap liveness + battery ping | `band_id`, `battery_pct` |
 | `POST /v1/ingest/rf` | `fixtures/rf_scan.json` | Every BLE/Wi-Fi scan cycle (HARDWARE_SPEC §3.1: BLE scan 3s/20s, Wi-Fi /60s) | `band_id`, `ts`, `beacons` (list of `{uuid, major, minor, rssi}`) and/or `wifi` (list of `{bssid, rssi}`) |
 
-All four require header `X-Band-Key: <BAND_KEY>`. Unknown `band_id` → 404.
-Bad/missing key → 401. Bad field → 422.
+No auth header is required or checked (demo build; `app/main.py`). Unknown
+`band_id` → 404. Bad field → 422.
 
 ## curl per endpoint (test firmware without the app)
 
 ```bash
 curl -X POST http://localhost:8000/v1/ingest/band \
-  -H "X-Band-Key: $BAND_KEY" -H "Content-Type: application/json" \
+  -H "Content-Type: application/json" \
   -d @fixtures/band_fall.json
 
 curl -X POST http://localhost:8000/v1/ingest/band/cancel \
-  -H "X-Band-Key: $BAND_KEY" -H "Content-Type: application/json" \
+  -H "Content-Type: application/json" \
   -d @fixtures/band_cancel.json    # alert_id must be a real, still-open alert
 
 curl -X POST http://localhost:8000/v1/ingest/heartbeat \
-  -H "X-Band-Key: $BAND_KEY" -H "Content-Type: application/json" \
+  -H "Content-Type: application/json" \
   -d @fixtures/heartbeat.json
 
 curl -X POST http://localhost:8000/v1/ingest/rf \
-  -H "X-Band-Key: $BAND_KEY" -H "Content-Type: application/json" \
+  -H "Content-Type: application/json" \
   -d @fixtures/rf_scan.json
 ```
 
@@ -54,8 +55,8 @@ python -m scripts.simulate_band day                # a whole plausible day, sped
 python -m scripts.simulate_band fall --dry-run     # print the payload, POST nothing
 ```
 
-Env vars: `DHYAAN_API` (default `http://localhost:8000`), `BAND_KEY` (must
-match the server's), `BAND_ID` (default `band_a3f2`, seed.py's demo band).
+Env vars: `DHYAAN_API` (default `http://localhost:8000`), `BAND_KEY` (sent as
+`X-Band-Key`; the server ignores it), `BAND_ID` (default `band_a3f2`, seed.py's demo band).
 `--band-id` and `--dry-run` go **after** the subcommand (e.g. `fall
 --dry-run`), not before.
 
@@ -76,8 +77,8 @@ simulator-only convenience; real hardware never touches Mongo directly.
    separate device on the network): find it with `ipconfig getifaddr en0`
    (or equivalent) and set the firmware's base URL to
    `http://<that-ip>:8000`.
-3. **Set `BAND_KEY`** in both the server's `.env` and the firmware's
-   `config.json`/build flag — they must match exactly (`X-Band-Key` header).
+3. **`BAND_KEY` no longer matters.** The server checks no key (no auth,
+   demo build). The firmware may keep sending `X-Band-Key`; it is ignored.
 4. **Diff before trusting.** Run `python -m scripts.simulate_band <cmd>
    --dry-run` and capture the firmware's own outgoing JSON (log it, or point
    it at a request-bin) for the same event. They must match **in shape**

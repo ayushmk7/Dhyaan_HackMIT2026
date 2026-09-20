@@ -1,10 +1,10 @@
 // Welcome: a mark, one line, one button. Real apps don't open with paragraphs.
 //
-// The demo entry seeds a signed-in session locally. It may only seed INVENTED
-// facts when the app is running against the in-memory backend: against a real
-// server those ten sentences about Eleanor would be posted by done.tsx as
-// things "the family told us" about a real person. So the facts are gated on
-// USE_MOCKS, hard, and a live demo starts with nothing told.
+// The demo entry seeds a signed-in session locally. The invented resident,
+// her facts and the daughter who "signed" live entirely inside the mock
+// backend (`seedDemoResident` is a no-op unless USE_MOCKS), so nothing on this
+// screen names a person: against a real server the demo opens on whatever the
+// server has, and the onboarding draft starts empty either way.
 import { router } from 'expo-router';
 import React from 'react';
 import { Pressable, View } from 'react-native';
@@ -12,7 +12,6 @@ import { Btn, DataLabel, Entrance, Mark, Screen, Txt } from '@/components';
 import { seedDemoResident } from '@/lib/api';
 import { USE_MOCKS } from '@/lib/config';
 import { onboard } from '@/lib/copy/staff';
-import { SEEDED_FACTS } from '@/lib/mock/camera';
 import { useSession } from '@/store/session';
 import { sp } from '@/theme/tokens';
 
@@ -22,10 +21,8 @@ export default function Welcome() {
   const { setRole, seedDemoSession } = useSession();
 
   const familyDemo = () => {
-    seedDemoResident('Priya Sharma');
-    // Mock backend only. Live: an empty profile, which is the honest opening
-    // state of a real sign-up anyway.
-    seedDemoSession(USE_MOCKS ? SEEDED_FACTS : []);
+    seedDemoResident();
+    seedDemoSession([]);
     router.replace('/(family)/home');
   };
   const staffDemo = () => {

@@ -3,9 +3,9 @@
 FILL-IN TEMPLATE — band firmware contract (Utsav: code against this section
 only, you should not need to read anything below it).
 
-All requests: header  X-Band-Key: <the shared band key>
+No auth header. This is a demo build; see the notice at the top of app/main.py.
 All bodies: JSON. `ts` is ISO-8601 (e.g. "2026-09-19T14:31:02-04:00").
-Unknown band_id -> 404. Bad/missing key -> 401. Bad field -> 422.
+Unknown band_id -> 404. Bad field -> 422.
 
 -----------------------------------------------------------------------------
 POST /v1/ingest/band  — a fall or button event
@@ -18,7 +18,7 @@ POST /v1/ingest/band  — a fall or button event
          ("alert_id" only present when this event opened one, e.g. fall_suspected)
 
   curl -X POST http://localhost:8000/v1/ingest/band \
-    -H "X-Band-Key: $BAND_KEY" -H "Content-Type: application/json" \
+    -H "Content-Type: application/json" \
     -d @fixtures/band_fall.json
 
 -----------------------------------------------------------------------------
@@ -27,7 +27,7 @@ POST /v1/ingest/band/cancel  — on-band button press inside the grace window
   200 -> {"cancelled": true, ...}
 
   curl -X POST http://localhost:8000/v1/ingest/band/cancel \
-    -H "X-Band-Key: $BAND_KEY" -H "Content-Type: application/json" \
+    -H "Content-Type: application/json" \
     -d '{"band_id":"band_a3f2","alert_id":"alr_123","by":"button"}'
 
 -----------------------------------------------------------------------------
@@ -36,7 +36,7 @@ POST /v1/ingest/heartbeat  — every 60s per band, cheap
   204 (no body)
 
   curl -X POST http://localhost:8000/v1/ingest/heartbeat \
-    -H "X-Band-Key: $BAND_KEY" -H "Content-Type: application/json" \
+    -H "Content-Type: application/json" \
     -d @fixtures/heartbeat.json
 
 -----------------------------------------------------------------------------
@@ -48,12 +48,13 @@ POST /v1/ingest/rf  — an RSSI scan (BLE beacons + Wi-Fi APs seen right now)
   200 -> {"zone": "kitchen", "confidence": 0.88, "posterior": {...}, "committed": true}
 
   curl -X POST http://localhost:8000/v1/ingest/rf \
-    -H "X-Band-Key: $BAND_KEY" -H "Content-Type: application/json" \
+    -H "Content-Type: application/json" \
     -d @fixtures/rf_scan.json
 =============================================================================
 
 TECHNICAL_PRD §2 ("Ingest") wins over the older contested spec: these four
-routes, X-Band-Key auth. Field-level shape here (flat `type`, flat `beacons`/
+routes. The X-Band-Key check it also described has been removed with the rest
+of the auth (demo build, see app/main.py). Field-level shape here (flat `type`, flat `beacons`/
 `wifi` lists) is this team's agreed contract, not the PRD's literal JSON
 example (which nests under `payload` and calls it `kind`/`ble`) — same
 endpoints, cleaned-up body.
@@ -62,16 +63,15 @@ endpoints, cleaned-up body.
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from .. import location
 from ..config import CANCEL_WINDOW_S
 from ..db import db
-from ..deps import require_band_key
 from ..events import emit
 
-router = APIRouter(prefix="/v1/ingest", tags=["ingest"], dependencies=[Depends(require_band_key)])
+router = APIRouter(prefix="/v1/ingest", tags=["ingest"])
 
 BAND_EVENT_TYPES = (
     "fall_suspected", "fall_confirmed", "fall_cancelled", "button_pressed",

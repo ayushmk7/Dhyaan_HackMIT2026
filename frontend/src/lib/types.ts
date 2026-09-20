@@ -403,14 +403,3 @@ export interface MemoryDeleted {
   usual_spots: boolean;
 }
 
-export interface AuthUser {
-  name: string;
-  email: string;
-}
-
-export interface LoginResult {
-  ok: boolean;
-  token: string;
-  user: AuthUser;
-  resident_id: string;
-}

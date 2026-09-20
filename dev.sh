@@ -135,8 +135,10 @@ echo
 echo "Point a real phone (Expo Go) at this backend instead of localhost:"
 echo "  cd frontend && EXPO_PUBLIC_USE_MOCKS=false \\"
 echo "    EXPO_PUBLIC_API_BASE=http://$LAN_IP:8000/v1 \\"
-echo "    EXPO_PUBLIC_API_KEY=dev-key-change-me \\"
 echo "    npx expo start --lan"
+echo
+echo "NO AUTH: this API has no login, no key and no token. Anyone on the LAN who"
+echo "can reach :8000 can read and write everything. Demo build; see app/main.py."
 echo
 
 if [ -n "$API_PID" ]; then

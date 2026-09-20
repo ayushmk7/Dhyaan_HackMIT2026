@@ -9,25 +9,6 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from app.events import emit
-from tests.conftest import APP_HEADERS
-
-# ---------------------------------------------------------------------------
-# 1. Auth
-# ---------------------------------------------------------------------------
-
-_READ_ROUTES = [
-    ("GET", "/v1/residents/res_eleanor/baselines"),
-    ("GET", "/v1/residents/res_eleanor/summaries"),
-    ("GET", "/v1/residents/res_eleanor/location/history?date=2026-01-01"),
-    ("GET", "/v1/events/evt_x"),
-]
-
-
-async def test_every_read_route_401s_without_key(client, resident):
-    for method, path in _READ_ROUTES:
-        r = await client.request(method, path)
-        assert r.status_code == 401, f"{method} {path} -> {r.status_code}, expected 401"
-
 
 # ---------------------------------------------------------------------------
 # 2. GET /residents/{id}/baselines
@@ -47,7 +28,7 @@ async def test_baselines_shape_units_and_cold_start_flagged(client, resident, db
         },
     ])
 
-    r = await client.get(f"/v1/residents/{resident}/baselines", headers=APP_HEADERS)
+    r = await client.get(f"/v1/residents/{resident}/baselines")
     assert r.status_code == 200, r.text
     rows = {row["feature"]: row for row in r.json()}
 
@@ -65,7 +46,7 @@ async def test_baselines_shape_units_and_cold_start_flagged(client, resident, db
 
 
 async def test_baselines_unknown_resident_404s(client, resident):
-    r = await client.get("/v1/residents/res_ghost/baselines", headers=APP_HEADERS)
+    r = await client.get("/v1/residents/res_ghost/baselines")
     assert r.status_code == 404
 
 
@@ -86,7 +67,7 @@ async def test_summaries_pairs_narrative_with_deviations(client, resident, db):
         payload={"feature": "wake_time_min", "severity": "warn", "date_local": date_local, "value": 500},
     )
 
-    r = await client.get(f"/v1/residents/{resident}/summaries?days=7", headers=APP_HEADERS)
+    r = await client.get(f"/v1/residents/{resident}/summaries?days=7")
     assert r.status_code == 200, r.text
     body = r.json()
     assert len(body) == 1
@@ -101,7 +82,7 @@ async def test_summaries_pairs_narrative_with_deviations(client, resident, db):
 
 
 async def test_summaries_unknown_resident_404s(client, resident):
-    r = await client.get("/v1/residents/res_ghost/summaries", headers=APP_HEADERS)
+    r = await client.get("/v1/residents/res_ghost/summaries")
     assert r.status_code == 404
 
 
@@ -147,7 +128,7 @@ async def test_location_history_segments_and_open_final_runs_to_now(client, resi
 
     date_local = t_enter_kitchen.astimezone(tz).date().isoformat()
     r = await client.get(
-        f"/v1/residents/{resident}/location/history?date={date_local}", headers=APP_HEADERS,
+        f"/v1/residents/{resident}/location/history?date={date_local}",
     )
     assert r.status_code == 200, r.text
     segments = r.json()
@@ -166,14 +147,14 @@ async def test_location_history_segments_and_open_final_runs_to_now(client, resi
 
 async def test_location_history_bad_date_422s(client, resident):
     r = await client.get(
-        f"/v1/residents/{resident}/location/history?date=not-a-date", headers=APP_HEADERS,
+        f"/v1/residents/{resident}/location/history?date=not-a-date",
     )
     assert r.status_code == 422
 
 
 async def test_location_history_unknown_resident_404s(client, resident):
     r = await client.get(
-        "/v1/residents/res_ghost/location/history?date=2026-01-01", headers=APP_HEADERS,
+        "/v1/residents/res_ghost/location/history?date=2026-01-01",
     )
     assert r.status_code == 404
 
@@ -187,7 +168,7 @@ async def test_get_event_by_id(client, resident):
         resident_id=resident, source="manual", type="staff_note",
         embedding_text="Checked in, all fine.", payload={"author": "Nurse Joy", "role": "staff"},
     )
-    r = await client.get(f"/v1/events/{doc['_id']}", headers=APP_HEADERS)
+    r = await client.get(f"/v1/events/{doc['_id']}")
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["id"] == doc["_id"]
@@ -196,5 +177,5 @@ async def test_get_event_by_id(client, resident):
 
 
 async def test_get_event_unknown_404s(client, resident):
-    r = await client.get("/v1/events/evt_does_not_exist", headers=APP_HEADERS)
+    r = await client.get("/v1/events/evt_does_not_exist")
     assert r.status_code == 404

@@ -42,7 +42,7 @@ sees a room), `TECHNICAL_PRD.md` §6 (cascade) and §12 (privacy), `frontend/DES
 | Meals, sleep, medication, gait | Meals: good (plate + hand-to-mouth is visually unambiguous). Sleep: the camera is not in the bedroom, so sleep answers come from the existing `bed_exit`/`night_activity` lanes. Medication and gait: cut — too noisy from a webcam, and gait is staff-only per §12. | Meals live. Sleep via existing data. No medication or gait events from this lane. |
 | Every frame through the VLM | Waste, and 3–4 s each. | Motion gate → person gate → keyframe batch; the VLM runs at most ~1×/minute while she is in view, and never when she is not. |
 
-**The demo therefore shows:** a faux login; the family home screen with nothing yet; a presenter
+**The demo therefore shows:** the family home screen with nothing yet; a presenter
 sitting at a table with a plate, the phone updating to *having something to eat* about 30 seconds
 later with no video anywhere; the presenter leaving, the phone flipping to *out of view*; three
 chat questions (one contrast answer, one useful visitor answer, one refusal); and Settings →
@@ -57,7 +57,7 @@ chat questions (one contrast answer, one useful visitor answer, one refusal); an
  ┌───────────────────────────────────────────────────────────────────────────────┐
  │  vision worker (separate process, the ONLY process that ever holds pixels)    │
  │  webcam/Continuity Camera/phone ─► capture ─► privacy mask ─► motion (MOG2)   │
- │      ─► person (YOLO11n, MPS) ─► keyframe batch (≤3 frames) ─► Ollama VLM     │
+ │      ─► scene (YOLO-World, MPS) ─► keyframe batch (≤3 frames) ─► Ollama VLM   │
  │                                        loopback only          qwen3-vl:8b      │
  │  frames: RAM ring, ≤3 JPEGs, freed after each POST. No disk. No other socket. │
  └───────────────┬──────────────────────────────────▲────────────────────────────┘
@@ -71,9 +71,9 @@ chat questions (one contrast answer, one useful visitor answer, one refusal); an
  │  rag.py: pool = events ∪ profile_facts, quota by kind, surveillance guard      │
  │  llm.py (Claude, None on failure) ─► rag falls back to Ollama text ─► template │
  └───────────────┬────────────────────────────────────────────────────────────────┘
-                 │ REST + WS /v1/live  (presence.update, event.new)   LAN, Bearer key
+                 │ REST + WS /v1/live  (presence.update, event.new)   LAN, no auth   
  ┌───────────────▼────────────────────────────────────────────────────────────────┐
- │  Expo app (adult child's phone): login ─► onboarding ─► Today / Her day / Ask   │
+ │  Expo app (adult child's phone): onboarding ─► Today / Her day / Ask            │
  │  / Settings. Never receives a zone, a frame, or evidence text.                  │
  └────────────────────────────────────────────────────────────────────────────────┘
        MongoDB: events, residents, profile_facts, cameras, observations (+TTL)
@@ -140,13 +140,38 @@ hub, per `PRODUCT_SPEC.md` §8.3.
 | 0 | Sample | every 10th frame → 3 fps | — | all |
 | 1 | Privacy mask | every sampled frame | <1 ms | all |
 | 2 | Motion | `cv2.createBackgroundSubtractorMOG2(history=300, varThreshold=25)` on 320×180 grey; foreground ratio > 0.8 % | ~2 ms | ~10 % in a lived-in room |
-| 3 | Person | Ultralytics `YOLO("yolo11n.pt")`, `classes=[0]`, `imgsz=640`, `conf=0.4`, `device="mps"`; foot-point + bbox aspect | 15–40 ms (community M-series numbers, unverified; measure in hour 1) | ~70 % of motion frames |
+| 3 | Scene | Ultralytics YOLO-World `yolov8s-worldv2.pt`, `set_classes(gate.PROMPTS)` — 20 free-text prompts in four buckets (person / food / dishes / seating, plus unreported background nouns), `imgsz=640`, `device="mps"`, floors `world_person_conf=0.15` and `world_conf=0.20`; pose landmarks + bbox aspect for posture | **~7 ms median** at 448×252, measured; ~2–4 s once at start for the CLIP text embeddings | ~70 % of motion frames |
 | 4 | Keyframe | rules in §3.4 | <1 ms | ≤1 batch/min steady state |
 | 5 | VLM | `qwen3-vl:8b`, 3 frames, JSON schema | 2–5 s | — |
 
 Stage 3 is the one dependency with weight: `ultralytics` pulls torch (~1 GB of wheels; ~2 min with
-uv on this machine; `yolo11n.pt` is a 5 MB auto-download on first run — do it in hour 1 while
-online). **Why not OpenCV's built-in HOG people detector (zero deps)?** It is trained on upright
+uv on this machine). The weights download by name on first start — `yolov8s-worldv2.pt` (~25 MB)
+plus CLIP ViT-B/32 (~340 MB) for the text embeddings — so do the first start while online. Nothing
+is committed.
+
+**Why YOLO-World and not a COCO YOLO?** COCO's entire food vocabulary is ten words. A crisp packet,
+a mug of soup, a bowl of cereal or a slice of toast has no output neuron, so no threshold and no
+bigger COCO model can ever report them; `testcam/FOOD.md` measured the COCO detector reporting
+food once on five photographs of real food, and that once was `pizza` for a protein bar.
+YOLO-World takes its class list as free text at runtime and named the cereal and the soup, at
+~7 ms a frame at the lane's 448×252 (the COCO baseline was ~6 ms). It was also the stronger
+person detector on a downscaled crowd shot (8 found where `yolo11n` found 0).
+
+**The catch is the vocabulary.** YOLO-World's confidence is a cosine against the prompt list, so
+every score is relative to the list: the same crisp packet scores 0.75 for `["bag"]`, 0.11 with 22
+food words, 0.09 with a 62-word household list. The list in `gate.VOCAB` is therefore short (20
+plain nouns) and the floors in `TUNING` are calibrated to *that* list — 0.20 for objects (0.07
+above the highest non-person score in a live room with no food) and 0.15 for people (the bench's
+number; not one false person on five people-free fixtures at a 0.01 floor). Changing the list
+re-opens the calibration; the numbers are in the comment above the list.
+
+**Degradation, all without a crash:** no `ultralytics`/torch → motion-only (the cut path below);
+weights that will not download → motion-only; CLIP missing or offline → `yolo11s.pt` if it is
+already on disk (people and ten foods), otherwise motion-only; MPS failing the warm-up probe → CPU;
+a detector dying mid-run → motion-only from that frame. `YOLO_MODEL=yolo11s.pt` puts the COCO
+detector back in one line, and stage 3b (`openvocab.py`) then adds food on keyframes as before.
+
+**Why not OpenCV's built-in HOG people detector (zero deps)?** It is trained on upright
 pedestrians and reliably misses a seated older woman in an armchair, which is most of her day.
 **Cut path (first thing to cut, §9):** drop stage 3, let motion alone trigger keyframes and let the
 VLM's `person_count: 0` mean absent. Costs VLM calls on curtains and cats; loses the posture rule.
@@ -266,7 +291,7 @@ the schema above, `temperature 0`):
 | 3 frames, JSON out | **6.0–6.5 s warm**, i.e. a batch is nearly free versus one frame — prefill of 2442 image+prompt tokens took 1.9 s uncached, 0.02 s cached | measured |
 | Budget per fresh 3-frame batch on real frames | **6–9 s** (warm figure + uncached prefill) | measured + margin |
 | Motion gate | ~2 ms/frame at 320×180 | MOG2 is per-pixel; unverified until hour 1 |
-| YOLO11n on MPS | 15–40 ms/frame | community M-series reports, unverified; measure hour 1 |
+| YOLO-World (`yolov8s-worldv2`) on MPS | **~7 ms/frame** median at 448×252, p90 ~8 ms; first `set_classes()` 2–4 s at start | measured, `testcam/FOOD.md` and the live lane |
 | Steady-state VLM duty while she is in view | 1 call/60 s ≈ 6–9 s busy → **~10–15 % of the GPU** | rules in §3.4 |
 | Time from "takes a bite" to sentence on the phone, `--demo` + `DEMO_FAST` | **~25–40 s** (2 keyframe batches 15 s apart + one 6–9 s inference + WS push) | arithmetic on the above |
 | Memory | **10 GB** VLM resident at Ollama's default 32k context (`ollama ps`); set `num_ctx: 8192` in `options` to drop that to ~7 GB. +1 GB YOLO/torch, +0.4 GB embedder | measured |
@@ -538,16 +563,16 @@ observations), visitors (count/duration), *"is she OK"* (presence + open alerts)
 
 ### 6.1 Endpoints — frozen contract (`./API_CONTRACT_V3.md` is this table, verbatim)
 
-Device routes take `X-Band-Key` (the existing shared device secret; ceiling: one key for band and
-camera, upgrade: per-device keys). App routes take `Authorization: Bearer <API_KEY>`. Ids come back
-as `id`, timestamps ISO-8601.
+**No auth.** The `X-Band-Key` and `Authorization: Bearer <API_KEY>` checks, and `POST /auth/login`,
+were removed after this plan was written: the API has no authentication or authorization (demo build,
+one LAN; see the notice at the top of `backend/app/main.py`). The `Auth` column names the caller lane
+and nothing checks it. Ids come back as `id`, timestamps ISO-8601.
 
 | Method | Path | Auth | Body | Returns |
 |---|---|---|---|---|
 | POST | `/ingest/camera` | device | `{camera_id, resident_id, ts, span_s, n_frames, person_count, activity, posture, movement, spot, assistive_device, plate_or_cup_present, hand_to_mouth_observed, confidence, evidence, model, latency_ms, simulated}` (all enums as in §3.5 plus `"absent"`) | `201 {observation_id, presence, event_ids: []}`; `403` when consent off/paused; `404` unknown camera; `422` bad enum |
 | POST | `/ingest/camera/heartbeat` | device | `{camera_id, state: "watching"\|"paused"\|"offline"\|"no_consent", paused_until?, fps, dropped_batches}` | `204` |
 | GET | `/camera/config?camera_id=` | device | — | `{resident_id, name, consent_camera, paused_until, zone, zone_label, zone_hint, appearance, spots_line, demo_fast}` |
-| POST | `/auth/login` | none | `{email, password}` | `{ok, token, user: {name, email}, resident_id}` — faux; validates email shape and non-empty password, returns the static key; `401` otherwise |
 | GET | `/residents/{id}/presence` | app | — | `{status: "in_view"\|"out_of_view"\|"paused"\|"camera_off"\|"no_camera", activity, spot_is_usual, since, last_observation_at, sentence, camera: {online, consent, paused_until, paused_by}}` — **no zone, no evidence** |
 | GET | `/residents/{id}/activity?date=YYYY-MM-DD` | app | — | `{date, tiles: {meals, walks, out_of_house, night_ups, in_view_minutes}, items: [{id, ts, ts_end, type, sentence, kind: "observed"\|"pattern", confidence}]}` — family filter applied, `zone` stripped |
 | GET | `/residents/{id}/profile` | app | — | `{name, appearance, consent: {falls, camera, memory, signed_by, relationship, signed_at}, camera: {camera_id, zone, zone_hint, state, paused_until}, usual_spots: [string], facts: [Fact]}` |
@@ -630,8 +655,8 @@ Screens, in the order a new user meets them. Every screen's empty state is state
 
 | Route | What it shows | Empty / no-data state |
 |---|---|---|
-| `app/login.tsx` **new** | Wordmark in Fraunces 900, one line *"Someone is looking out for her."*, email + password, *Sign in*, a quiet *Use the demo account* link that prefills `priya@dhyaan.demo` / any password. Calls `api.login()`; 600 ms spinner; inline errors (bad email shape, empty password, server unreachable). Session holds `user` in memory (ponytail: no persistence — reload = sign in again, which reads as real). | — |
-| `app/index.tsx` **edit** | Routing: no user → `/login`; user and not onboarded → `/onboard/welcome`; else `/(family)`. Staff route unchanged. | — |
+| `app/login.tsx` **deleted since: there is no login** (was:) | Wordmark in Fraunces 900, one line *"Someone is looking out for her."*, email + password, *Sign in*, a quiet *Use the demo account* link that prefills `priya@dhyaan.demo` / any password. Calls `api.login()`; 600 ms spinner; inline errors (bad email shape, empty password, server unreachable). Session holds `user` in memory (ponytail: no persistence — reload = sign in again, which reads as real). | — |
+| `app/index.tsx` **edit** | Routing: not onboarded → `/onboard/welcome`; else `/(family)`. No sign-in gate. Staff route unchanged. | — |
 | `onboard/welcome.tsx` **edit** | What Dhyaan is, the disclaimer card (unchanged wording), *Set up Dhyaan*. Bottom, small, monospace-flavoured caption: **`Skip setup (dev)`** — sets `onboarded: true`, seeds the session with Eleanor's defaults, writes nothing to the server. Hidden unless `__DEV__` or a 5-tap on the wordmark. | — |
 | `onboard/consent.tsx` **edit** | The §5.4 copy: her name, three grant cards each with its own Yes/No, signer name + relationship. *Continue* disabled until name, signer, relationship are filled and at least one grant is Yes. Writes `PUT /profile {consent}` (or session-only in mock). | — |
 | `onboard/about.tsx` **new** (replaces `baseline.tsx`, which is deleted) | The nine questions of §4.2 as chips + a short free-text line each, one question per card, next/back. Appearance question has the note *"a few words, never a photo"*. *Save* → `POST /profile/facts` + `PUT /profile {appearance}`. | Skippable per question; unanswered = no fact. |
@@ -753,7 +778,7 @@ validation on zone/appearance/facts/confirm.
 
 | Beat | On screen | Said |
 |---|---|---|
-| 1 · 0:00–0:20 | Phone: login. Presenter signs in as `priya@dhyaan.demo`. Home: **"Nothing yet today."** *The camera came on at 3:38 pm.* Four empty tiles. | *"This is Priya's app. Her mother Eleanor lives alone. The only thing running is one camera in her living room and this laptop. Nothing has happened yet."* |
+| 1 · 0:00–0:20 | Phone: opens straight to Home, there is no login. Home: **"Nothing yet today."** *The camera came on at 3:38 pm.* Four empty tiles. | *"This is Priya's app. Her mother Eleanor lives alone. The only thing running is one camera in her living room and this laptop. Nothing has happened yet."* |
 | 2 · 0:20–0:45 | **Projector switches to the hub preview**: the presenter walks into frame; motion mask flickers, the person box appears, status line reads `motion → person → keyframe 1/3`, then `VLM 3.1 s`. | *"Every frame is dropped unless something moved. If something moved, a 5 MB detector asks 'is that a person'. Only then do three frames, twenty seconds apart, go to a vision model on this laptop — over loopback, and nowhere else. This screen is the last place a picture exists."* |
 | 3 · 0:45–1:15 | **Projector switches to the phone.** Presenter sits, picks up the fork, eats. Preview stays on the laptop only. The phone hero cross-fades: **"Eleanor is having something to eat at the table."** *Dhyaan saw · 3:41 pm.* The *Ate* tile becomes *1 meal so far*. | **The ten seconds that land it — say nothing until the sentence appears, then:** *"No video left that laptop. Her daughter got a sentence."* |
 | 4 · 1:15–1:35 | Presenter stands, walks out of frame. ~15 s later: **"Eleanor has been out of view since 3:43 pm."** *Around her usual walk time.* | *"It doesn't say she went for a walk — it can't see the door. It says she's out of view, and that Priya told us she usually walks about now."* |
@@ -824,8 +849,8 @@ in `frontend/src/lib/types.ts` and the real client is written in `lib/http.ts`.
 
 What the app needs from B, in the order it breaks without them:
 
-1. `POST /auth/login` — nothing else gates the app. Until it exists,
-   `USE_MOCKS=false` cannot get past the sign-in screen.
+1. ~~`POST /auth/login`~~ — gone. Nothing gates the app; there is no auth
+   (see `backend/app/main.py`).
 2. `GET /residents/{id}/presence` and `GET /residents/{id}/activity?date=` — both
    degrade to an honest empty state on a 404 today (Today shows "Nothing yet
    today · No camera is set up for her yet"), so the app is not blocked, just empty.

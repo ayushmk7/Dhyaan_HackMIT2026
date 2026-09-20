@@ -1,9 +1,12 @@
 """The camera lane's whole HTTP surface. API_CONTRACT_V3.md is frozen; this
 file implements exactly that.
 
-Three routers because three trust levels: the worker on the hub (`X-Band-Key`),
-the family app (`Bearer API_KEY`), and the login, which is the one route a
-person reaches before they hold a credential.
+Two routers, named for who calls them: `device` is the worker on the hub,
+`family` is the app. Neither checks anything. The `X-Band-Key` and
+`Bearer API_KEY` guards that used to sit on them, and the login route that
+handed the key out, are gone: this is a demo build with no auth at all (see
+the notice at the top of app/main.py). The split is kept only so the OpenAPI
+page and the tests still read by lane.
 
 The two things that must never be relaxed here:
 
@@ -20,18 +23,15 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field, field_validator
 
-from .. import auth, memory, presence, rag
-from ..config import API_KEY
+from .. import memory, presence, rag
 from ..db import db
-from ..deps import require_app_key, require_band_key
 from ..events import emit
 
-device = APIRouter(prefix="/v1", tags=["camera"], dependencies=[Depends(require_band_key)])
-family = APIRouter(prefix="/v1", tags=["camera"], dependencies=[Depends(require_app_key)])
-public = APIRouter(prefix="/v1", tags=["camera"])
+device = APIRouter(prefix="/v1", tags=["camera"])
+family = APIRouter(prefix="/v1", tags=["camera"])
 
 ACTIVITIES = (
     "eating", "drinking", "sitting", "reading", "watching_tv", "using_phone",
@@ -269,51 +269,6 @@ async def camera_config(camera_id: str = Query(..., min_length=1)):
 
 
 # ---------------------------------------------------------------------------
-# Login
-# ---------------------------------------------------------------------------
-
-class LoginIn(BaseModel):
-    # Still called `email` on the wire so no client changes shape. It is a
-    # username now: the seeded demo account is `user`, which is not an email.
-    email: str
-    password: str
-
-
-# One sentence for every failure. Saying "no such user" would confirm which
-# usernames exist; saying "wrong password" would confirm the username.
-_BAD_LOGIN = "check your username and password"
-
-
-@public.post("/auth/login")
-async def login(body: LoginIn):
-    """A real password check, then the shared key.
-
-    The username is looked up in `users` (trimmed, case-insensitive) and the
-    password is verified against its scrypt hash in constant time. That is real
-    authentication. What follows is not a session: the token handed back is the
-    one static `API_KEY` every family route accepts, so every person who signs
-    in holds the same credential afterwards, and nothing here can be revoked
-    per person. There is no longer an email-shaped bypass: with an account on
-    file, "any email and any password gets in" would make the check a lie.
-
-    # ponytail: ceiling is the shared key. Upgrade path, in order: mint a random
-    # session token per login and store it on the user doc; have
-    # `require_app_key` accept either that or API_KEY; then take `resident_id`
-    # from the session instead of trusting the client's URL. See app/auth.py.
-    """
-    if not (body.email or "").strip() or not (body.password or "").strip():
-        raise HTTPException(401, _BAD_LOGIN)
-    user = await auth.authenticate(body.email, body.password)
-    if user is None:
-        raise HTTPException(401, _BAD_LOGIN)
-    return {"ok": True, "token": API_KEY,
-            # `email` keeps the field name the app already stores; the value is
-            # the username, which is the only identifier this account has.
-            "user": {"name": user["display_name"], "email": user["username"]},
-            "resident_id": user["resident_id"]}
-
-
-# ---------------------------------------------------------------------------
 # Family routes
 # ---------------------------------------------------------------------------
 
@@ -531,7 +486,7 @@ HEARTBEAT_STALE_S = 75
 async def list_cameras(resident_id: str | None = Query(None)):
     """ponytail: `resident_id` is optional because this demo has one home. Left
     off it lists every camera, which is what the debug panel wants. Upgrade: a
-    required scope the day a login maps to more than one resident."""
+    required scope the day one caller is allowed to see more than one resident."""
     q = {"resident_id": resident_id} if resident_id else {}
     cameras = await db().cameras.find(q).to_list(length=50)
     residents = {r["_id"]: r for r in await db().residents.find(

@@ -3,17 +3,18 @@
 This is `VLM_PLAN.md` §6.1, verbatim, plus the wire details three agents need in
 common. Where this file and `VLM_PLAN.md` §6.1 disagree, §6.1 wins.
 
-Device routes take `X-Band-Key` (the existing shared device secret; ceiling: one
-key for band and camera, upgrade: per-device keys). App routes take
-`Authorization: Bearer <API_KEY>`. Everything is under the `/v1` prefix. Ids come
-back as `id`, timestamps ISO-8601.
+**No auth.** The `X-Band-Key` and `Authorization: Bearer <API_KEY>` checks that
+used to sit on these routes, and `POST /auth/login`, have been removed: the API
+has no authentication or authorization at all (demo build for one LAN; the
+notice at the top of `backend/app/main.py` says so). The `Auth` column below
+names the caller lane, device or app, and nothing checks it. Everything is
+under the `/v1` prefix. Ids come back as `id`, timestamps ISO-8601.
 
 | Method | Path | Auth | Body | Returns |
 |---|---|---|---|---|
 | POST | `/ingest/camera` | device | `{camera_id, resident_id, ts, span_s, n_frames, person_count, activity, posture, movement, spot, assistive_device, plate_or_cup_present, hand_to_mouth_observed, confidence, evidence, model, latency_ms, simulated}` (all enums as in §3.5 plus `"absent"`) | `201 {observation_id, presence, event_ids: []}`; `403` when consent off/paused; `404` unknown camera; `422` bad enum |
 | POST | `/ingest/camera/heartbeat` | device | `{camera_id, state: "watching"\|"paused"\|"offline"\|"no_consent", paused_until?, fps, dropped_batches}` | `204` |
 | GET | `/camera/config?camera_id=` | device | — | `{resident_id, name, consent_camera, paused_until, zone, zone_label, zone_hint, appearance, spots_line, demo_fast}` |
-| POST | `/auth/login` | none | `{email, password}` | `{ok, token, user: {name, email}, resident_id}` — faux; validates email shape and non-empty password, returns the static key; `401` otherwise |
 | GET | `/residents/{id}/presence` | app | — | `{status: "in_view"\|"out_of_view"\|"paused"\|"camera_off"\|"no_camera", activity, spot_is_usual, since, last_observation_at, sentence, camera: {online, consent, paused_until, paused_by}}` — **no zone, no evidence** |
 | GET | `/residents/{id}/activity?date=YYYY-MM-DD` | app | — | `{date, tiles: {meals, walks, out_of_house, night_ups, in_view_minutes}, items: [{id, ts, ts_end, type, sentence, kind: "observed"\|"pattern", confidence}]}` — family filter applied, `zone` stripped |
 | GET | `/residents/{id}/profile` | app | — | `{name, appearance, consent: {falls, camera, memory, signed_by, relationship, signed_at}, camera: {camera_id, zone, zone_hint, state, paused_until}, usual_spots: [string], facts: [Fact]}` |
@@ -56,9 +57,9 @@ camera state       watching paused offline no_consent
 worker's contract, exactly as the band fixtures are. They post as-is:
 
 ```bash
-curl -s -X POST -H "X-Band-Key: band-dev-key" -H "Content-Type: application/json" \
+curl -s -X POST -H "Content-Type: application/json" \
   -d @fixtures/camera_observation.json localhost:8000/v1/ingest/camera
-curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "X-Band-Key: band-dev-key" \
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   -H "Content-Type: application/json" \
   -d @fixtures/camera_heartbeat.json localhost:8000/v1/ingest/camera/heartbeat
 ```
@@ -98,8 +99,8 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "X-Band-Key: band-dev-key" \
 # V3.1 — the live monitor, the camera list, and one alert shape
 
 Added after the first end-to-end run. Nothing above changed; everything below is
-new surface. Same auth rules: device routes take `X-Band-Key`, app routes take
-`Authorization: Bearer <API_KEY>`, everything is under `/v1`.
+new surface. Same rules as above: no auth on anything, the `Auth` column is
+the caller lane only, everything is under `/v1`.
 
 ## The monitor tick
 

@@ -118,7 +118,7 @@ export function nextAfterConsent(grants: Grants): string {
 export default function Consent() {
   const session = useSession();
   const [resident, setResident] = useState(session.residentName);
-  const [signer, setSigner] = useState(session.consentGivenBy || session.user?.name || '');
+  const [signer, setSigner] = useState(session.consentGivenBy || '');
   const [relationship, setRelationship] = useState(session.consentRelationship);
   const [grants, setGrants] = useState<Grants>(session.grants);
 

@@ -1,3 +1,18 @@
+"""THIS API HAS NO AUTHENTICATION AND NO AUTHORIZATION.
+
+There is no login, no API key, no band key, no token on the websocket. Any
+process that can reach the port can read every resident's history, write
+observations as any camera or band, pause and resume cameras, open and resolve
+alerts, and delete a resident's memory (the DELETE still asks for her name in
+the body, which is a confirmation, not a credential). CORS is wide open too.
+
+This is a demo build for one laptop on one LAN. It must not be exposed to the
+internet, and it must not be mistaken for a service that protects anyone's
+data. The consent gates (camera consent, pause, the family response filter)
+are still enforced: they protect the resident from the system, not the server
+from the network. Put real auth back before this leaves the LAN.
+"""
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -41,7 +56,6 @@ app.include_router(chat.router)
 app.include_router(live.router)
 app.include_router(camera.device)
 app.include_router(camera.family)
-app.include_router(camera.public)
 
 # Live voice: mount the Twilio/Deepgram bridge and swap the scripted stub for
 # real calls only when credentials exist, so `./dev.sh` stays zero-config.

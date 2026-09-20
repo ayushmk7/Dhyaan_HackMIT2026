@@ -2,12 +2,11 @@
 // backend or the real client (http.ts) — flipping it changes zero call sites.
 import { draftOpeners, planFromThread, polishLetter, type FamilyPlan } from './ai';
 import { USE_MOCKS } from './config';
-import { auth } from './copy/auth';
 import { httpApi } from './http';
 import { mockCamera } from './mock/camera';
 import { dhyaan } from './mock/dhyaan';
 import type {
-  ActivityDay, Alert, ChatMessage, Fact, LoginResult, MemoryDeleted, MemoryScope,
+  ActivityDay, Alert, ChatMessage, Fact, MemoryDeleted, MemoryScope,
   Presence, Profile, ProfilePatch, SimulateKind, VoiceScript,
 } from './types';
 
@@ -138,26 +137,6 @@ const mockApi = {
   async saveContacts(_contacts: unknown) { await wait(400); },
 
   // ---- camera lane (VLM_PLAN §6.1) ------------------------------------------
-
-  // Mirrors the real route: one account on file (the seeded `user` /
-  // `password`), the username trimmed and case-insensitive, the password
-  // exact, and one sentence for every failure so the mock does not say more
-  // than the server would. `user.email` carries the username, as it does on
-  // the wire.
-  async login(username: string, password: string): Promise<LoginResult> {
-    await wait(600);
-    const trimmed = username.trim();
-    if (!trimmed) throw new Error(auth.errors.enterUsername);
-    if (!password) throw new Error(auth.errors.enterPassword);
-    const ok = trimmed.toLowerCase() === auth.demo.username && password === auth.demo.password;
-    if (!ok) throw new Error(auth.errors.badCredentials);
-    return {
-      ok: true,
-      token: 'demo',
-      user: { name: 'Priya', email: auth.demo.username },
-      resident_id: 'res_eleanor',
-    };
-  },
 
   async getPresence(_residentId: string): Promise<Presence> {
     await wait(120);

@@ -178,7 +178,7 @@ export default function Triage() {
   });
   const liveStates = useLive((s) => s.states);
   const liveLocations = useLive((s) => s.locations);
-  const { setRole, finishOnboarding, residentId, user } = useSession();
+  const { setRole, finishOnboarding, residentId } = useSession();
   const [showOk, setShowOk] = useState(false);
   const [showDemo, setShowDemo] = useState(false);
   const [ackingAlertId, setAckingAlertId] = useState<string | null>(null);
@@ -216,7 +216,7 @@ export default function Triage() {
   const ack = async (alert: Alert) => {
     setAckingAlertId(alert.id);
     try {
-      await api.ack(alert.id, user?.name ?? copy.ackActorFallback);
+      await api.ack(alert.id, copy.ackActorFallback);
       await qc.invalidateQueries();
     } finally {
       setAckingAlertId(null);

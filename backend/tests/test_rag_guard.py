@@ -10,7 +10,6 @@ import pytest_asyncio
 
 from app import rag
 from app.events import emit
-from tests.conftest import APP_HEADERS
 
 
 @pytest.fixture
@@ -221,14 +220,14 @@ def test_time_window_parsing():
 # ---------------------------------------------------------------------------
 
 async def test_chat_route_returns_refused_and_kinds(client, history):
-    r = await client.post("/v1/residents/res_eleanor/chat", headers=APP_HEADERS,
+    r = await client.post("/v1/residents/res_eleanor/chat",
                           json={"question": "Show me the camera."})
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["refused"] is True and body["refusal_kind"] == "surveillance"
     assert body["citations"] == []
 
-    r = await client.post("/v1/residents/res_eleanor/chat", headers=APP_HEADERS,
+    r = await client.post("/v1/residents/res_eleanor/chat",
                           json={"question": "has she eaten breakfast today"})
     body = r.json()
     assert body["refused"] is False

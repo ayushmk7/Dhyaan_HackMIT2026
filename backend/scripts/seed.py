@@ -18,7 +18,6 @@ from zoneinfo import ZoneInfo
 # poisons wake_time_min and makes the learner emit nonsense.
 TZ = ZoneInfo("America/New_York")
 
-from app import auth
 from app import db as dbmod
 # Import for its side effect: app.rag registers the embedding hook via
 # events.subscribe() at import time. Import it late (or not at all) and every
@@ -83,20 +82,6 @@ CONTACTS = [
 BAND = {"_id": "band_a3f2", "resident_id": "res_eleanor", "battery_pct": 88,
         "thresholds_rev": 1, "firmware": "0.1.0"}
 
-# The one family account the app signs in with: `user` / `password`, Priya's
-# seat at Eleanor's side. The plaintext lives only here and in the sign-in
-# screen's demo shortcut; the stored document holds a salt and an scrypt hash.
-USER = {"username": "user", "password": "password", "display_name": "Priya",
-        "resident_id": "res_eleanor", "role": "family"}
-
-
-async def seed_user(d, **overrides) -> dict:
-    """Upsert the demo account by its fixed `_id`. Re-running replaces the one
-    document (fresh salt, same password) and never creates a second."""
-    doc = auth.user_doc(**{**USER, **overrides})
-    await d.users.replace_one({"_id": doc["_id"]}, doc, upsert=True)
-    return doc
-
 ZONES = ["bedroom", "hallway", "kitchen", "living_room", "bathroom"]
 
 
@@ -152,7 +137,7 @@ async def main(wipe: bool, days: int):
     if wipe:
         for c in ("events", "alerts", "residents", "contacts", "bands",
                   "baselines", "baseline_observations", "fingerprints", "calls",
-                  "profile_facts", "cameras", "observations", "users"):
+                  "profile_facts", "cameras", "observations"):
             await d[c].delete_many({})
 
     await d.residents.replace_one({"_id": RESIDENT["_id"]}, RESIDENT, upsert=True)
@@ -160,7 +145,6 @@ async def main(wipe: bool, days: int):
         await d.contacts.replace_one({"_id": c["_id"]}, c, upsert=True)
     await d.bands.replace_one({"_id": BAND["_id"]}, BAND, upsert=True)
     await d.cameras.replace_one({"_id": CAMERA["_id"]}, CAMERA, upsert=True)
-    await seed_user(d)
 
     # Facts are embedded synchronously (there are twelve of them, once), so the
     # chat has `told` content to retrieve the moment `make seed` finishes.
@@ -203,7 +187,6 @@ async def main(wipe: bool, days: int):
     print(f"seeded {n} events over {days + 1} days for Eleanor")
     print(f"  {nb} baselines learned, {nsum} daily narratives, {ndev} deviations flagged")
     print(f"  {nf} onboarding facts, camera {CAMERA['_id']} in the {CAMERA['zone']}")
-    print(f"  sign in as {USER['username']!r} / {USER['password']!r}")
     print("today is deliberately anomalous: no walk, no lunch — the learner should flag it")
     await dbmod.close()
 

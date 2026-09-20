@@ -12,7 +12,6 @@ import contextlib
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ..config import API_KEY
 from ..events import subscribe
 
 router = APIRouter(prefix="/v1", tags=["app"])
@@ -86,15 +85,9 @@ async def broadcast_alert(alert: dict) -> None:
 
 
 @router.websocket("/live")
-async def live_ws(websocket: WebSocket, token: str = "", resident_id: str | None = None):
-    # ponytail: auth via query param, not a header — a browser/RN websocket
-    # can't set one on the upgrade request. This lands in access logs; accepted
-    # for the demo per the task brief. Upgrade to a short-lived signed ticket
-    # minted over a prior HTTPS call before this is internet-facing.
-    if token != API_KEY:
-        await websocket.close(code=1008)
-        return
-
+async def live_ws(websocket: WebSocket, resident_id: str | None = None):
+    # No token. Anyone who can open the socket gets every event for every
+    # resident (or one, if they pass resident_id). Demo build; see app/main.py.
     await websocket.accept()
     _connections[websocket] = {"resident_id": resident_id, "lock": asyncio.Lock()}
     try:

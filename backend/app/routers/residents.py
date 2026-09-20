@@ -5,16 +5,17 @@ per screen — see TECHNICAL_PRD §10.1 (screens) and §10.5 (API contract).
 # a few different paths/names (`/events` not `/timeline`, `/summary` not `/day`,
 # no `timeout`/`confirmed` in its enums, alerts identified only by a websocket
 # under `/ws` not `/live`). This file follows the assignment brief given for
-# this task instead, since that's what `app/deps.py` and `app/events.py` (the
-# code that actually exists) were built against. Noted here so nobody "fixes"
-# this file back to a contract the rest of the backend doesn't implement.
+# this task instead, since that's what `app/events.py` (the code that actually
+# exists) was built against. Noted here so nobody "fixes" this file back to a
+# contract the rest of the backend doesn't implement. There is no auth on any
+# of these routes at all now — see the notice at the top of app/main.py.
 """
 
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 
@@ -22,10 +23,9 @@ from . import live
 from ..baseline import COUNT, FEATURE_META
 from .. import config as cfg
 from ..db import db
-from ..deps import require_app_key
 from ..events import EVENT_TYPES, emit, recent
 
-router = APIRouter(prefix="/v1", tags=["app"], dependencies=[Depends(require_app_key)])
+router = APIRouter(prefix="/v1", tags=["app"])
 
 _SEVERITY_RANK = {"critical": 3, "urgent": 2, "warn": 1, "info": 0}
 

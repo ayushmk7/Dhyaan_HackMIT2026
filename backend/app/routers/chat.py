@@ -1,10 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from .. import baseline, rag
-from ..deps import require_app_key
 
-router = APIRouter(prefix="/v1", tags=["chat"], dependencies=[Depends(require_app_key)])
+router = APIRouter(prefix="/v1", tags=["chat"])
 
 
 class ChatRequest(BaseModel):

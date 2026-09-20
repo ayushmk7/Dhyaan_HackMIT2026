@@ -5,7 +5,6 @@ is in gate.py / keyframe.py / vlm.py, which is where the tests point.
 """
 
 import json
-import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -80,6 +79,7 @@ class Worker:
         self.last_obs = {"activity": None, "sentence": "", "confidence": None,
                          "latency_ms": 0, "batch_frames": 0}
         self.cam = None
+        self.detector = "none"    # the model behind `self.scene`, named in every post
         self._last_monitor = 0.0
         self.frames_seen = 0
         self.last_fps_mark = (time.monotonic(), 0)
@@ -306,7 +306,13 @@ class Worker:
         # with --no-yolo. Upgrade: --source clip.mp4 of a real room.
         person_gate = PersonGate(enabled=not (self.no_yolo or self.synthetic),
                                  tuning=self.tuning)
-        log(f"person gate: {'YOLO on ' + person_gate.device if person_gate.enabled else 'OFF (motion-only; the VLM or the script decides presence)'}")
+        log(f"person gate: {person_gate.model_name + ' on ' + person_gate.device if person_gate.enabled else 'OFF (motion-only; the VLM or the script decides presence)'}")
+        self.detector = person_gate.model_name if person_gate.enabled else "none"
+        if person_gate.open_vocab and self.tuning.get("openvocab"):
+            # Stage 3 already ran the vocabulary on every frame it looked at;
+            # a second YOLO-World pass would be the same 7 ms for the same answer.
+            self.tuning = dict(self.tuning, openvocab=False)
+            log("stage 3b off: the person gate is already open-vocabulary")
         selector = KeyframeSelector(self.tuning)
         ring = RingBatch(self.tuning)
 
@@ -380,14 +386,20 @@ class Worker:
                              bool(self.scene["dishes"]), posture_band(box, self.tuning))
                     if shape != self._last_shape:
                         self._last_shape = shape
+                        # One line per change, not per frame: what the detector
+                        # named, so a headless run answers "did it see the
+                        # cereal?" without the preview window.
+                        sc = self.scene
+                        log(f"scene: people={sc['person_count']} food={sc['food']} "
+                            f"dishes={sc['dishes']} seating={sc['seating']} "
+                            f"({getattr(self, 'scene_ms', 0)} ms)")
                         quick = vlm.post_rules(
                             vlm.from_scene(self.scene, posture_band(box, self.tuning)))
                         self._last_obs = quick
                         self.post_async(vlm.to_payload(
                             self.camera_id, self.cfg["resident_id"],
                             datetime.now(timezone.utc).isoformat(), 0.0, 1, quick,
-                            model=os.getenv("YOLO_MODEL", "yolo11s.pt").replace(".pt", ""),
-                            latency_ms=getattr(self, "scene_ms", 0)))
+                            model=self.detector, latency_ms=getattr(self, "scene_ms", 0)))
 
                 reason = selector.update(now, seen, box)       # stage 4
                 # Stage 3b. A keyframe is a frame already judged worth a VLM
@@ -565,7 +577,7 @@ class Worker:
             # both in `model` is what makes the two lanes separable in the
             # observations collection afterwards.
             ov = getattr(self, "openvocab_ms", 0)
-            name = os.getenv("YOLO_MODEL", "yolo11s.pt").replace(".pt", "")
+            name = self.detector
             self._post_obs(obs, wall[-1], span, len(images),
                            f"{name}+world" if ov else name,
                            getattr(self, "scene_ms", 0) + ov)

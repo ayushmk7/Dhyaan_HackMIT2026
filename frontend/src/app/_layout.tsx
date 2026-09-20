@@ -46,9 +46,9 @@ function AlertWatcher() {
   return null;
 }
 
-// Login returns her resident id but not her name, so the session opens on a
-// placeholder. This asks the profile once the id is known and writes the real
-// name back (widening only). It uses useQuery, so it must sit under the
+// The session opens on a placeholder name for the seed's one resident. This
+// asks the profile once the id is known and writes the real name back
+// (widening only). It uses useQuery, so it must sit under the
 // QueryClientProvider, which is why it is a component beside AlertWatcher and
 // not a call in RootLayout.
 function SessionHydrator() {

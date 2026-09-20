@@ -24,6 +24,13 @@ dependencies = [
 vision = [
     "opencv-python>=4.10",
     "ultralytics>=8.3",
+    # YOLO-World's `set_classes()` builds CLIP text embeddings and needs
+    # ultralytics' CLIP fork, which ultralytics does not depend on and tries to
+    # pip-install at runtime (which fails in a uv venv with no pip). Pinned to
+    # the commit this machine runs. The weights themselves (yolov8s-worldv2.pt,
+    # ~25 MB, and CLIP ViT-B/32, ~340 MB) download by name on first start and
+    # are gitignored.
+    "clip @ git+https://github.com/ultralytics/CLIP.git@a13192f8cb767260d7dfd98c843b0716593169e7",
     # Pose landmarks for posture. Pinned, not floated: 1.0.1 hard-aborts the
     # whole process inside a Metal helper on this machine's arm64 Python (it
     # takes the camera lane down with it, no traceback), and 0.10.35 is the

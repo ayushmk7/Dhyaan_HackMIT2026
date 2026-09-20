@@ -57,7 +57,9 @@ const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.mess
 function DebugPanel() {
   const d = copy.debug;
   const qc = useQueryClient();
-  const { setRole } = useSession();
+  // The test push names whoever this install is actually watching, rather than
+  // the seed's resident.
+  const { setRole, residentId, residentName } = useSession();
   const [, setTick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 2000);
@@ -151,7 +153,7 @@ function DebugPanel() {
           onPress={registerPush}
         />
         {pushToken && (
-          <Btn label={d.sendTestPush} kind="quiet" onPress={() => sendTestPush(pushToken)} />
+          <Btn label={d.sendTestPush} kind="quiet" onPress={() => sendTestPush(pushToken, { id: residentId, name: residentName })} />
         )}
         <Btn
           label={d.staffSide}
@@ -171,7 +173,7 @@ type Opened = 'none' | 'camera' | 'happens' | 'consent';
 export default function Settings() {
   const qc = useQueryClient();
   const {
-    residentId, residentName, consentGivenBy, consentRelationship, signOut,
+    residentId, residentName, consentGivenBy, consentRelationship, reset,
   } = useSession();
   const {
     data: profile, isLoading: profileLoading, isError: profileError, refetch: refetchProfile,
@@ -319,9 +321,10 @@ export default function Settings() {
         ));
         return;
       }
+      // Her memory is gone; this phone's session goes with it, back to setup.
       qc.clear();
-      signOut();
-      router.replace('/login');
+      reset();
+      router.replace('/');
     } catch {
       setForgetError(copy.profile.nothingDeleted);
     } finally {
@@ -727,17 +730,6 @@ export default function Settings() {
             </View>
           )
         )}
-      </Entrance>
-
-      <Entrance index={4} style={{ marginTop: sp(10) }}>
-        <Btn
-          kind="quiet"
-          label={copy.signOut}
-          onPress={() => { signOut(); qc.clear(); router.replace('/login'); }}
-        />
-        <Txt kind="caption" tone="muted" style={{ marginTop: sp(2), textAlign: 'center' }}>
-          {copy.signOutNote(name)}
-        </Txt>
       </Entrance>
     </Screen>
   );

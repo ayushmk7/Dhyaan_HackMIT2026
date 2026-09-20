@@ -507,6 +507,14 @@ export const onboard = {
     title: 'Walk each room with the band',
     progress: (done: number, needed: number) => `${done}/${needed}`,
     intro: (residentName: string) => `Carry the band into each room and stand there for 30 seconds. That teaches Dhyaan where ${residentName} is.`,
+    // The zones her hub accepts for a walk (backend/app/location.py).
+    rooms: {
+      bedroom: 'Bedroom',
+      bathroom: 'Bathroom',
+      kitchen: 'Kitchen',
+      living_room: 'Living room',
+      hallway: 'Hallway',
+    },
     needMore: (n: number) => `${plural(n, 'more room', 'more rooms')} to go before you can continue. Start with the rooms she uses most.`,
     oneAtATime: 'One room at a time. Wait for the countdown to finish before starting the next.',
     honesty: 'This phone cannot read radio signal strength, so what it sends is only the timing of each reading. Her band’s own readings are what teach the map.',
@@ -574,7 +582,9 @@ export const onboard = {
     name: 'Name',
     namePlaceholder: 'Their full name',
     phone: 'Phone number',
-    phonePlaceholder: '+1 617 555 0142',
+    // A format, not a number: a placeholder that looks like a real phone
+    // number reads as a suggestion of whom to call.
+    phonePlaceholder: 'Country code first, +1 then the number',
     relationship: 'Relationship',
     relationshipPlaceholder: 'Daughter, neighbour',
     cancel: 'Cancel',

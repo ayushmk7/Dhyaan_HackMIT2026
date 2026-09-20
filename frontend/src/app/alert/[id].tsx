@@ -91,7 +91,7 @@ export default function AlertTakeover() {
   const { data: alert, isLoading, isError, refetch } = useAlert(id ?? '');
   const { data: contacts } = useContacts();
   const live = useLive();
-  const { role, residentId, residentName, user } = useSession();
+  const { role, residentId, residentName } = useSession();
   const careFile = useCareFile();
   const emsLine = emergencyLine(careFile);
   const t = useTheme();
@@ -128,9 +128,9 @@ export default function AlertTakeover() {
   const contact1 = contacts?.[0] ? firstName(contacts[0].name) : copy.unknownFamily;
   const contact2 = contacts?.[1] ? firstName(contacts[1].name) : undefined;
   const herPhone = residentNumber(resident, contacts, name);
-  // Who is actually tapping the button. `acked_by` used to be hard-coded to a
-  // demo name on each branch.
-  const actor = user?.name?.trim() || (role === 'staff' ? copy.actorStaff : copy.actorFamily);
+  // Who is actually tapping the button. There is no signed-in person to name
+  // (the app has no login), so the lane signs it.
+  const actor = role === 'staff' ? copy.actorStaff : copy.actorFamily;
 
   const hasAlert = !!alert;
 

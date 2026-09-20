@@ -31,13 +31,12 @@ export default function CareFileScreen() {
   const { demo } = useLocalSearchParams<{ demo?: string }>();
 
   // Who to ask about driving her: a real person off her call list, never a
-  // number typed into the source. The signed-in person is skipped, because a
-  // text to yourself is not a plan. No list, no button.
-  const { residentName, user } = useSession();
+  // number typed into the source. Nobody is signed in (the app has no login),
+  // so there is no "you" to skip: the first contact on the ladder is asked.
+  // No list, no button.
+  const { residentName } = useSession();
   const { data: contacts } = useContacts();
-  const me = user?.name?.trim().toLowerCase().split(/\s+/)[0] ?? '';
-  const driver = (contacts ?? []).find((c) => c.name.trim().toLowerCase().split(/\s+/)[0] !== me)
-    ?? contacts?.[0];
+  const driver = contacts?.[0];
   useEffect(() => {
     if (demo && !file.sources.length && !file.busy) {
       file.addDocument({ text: EXAMPLE_DISCHARGE }).then((r) => {

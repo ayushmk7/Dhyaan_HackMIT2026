@@ -14,7 +14,6 @@ import pytest_asyncio
 
 from app import presence
 from app.routers import camera as camera_router
-from tests.conftest import APP_HEADERS, BAND_HEADERS
 
 FIXTURES = pathlib.Path(__file__).resolve().parents[1] / "fixtures"
 OBS = json.loads((FIXTURES / "camera_observation.json").read_text())
@@ -44,7 +43,7 @@ def obs(**over):
 
 
 async def post(client, body, expect=201):
-    r = await client.post("/v1/ingest/camera", headers=BAND_HEADERS, json=body)
+    r = await client.post("/v1/ingest/camera", json=body)
     assert r.status_code == expect, r.text
     return r
 
@@ -60,7 +59,7 @@ async def test_the_shipped_observation_fixture_is_accepted_as_is(client, camera,
 
 
 async def test_the_shipped_heartbeat_fixture_is_accepted_as_is(client, camera, db):
-    r = await client.post("/v1/ingest/camera/heartbeat", headers=BAND_HEADERS,
+    r = await client.post("/v1/ingest/camera/heartbeat",
                           json=HEARTBEAT)
     assert r.status_code == 204
 
@@ -155,18 +154,13 @@ async def test_bad_enum_is_422(client, camera):
     await post(client, obs(spot="bedroom"), expect=422)
 
 
-async def test_device_key_is_required(client, camera):
-    r = await client.post("/v1/ingest/camera", json=obs())
-    assert r.status_code == 401
-
-
 # ---------------------------------------------------------------------------
 # Presence
 # ---------------------------------------------------------------------------
 
 async def test_presence_never_leaks_a_room_or_the_evidence(client, camera, db):
     await post(client, obs())
-    r = await client.get("/v1/residents/res_eleanor/presence", headers=APP_HEADERS)
+    r = await client.get("/v1/residents/res_eleanor/presence")
     assert r.status_code == 200
     body = r.json()
     blob = json.dumps(body).lower()
@@ -180,7 +174,7 @@ async def test_absent_observation_flips_presence_out_of_view(client, camera, db)
     await post(client, obs())
     await post(client, obs(activity="absent", person_count=0, spot="unclear",
                            plate_or_cup_present=False, hand_to_mouth_observed=False))
-    r = await client.get("/v1/residents/res_eleanor/presence", headers=APP_HEADERS)
+    r = await client.get("/v1/residents/res_eleanor/presence")
     assert r.json()["status"] == "out_of_view"
     assert "out of view" in r.json()["sentence"]
 
@@ -188,13 +182,13 @@ async def test_absent_observation_flips_presence_out_of_view(client, camera, db)
 async def test_consent_off_shows_camera_off_not_a_stale_activity(client, camera, db):
     await post(client, obs())
     await db.residents.update_one({"_id": "res_eleanor"}, {"$set": {"consent_camera": 0}})
-    r = await client.get("/v1/residents/res_eleanor/presence", headers=APP_HEADERS)
+    r = await client.get("/v1/residents/res_eleanor/presence")
     assert r.json()["status"] == "camera_off"
     assert r.json()["activity"] is None
 
 
 async def test_no_camera_is_its_own_state(client, resident):
-    r = await client.get("/v1/residents/res_eleanor/presence", headers=APP_HEADERS)
+    r = await client.get("/v1/residents/res_eleanor/presence")
     assert r.json()["status"] == "no_camera"
 
 
@@ -215,8 +209,7 @@ async def test_activity_strips_room_names_from_the_response(client, camera, db, 
                ts=now, zone="bathroom", embedding_text="Eleanor moved into the bathroom.")
 
     date = now.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
-    r = await client.get(f"/v1/residents/res_eleanor/activity?date={date}",
-                         headers=APP_HEADERS)
+    r = await client.get(f"/v1/residents/res_eleanor/activity?date={date}")
     assert r.status_code == 200
     blob = json.dumps(r.json()).lower()
     for word in ("kitchen", "bathroom", "bedroom", "living room", "hallway", "zone"):
@@ -241,8 +234,7 @@ async def test_activity_items_carry_a_kind(client, camera, db):
                ts=now, payload={"narrative": "A quiet day."},
                embedding_text="A quiet day.")
     date = now.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
-    r = await client.get(f"/v1/residents/res_eleanor/activity?date={date}",
-                         headers=APP_HEADERS)
+    r = await client.get(f"/v1/residents/res_eleanor/activity?date={date}")
     kinds = {i["kind"] for i in r.json()["items"]}
     assert kinds == {"pattern"}
 
@@ -253,20 +245,20 @@ async def test_activity_items_carry_a_kind(client, camera, db):
 
 async def test_heartbeat_pause_records_who_paused_and_shows_paused(client, camera, db):
     until = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
-    r = await client.post("/v1/ingest/camera/heartbeat", headers=BAND_HEADERS, json={
+    r = await client.post("/v1/ingest/camera/heartbeat", json={
         "camera_id": camera, "state": "paused", "paused_until": until,
         "fps": 0.0, "dropped_batches": 0})
     assert r.status_code == 204
     cam = await db.cameras.find_one({"_id": camera})
     assert cam["paused_by"] == "resident"
-    p = await client.get("/v1/residents/res_eleanor/presence", headers=APP_HEADERS)
+    p = await client.get("/v1/residents/res_eleanor/presence")
     assert p.json()["status"] == "paused"
 
 
 async def test_camera_config_is_what_the_worker_needs_and_no_more(client, camera, db):
     await db.residents.update_one({"_id": "res_eleanor"}, {"$set": {
         "consent_memory": 1, "appearance": "short grey hair, glasses"}})
-    r = await client.get(f"/v1/camera/config?camera_id={camera}", headers=BAND_HEADERS)
+    r = await client.get(f"/v1/camera/config?camera_id={camera}")
     body = r.json()
     assert body["zone"] == "living_room" and body["zone_label"] == "living room"
     assert body["consent_camera"] is True
@@ -279,25 +271,12 @@ async def test_camera_config_is_what_the_worker_needs_and_no_more(client, camera
 async def test_camera_config_withholds_appearance_without_memory_consent(client, camera, db):
     await db.residents.update_one({"_id": "res_eleanor"}, {"$set": {
         "consent_memory": 0, "appearance": "short grey hair"}})
-    r = await client.get(f"/v1/camera/config?camera_id={camera}", headers=BAND_HEADERS)
+    r = await client.get(f"/v1/camera/config?camera_id={camera}")
     assert r.json()["appearance"] is None
 
 
-@pytest.mark.parametrize("email,password", [
-    # An email-shaped name with any password used to get in. It no longer does:
-    # there is a user store now (tests/test_auth.py) and no account by that name.
-    ("priya@dhyaan.demo", "anything"),
-    ("not-an-email", "anything"),
-    ("priya@dhyaan.demo", "   "),
-    ("", ""),
-])
-async def test_login_rejects_anyone_not_on_file(client, resident, email, password):
-    r = await client.post("/v1/auth/login", json={"email": email, "password": password})
-    assert r.status_code == 401
-
-
 async def test_simulate_meal_goes_through_the_real_ingest_path(client, camera, db):
-    r = await client.post("/v1/admin/simulate", headers=APP_HEADERS,
+    r = await client.post("/v1/admin/simulate",
                           json={"resident_id": "res_eleanor", "kind": "meal"})
     assert r.status_code == 200, r.text
     assert await db.events.count_documents({"type": "meal_observed"}) == 1
@@ -306,7 +285,7 @@ async def test_simulate_meal_goes_through_the_real_ingest_path(client, camera, d
 
 
 async def test_simulate_visitor_stores_nothing_about_the_visitor(client, camera, db):
-    await client.post("/v1/admin/simulate", headers=APP_HEADERS,
+    await client.post("/v1/admin/simulate",
                       json={"resident_id": "res_eleanor", "kind": "visitor"})
     ev = await db.events.find_one({"type": "visitor_present"})
     assert ev is not None
@@ -334,14 +313,14 @@ def tick(**over):
 
 
 async def send_tick(client, body=None, expect=204):
-    r = await client.post("/v1/ingest/camera/monitor", headers=BAND_HEADERS,
+    r = await client.post("/v1/ingest/camera/monitor",
                           json=body or tick())
     assert r.status_code == expect, r.text
     return r
 
 
 async def get_monitor(client, camera_id="cam_mac_01"):
-    r = await client.get(f"/v1/cameras/{camera_id}/monitor", headers=APP_HEADERS)
+    r = await client.get(f"/v1/cameras/{camera_id}/monitor")
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -394,15 +373,6 @@ async def test_monitor_rejects_pixel_coordinates(client, camera):
     await send_tick(client, tick(gate="recording"), expect=422)
 
 
-async def test_monitor_needs_the_device_key(client, camera):
-    r = await client.post("/v1/ingest/camera/monitor", json=tick())
-    assert r.status_code == 401
-    r = await client.get("/v1/cameras/cam_mac_01/monitor")
-    assert r.status_code == 401
-    r = await client.get("/v1/cameras")
-    assert r.status_code == 401
-
-
 async def test_monitor_fails_closed_exactly_as_the_ingest_does(client, camera, db):
     await db.residents.update_one({"_id": "res_eleanor"}, {"$set": {"consent_camera": 0}})
     await send_tick(client, expect=403)
@@ -417,7 +387,7 @@ async def test_monitor_fails_closed_exactly_as_the_ingest_does(client, camera, d
 
 async def test_monitor_for_an_unknown_camera_is_404_not_an_empty_console(client, camera):
     await send_tick(client, tick(camera_id="cam_rogue"), expect=404)
-    r = await client.get("/v1/cameras/cam_rogue/monitor", headers=APP_HEADERS)
+    r = await client.get("/v1/cameras/cam_rogue/monitor")
     assert r.status_code == 404
 
 
@@ -454,7 +424,7 @@ async def test_a_tick_is_pushed_over_the_websocket(client, camera):
 async def test_cameras_lists_what_the_console_needs(client, camera, db):
     await db.cameras.update_one({"_id": camera}, {"$set": {
         "last_heartbeat_at": datetime.now(timezone.utc).isoformat()}})
-    rows = (await client.get("/v1/cameras", headers=APP_HEADERS)).json()
+    rows = (await client.get("/v1/cameras")).json()
     assert len(rows) == 1
     row = rows[0]
     assert row["id"] == "cam_mac_01" and row["resident_id"] == "res_eleanor"
@@ -465,11 +435,11 @@ async def test_cameras_lists_what_the_console_needs(client, camera, db):
 async def test_a_camera_with_a_stale_heartbeat_is_not_online(client, camera, db):
     await db.cameras.update_one({"_id": camera}, {"$set": {
         "last_heartbeat_at": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()}})
-    assert (await client.get("/v1/cameras", headers=APP_HEADERS)).json()[0]["online"] is False
+    assert (await client.get("/v1/cameras")).json()[0]["online"] is False
 
 
 async def test_pause_from_the_app_stops_the_ingest_and_resume_starts_it(client, camera, db):
-    r = await client.post(f"/v1/cameras/{camera}/pause", headers=APP_HEADERS,
+    r = await client.post(f"/v1/cameras/{camera}/pause",
                           json={"hours": 2})
     assert r.status_code == 200
     assert r.json()["paused_by"] == "family"
@@ -477,7 +447,7 @@ async def test_pause_from_the_app_stops_the_ingest_and_resume_starts_it(client, 
     await post(client, obs(), expect=403)
     assert await db.observations.count_documents({}) == 0
 
-    r = await client.post(f"/v1/cameras/{camera}/resume", headers=APP_HEADERS)
+    r = await client.post(f"/v1/cameras/{camera}/resume")
     assert r.status_code == 200 and r.json()["paused_until"] is None
     await post(client, obs())
 
@@ -485,12 +455,12 @@ async def test_pause_from_the_app_stops_the_ingest_and_resume_starts_it(client, 
 async def test_the_app_cannot_undo_a_pause_she_set_on_her_own_hub(client, camera, db):
     """PRODUCT_SPEC §8.3 rule 1, as a status code."""
     until = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
-    r = await client.post("/v1/ingest/camera/heartbeat", headers=BAND_HEADERS, json={
+    r = await client.post("/v1/ingest/camera/heartbeat", json={
         "camera_id": camera, "state": "paused", "paused_until": until,
         "fps": 0.0, "dropped_batches": 0})
     assert r.status_code == 204
 
-    r = await client.post(f"/v1/cameras/{camera}/resume", headers=APP_HEADERS)
+    r = await client.post(f"/v1/cameras/{camera}/resume")
     assert r.status_code == 403
     cam = await db.cameras.find_one({"_id": camera})
     assert cam["paused_until"] == until
@@ -498,7 +468,7 @@ async def test_the_app_cannot_undo_a_pause_she_set_on_her_own_hub(client, camera
 
 async def test_pause_and_resume_need_a_real_camera(client, camera):
     for path in (f"/v1/cameras/cam_rogue/pause", f"/v1/cameras/cam_rogue/resume"):
-        r = await client.post(path, headers=APP_HEADERS, json={"hours": 1})
+        r = await client.post(path, json={"hours": 1})
         assert r.status_code == 404
 
 
@@ -507,9 +477,9 @@ async def test_pause_and_resume_need_a_real_camera(client, camera):
 # ---------------------------------------------------------------------------
 
 async def test_simulate_out_of_view_flips_presence_and_writes_one_exit(client, camera, db):
-    await client.post("/v1/admin/simulate", headers=APP_HEADERS,
+    await client.post("/v1/admin/simulate",
                       json={"resident_id": "res_eleanor", "kind": "meal"})
-    r = await client.post("/v1/admin/simulate", headers=APP_HEADERS,
+    r = await client.post("/v1/admin/simulate",
                           json={"resident_id": "res_eleanor", "kind": "out_of_view"})
     assert r.status_code == 200, r.text
     assert r.json()["presence"]["status"] == "out_of_view"
@@ -532,7 +502,7 @@ async def test_every_simulated_kind_pushes_presence_to_the_app(client, camera, k
     ws = _Socket()
     live._connections[ws] = {"resident_id": "res_eleanor", "lock": asyncio.Lock()}
     try:
-        r = await client.post("/v1/admin/simulate", headers=APP_HEADERS,
+        r = await client.post("/v1/admin/simulate",
                               json={"resident_id": "res_eleanor", "kind": kind})
     finally:
         live._connections.pop(ws, None)
@@ -542,6 +512,6 @@ async def test_every_simulated_kind_pushes_presence_to_the_app(client, camera, k
 
 
 async def test_simulate_needs_a_camera_before_it_can_pretend_to_be_one(client, resident):
-    r = await client.post("/v1/admin/simulate", headers=APP_HEADERS,
+    r = await client.post("/v1/admin/simulate",
                           json={"resident_id": "res_eleanor", "kind": "meal"})
     assert r.status_code == 422

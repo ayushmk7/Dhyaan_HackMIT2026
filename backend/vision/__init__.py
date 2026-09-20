@@ -40,16 +40,29 @@ TUNING = dict(
     mog_history=300,
     mog_var_threshold=25,
     motion_ratio=0.008,       # foreground fraction that counts as "something moved"
-    # --- stage 3: person (YOLO11n, class 0) ---
-    person_conf=0.4,
+    # --- stage 3: person + food + dishes + seating, one YOLO-World pass (gate.py) ---
     person_imgsz=640,
-    # --- stage 3b: open vocabulary, KEYFRAME PATH ONLY (see openvocab.py) ---
-    # COCO knows ten food words, so a crisp packet or a bowl of cereal is
-    # invisible to the hot path no matter what. YOLO-World costs ~4 ms over the
-    # COCO baseline and can be handed any words at runtime, so it runs on the
-    # frames already chosen to be worth a VLM call and never on the 15 fps loop.
-    # OPENVOCAB=0 cuts it in one second if it misbehaves on stage; everything
-    # then degrades to exactly the COCO-only behaviour it had before.
+    # Open-vocabulary floors, calibrated to gate.VOCAB on this machine — the
+    # numbers are in the comment above that list. They are NOT the COCO floor:
+    # YOLO-World scores are cosines against the prompt list and live an order
+    # of magnitude lower than a closed-set logit; 0.4 returns nothing at all.
+    # `world_person_conf` is the one to re-tune first in a real room: lower if
+    # a seated resident is missed, raise if a coat on a chair becomes a person.
+    world_person_conf=float(os.getenv("WORLD_PERSON_CONF", "0.15")),
+    world_conf=float(os.getenv("WORLD_CONF", "0.20")),
+    # A label already in the scene stays while it scores this fraction of its
+    # floor (0.15 for objects, 0.11 for people). Measured need: a snack bag at
+    # 0.26-0.28 flickered across a 0.20 floor four times in one second of
+    # hand-held jitter, and each flicker is a post. 1.0 disables it.
+    world_hold=float(os.getenv("WORLD_HOLD", "0.75")),
+    # COCO floor. Used only when YOLO_MODEL points at a COCO model (the
+    # one-line revert), or when the open-vocabulary model cannot load and
+    # yolo11s.pt is already on disk.
+    person_conf=0.4,
+    # --- stage 3b: a second open-vocabulary pass (see openvocab.py) ---
+    # Only runs when stage 3 is a COCO model. With the default gate the
+    # vocabulary is already in stage 3 and the worker switches this off, so a
+    # frame never pays for YOLO-World twice. OPENVOCAB=0 forces it off.
     openvocab=os.getenv("OPENVOCAB", "1") != "0",
     # Every 3rd frame a person is in view - 5 food checks a second at 15 fps.
     # Measured: at every frame the open-vocab pass fights the resident 3B VLM

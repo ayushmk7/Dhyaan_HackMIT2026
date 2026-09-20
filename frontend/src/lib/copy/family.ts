@@ -355,8 +355,6 @@ export const family = {
       body: 'Her band was paired during setup, and the rooms were walked then. There isn’t a way to pair a new band or walk the rooms again from here yet.',
     },
 
-    signOut: 'Sign out',
-    signOutNote: (name: string) => `Signing out only clears this phone. Nothing about ${name} is deleted.`,
 
     // Behind a long-press. Demo and diagnostics, never visible chrome.
     debug: {
@@ -381,7 +379,7 @@ export const family = {
       easMissing: (id: string) =>
         `app.json still has extra.eas.projectId = ${id || 'nothing'}. Run npx eas init on a machine signed in to an Expo account, put the id it writes into app.json, and rebuild.`,
       pushRegistered: (tail: string) => `Push registered · …${tail}`,
-      sendTestPush: 'Send a test fall push',
+      sendTestPush: 'Send a test notification',
       staffSide: 'Staff side',
     },
   },
@@ -397,6 +395,8 @@ export const family = {
     addPhoto: 'Add a photo',
     tryExample: 'Try an example',
     added: (what: string) => `Added: ${what}.`,
+    unreadable: 'Couldn’t read that as a care document. Try a clearer copy.',
+    needsAI: 'Reading a document needs Dhyaan’s reading service, which isn’t connected on this phone. Nothing was added.',
 
     medications: 'Medications',
     comingUp: 'Coming up',

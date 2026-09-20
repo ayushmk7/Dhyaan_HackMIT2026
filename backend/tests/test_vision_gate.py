@@ -14,7 +14,7 @@ import pytest
 
 cv2 = pytest.importorskip("cv2", reason='camera lane extra: uv pip install -e ".[vision]"')
 
-from vision import DEMO, TUNING, vlm, worker
+from vision import DEMO, TUNING, gate, vlm, worker
 from vision.gate import (MotionGate, PersonGate, apply_mask, aspect, parse_mask,
                          posture_band)
 from vision.keyframe import KeyframeSelector, RingBatch
@@ -312,12 +312,13 @@ def test_no_module_in_the_vision_package_touches_the_filesystem():
                 assert where in allowed_open, f"{path.name}:{node.lineno} opens a file in {where[1]}"
 
 
-# --- stage 3: one YOLO pass, four answers -------------------------------------
+# --- stage 3: one YOLO-World pass, four answers -------------------------------
 #
-# The model is faked: a real one would need torch, a 5 MB download and a
-# webcam, and none of those prove what this file is for — that the class ids
-# land in the right buckets and that the largest person is the one the cascade
-# tracks.
+# The model is faked: a real one would need torch, a 25 MB download, a 340 MB
+# CLIP download and a webcam, and none of those prove what this file is for —
+# that free-text labels land in the right buckets, that each bucket keeps its
+# own confidence floor, that one person is counted once, and that every way
+# the detector can fail to come up is the cut path and not a crash.
 
 class _Tensor:
     def __init__(self, v):
@@ -328,55 +329,179 @@ class _Tensor:
 
 
 class _Result:
-    def __init__(self, pairs):
+    def __init__(self, names, hits):
+        back = {n: i for i, n in (names.items() if isinstance(names, dict) else enumerate(names))}
         self.boxes = type("B", (), {
-            "cls": _Tensor([c for c, _ in pairs]),
-            "xyxy": _Tensor([list(b) for _, b in pairs]),
+            "cls": _Tensor([back[label] for label, _, _ in hits]),
+            "conf": _Tensor([conf for _, conf, _ in hits]),
+            "xyxy": _Tensor([list(b) for _, _, b in hits]),
         })()
 
 
+# What ultralytics exposes after set_classes(): the prompt list, in order.
+WORLD_NAMES = list(gate.PROMPTS)
+# ...and what a COCO model exposes: its own id -> name dict (a subset is enough).
+COCO_NAMES = {0: "person", 16: "dog", 39: "bottle", 40: "wine glass", 41: "cup",
+              42: "fork", 43: "knife", 44: "spoon", 45: "bowl", 46: "banana",
+              47: "apple", 48: "sandwich", 49: "orange", 50: "broccoli", 51: "carrot",
+              52: "hot dog", 53: "pizza", 54: "donut", 55: "cake", 56: "chair",
+              57: "couch", 59: "bed", 60: "dining table"}
+
+
 class _FakeYOLO:
-    """Records what it was asked for, so the `classes=` filter is testable too."""
+    """Records what it was asked, so the conf floor and the COCO `classes=`
+    filter are testable too. `hits` are (label, conf, box)."""
 
-    def __init__(self, pairs):
-        self.pairs, self.asked = pairs, None
+    def __init__(self, hits, names=WORLD_NAMES):
+        self.hits, self.names, self.asked = hits, names, None
 
-    def predict(self, frame, classes=None, **kw):
-        self.asked = classes
-        return [_Result(self.pairs)]
+    def predict(self, frame, **kw):
+        self.asked = kw
+        return [_Result(self.names, self.hits)]
 
 
-def fake_gate(pairs):
+def fake_gate(hits, coco=False):
     g = PersonGate(enabled=False)      # no ultralytics, no torch, no download
-    g.enabled, g.model = True, _FakeYOLO(pairs)
+    g.enabled = True
+    if coco:
+        g.model, g.open_vocab = _FakeYOLO(hits, COCO_NAMES), False
+        g.classes = sorted(i for i, n in COCO_NAMES.items() if n in gate.BUCKET)
+    else:
+        g.model, g.open_vocab = _FakeYOLO(hits), True
     return g
+
+
+def hit(label, box, conf=0.9):
+    return (label, conf, box)
+
+
+def test_the_vocabulary_stays_short_and_names_what_the_pipeline_reads():
+    """YOLO-World's confidence is a cosine against the prompt list, so the list
+    length IS a threshold. Same crisp packet, same weights (testcam/FOOD.md):
+    ["snack bag"] 0.48, 22 food words 0.11, a 62-word list 0.09. This bound is
+    the only thing between a working detector and a confidently blind one."""
+    assert len(gate.PROMPTS) <= gate.MAX_PROMPTS <= 24
+    assert len(gate.PROMPTS) == len(set(gate.PROMPTS)), "a duplicate prompt is a wasted slot"
+    for w in gate.PROMPTS:
+        assert w == w.lower() and len(w.split()) <= 2, w    # short plain nouns, measured
+        assert w in gate.BUCKET
+    assert gate.VOCAB["background"], "removing these measurably hurt the food scores"
+    # vlm.from_scene derives `spot` from these two words; renaming them in the
+    # vocabulary would silently lose "at the table".
+    assert {"dining table", "chair"} <= set(gate.VOCAB["seating"])
+    # Open-vocab scores live an order of magnitude below COCO's. Inheriting the
+    # COCO floor returns nothing at all (measured).
+    assert TUNING["world_conf"] < TUNING["person_conf"]
+    assert TUNING["world_person_conf"] <= TUNING["world_conf"]
 
 
 def test_scene_splits_people_food_dishes_and_seating():
     g = fake_gate([
-        (0, (10, 10, 40, 120)),       # a person
-        (0, (200, 10, 300, 220)),     # a bigger person
-        (53, (50, 50, 70, 70)),       # pizza  -> food
-        (41, (80, 50, 90, 65)),       # cup    -> dishes
-        (45, (95, 50, 110, 62)),      # bowl   -> dishes
-        (60, (0, 100, 300, 160)),     # dining table -> seating
-        (16, (0, 0, 20, 20)),         # a dog: named by nothing, counted as nothing
+        hit("person", (10, 10, 40, 120)),
+        hit("person", (200, 10, 300, 220)),      # a bigger person
+        hit("cereal", (50, 50, 70, 70)),         # a word COCO never had -> food
+        hit("cup", (80, 50, 90, 65)),            # -> dishes
+        hit("bowl", (95, 50, 110, 62)),          # -> dishes
+        hit("dining table", (0, 100, 300, 160)), # -> seating
+        hit("phone", (0, 0, 20, 20)),            # background: somewhere to land, never reported
     ])
     s = g.scene(blank())
     assert s["person_count"] == 2
-    assert s["food"] == ["pizza"]
+    assert s["food"] == ["cereal"]
     assert s["dishes"] == ["bowl", "cup"]
     assert s["seating"] == ["dining table"]
     # Largest first: the cascade tracks one person, and it must be the one
     # filling the frame, not whoever the detector happened to list first.
     assert s["boxes"][0] == (200, 10, 300, 220)
+    assert g.model.asked.get("classes") is None, "an open-vocab model is asked for every prompt"
 
 
-def test_scene_asks_for_only_the_classes_it_can_name():
+def test_the_generic_food_word_yields_to_a_specific_one():
+    """"cereal" says more than "cereal, food", and the evidence line has room
+    for two words. Alone, the generic still counts — it is the net."""
+    both = fake_gate([hit("food", (0, 0, 9, 9)), hit("cereal", (0, 0, 9, 9))]).scene(blank())
+    assert both["food"] == ["cereal"]
+    alone = fake_gate([hit("food", (0, 0, 9, 9))]).scene(blank())
+    assert alone["food"] == ["food"]
+
+
+def test_each_bucket_keeps_its_own_floor():
+    """Calibrated separately (gate.py): people at world_person_conf, objects at
+    world_conf. The model is asked at the lower of the two and the gate filters,
+    so a 0.16 person survives while a 0.16 "toast" — a measured false positive
+    on a noodle bowl — does not."""
+    g = fake_gate([
+        hit("person", (10, 10, 40, 120), conf=0.16),
+        hit("person", (50, 10, 80, 120), conf=0.14),
+        hit("toast", (0, 0, 9, 9), conf=0.18),
+        hit("cereal", (0, 0, 9, 9), conf=0.21),
+    ], )
+    g.t = dict(g.t, world_person_conf=0.15, world_conf=0.20)
+    s = g.scene(blank())
+    assert s["person_count"] == 1 and s["food"] == ["cereal"]
+    assert g.model.asked["conf"] == 0.15
+
+
+def test_a_label_needs_the_floor_to_arrive_and_less_to_stay():
+    """Hysteresis, measured need: a real snack bag at 0.26-0.28 over a 0.20
+    floor crossed the line four times in a second of hand-held jitter, and
+    every crossing was a "what I see changed" post. Not memory — the label
+    must still be detected on this frame, at a lower bar."""
     g = fake_gate([])
-    g.scene(blank())
-    assert set(g.model.asked) == {0} | set(PersonGate.FOOD_IDS) | set(PersonGate.DISH_IDS) | \
-        set(PersonGate.SEAT_IDS)
+    g.t = dict(g.t, world_person_conf=0.15, world_conf=0.20, world_hold=0.75)
+    frames = [
+        ([hit("snack bag", (0, 0, 9, 9), conf=0.17), hit("person", (0, 0, 50, 200), conf=0.12)],
+         [], 0),          # never seen yet: below the floor, nothing
+        ([hit("snack bag", (0, 0, 9, 9), conf=0.26), hit("person", (0, 0, 50, 200), conf=0.16)],
+         ["snack bag"], 1),   # arrives
+        ([hit("snack bag", (0, 0, 9, 9), conf=0.17), hit("person", (0, 0, 50, 200), conf=0.12)],
+         ["snack bag"], 1),   # dips to 0.17 / 0.12: held (>= 0.15 / 0.1125)
+        ([hit("snack bag", (0, 0, 9, 9), conf=0.14), hit("person", (0, 0, 50, 200), conf=0.10)],
+         [], 0),          # gone for real
+        ([hit("snack bag", (0, 0, 9, 9), conf=0.17)], [], 0),   # ...and needs the full floor again
+    ]
+    for hits, food, people in frames:
+        g.model.hits = hits
+        s = g.scene(blank())
+        assert (s["food"], s["person_count"]) == (food, people), hits
+    # A COCO model has no such problem and gets no such rule.
+    c = fake_gate([hit("pizza", (0, 0, 9, 9), conf=0.5)], coco=True)
+    c.t = dict(c.t, person_conf=0.4)
+    assert c.scene(blank())["food"] == ["pizza"]
+    c.model.hits = [hit("pizza", (0, 0, 9, 9), conf=0.35)]
+    assert c.scene(blank())["food"] == []
+
+
+def test_nested_person_boxes_count_as_one_person():
+    """Measured on person_sandwich.jpg: a whole body, then a torso and an
+    upper-body box 98 % inside it — three "people" for one, which per-class
+    NMS leaves alone (the torso's IoU with the body is only 0.47). The head
+    count is what present/with_visitor hangs off."""
+    nested = [(79, 27, 431, 251), (169, 109, 434, 252), (173, 50, 435, 252)]
+    assert gate.dedupe_boxes(nested) == [(79, 27, 431, 251)]
+    s = fake_gate([hit("person", b) for b in nested]).scene(blank())
+    assert s["person_count"] == 1
+    # Two real people side by side, even touching, do not contain each other.
+    apart = [(10, 10, 100, 200), (95, 10, 190, 200)]
+    assert len(gate.dedupe_boxes(apart)) == 2
+
+
+def test_a_coco_model_put_back_with_yolo_model_reports_what_it_used_to():
+    """The one-line revert. Mapped by name so the same scene() serves both,
+    filtered to the ids it can name, at COCO's own floor."""
+    g = fake_gate([
+        hit("person", (10, 10, 40, 120)),
+        hit("pizza", (50, 50, 70, 70)),
+        hit("cup", (80, 50, 90, 65)),
+        hit("couch", (0, 100, 300, 160)),
+        hit("dog", (0, 0, 20, 20)),
+    ], coco=True)
+    s = g.scene(blank())
+    assert s == {"person_count": 1, "boxes": [(10, 10, 40, 120)], "food": ["pizza"],
+                 "dishes": ["cup"], "seating": ["couch"]}
+    assert set(g.model.asked["classes"]) == {0, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+                                             50, 51, 52, 53, 54, 55, 56, 57, 59, 60}
+    assert g.model.asked["conf"] == TUNING["person_conf"]
 
 
 def test_scene_off_returns_the_same_shape_empty():
@@ -398,6 +523,131 @@ def test_a_missing_ultralytics_is_the_cut_path_not_a_crash(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", no_ultralytics)
     g = PersonGate(enabled=True)
     assert g.enabled is False and g.model is None
+
+
+# The load path, with ultralytics and torch faked so it runs (and proves the
+# same thing) on a machine that has neither.
+
+def _fake_stack(monkeypatch, yolo_cls):
+    import sys
+    import types
+
+    ul = types.ModuleType("ultralytics")
+    ul.YOLO = yolo_cls
+    torch = types.ModuleType("torch")
+    torch.backends = types.SimpleNamespace(mps=types.SimpleNamespace(is_available=lambda: False))
+    monkeypatch.setitem(sys.modules, "ultralytics", ul)
+    monkeypatch.setitem(sys.modules, "torch", torch)
+
+
+class _Loadable(_FakeYOLO):
+    """A YOLO-World that loads: set_classes() works and predict() answers."""
+
+    def __init__(self, name):
+        super().__init__([])
+        self.name = name
+
+    def set_classes(self, classes):
+        self.names = list(classes)
+
+
+def test_weights_that_will_not_download_are_the_cut_path(monkeypatch, capsys):
+    """No network on stage and no file on disk: the likeliest failure of the lot."""
+    class Boom:
+        def __init__(self, name):
+            raise OSError(f"failed to download {name}")
+
+    _fake_stack(monkeypatch, Boom)
+    g = PersonGate(enabled=True)
+    assert g.enabled is False and g.model is None
+    assert "unusable" in capsys.readouterr().out
+
+
+def test_no_clip_means_no_open_vocabulary_but_still_a_person_gate(monkeypatch, capsys):
+    """set_classes() needs CLIP (an extra dependency and a one-off download).
+    Without it: fall back to the COCO weights if they are already on disk —
+    people and ten foods beat motion-only — and otherwise take the cut path.
+    Either way the worker starts."""
+    class NoClip(_Loadable):
+        def set_classes(self, classes):
+            raise ModuleNotFoundError("No module named 'clip'")
+
+    class Stack:
+        def __new__(cls, name):
+            if name == gate.COCO_FALLBACK:
+                return _FakeYOLO([], COCO_NAMES)
+            return NoClip(name)
+
+    _fake_stack(monkeypatch, Stack)
+    monkeypatch.setattr(gate.os.path, "exists", lambda p: False)
+    g = PersonGate(enabled=True)
+    assert g.enabled is False and g.model is None
+    assert "clip" in capsys.readouterr().out
+
+    monkeypatch.setattr(gate.os.path, "exists", lambda p: p == gate.COCO_FALLBACK)
+    g = PersonGate(enabled=True)
+    assert g.enabled is True and g.open_vocab is False
+    assert g.model_name == "yolo11s" and 0 in g.classes and 53 in g.classes
+    assert "instead" in capsys.readouterr().out
+
+
+def test_the_vocabulary_is_set_at_start_and_the_first_frame_is_warm(monkeypatch):
+    """The first set_classes() is ~4 s (CLIP text embeddings). It belongs at
+    worker start, not on the first frame with a person in it."""
+    _fake_stack(monkeypatch, _Loadable)
+    g = PersonGate(enabled=True)
+    assert g.enabled and g.open_vocab
+    assert g.model.names == gate.PROMPTS
+    assert g.model.asked is not None, "no warm-up pass was made"
+    assert g.model.asked["imgsz"] == TUNING["person_imgsz"]
+    assert g.model_name == "yolov8s-worldv2"
+
+
+def test_a_detector_that_dies_mid_run_becomes_the_cut_path(capsys):
+    class Exploding(_FakeYOLO):
+        def predict(self, *a, **kw):
+            raise RuntimeError("MPS einsum fell over in the contrastive head")
+
+    g = fake_gate([])
+    g.model = Exploding([])
+    assert g.scene(blank()) == {"person_count": 0, "boxes": [], "food": [], "dishes": [],
+                                "seating": []}
+    assert g.enabled is False, "the worker reads this every frame and takes the motion-only path"
+    assert "motion-only" in capsys.readouterr().out
+
+
+# --- what a richer vocabulary changes downstream ------------------------------
+
+def test_a_word_coco_never_had_becomes_eating_and_reaches_the_evidence():
+    """The whole point. COCO said "bowl" and the observation said "sitting";
+    YOLO-World says "cereal" and the observation says "eating" — which is what
+    the family sentence is built from. The label itself stays in `evidence`
+    (staff/audit only, §5.2)."""
+    scene = {"person_count": 1, "boxes": [(10, 10, 60, 200)], "food": ["cereal"],
+             "dishes": ["bowl"], "seating": ["dining table"]}
+    obs = vlm.post_rules(vlm.from_scene(scene, "mid"))
+    assert obs["activity"] == "eating" and obs["spot"] == "table"
+    assert "cereal" in obs["evidence"]
+    assert worker._sentence(obs) == "eating at the table"
+    # ...and through the VLM lane, where the model saw nothing it could name.
+    said = dict(vlm.ABSENT, activity="sitting", person_count=1, confidence=0.7,
+                evidence="A person seated at a table.")
+    merged = vlm.post_rules(vlm.merge_scene(said, scene))
+    assert merged["food_visible"] is True and "cereal" in merged["evidence"]
+
+
+def test_food_left_on_the_table_does_not_conjure_a_person():
+    """A bowl of cereal after she has gone is now a common detection. It must
+    stay "absent" — the count bump in post_rules is for a hand at a mouth, not
+    for a plate."""
+    scene = {"person_count": 0, "boxes": [], "food": ["cereal"], "dishes": ["bowl"],
+             "seating": []}
+    obs = vlm.post_rules(vlm.from_scene(scene, None))
+    assert obs["activity"] == "absent" and obs["person_count"] == 0
+    assert obs["food_visible"] is True                 # honest: the bowl is there
+    # The gesture rule the bump exists for still holds.
+    said = dict(vlm.ABSENT, person_count=0, hand_to_mouth_observed=True, food_visible=True)
+    assert vlm.post_rules(said)["person_count"] == 1
 
 
 # --- the override: YOLO counts, the VLM narrates ------------------------------
@@ -461,7 +711,7 @@ def test_a_stale_scene_cannot_reach_a_later_observation():
     that observation would report food nobody can see."""
     w = worker.Worker(source="synthetic", camera_id="cam_x", api="http://localhost:0",
                       band_key="k", dry_run=True)
-    g = fake_gate([(0, (10, 10, 40, 120)), (48, (50, 50, 70, 70))])
+    g = fake_gate([hit("person", (10, 10, 40, 120)), hit("sandwich", (50, 50, 70, 70))])
 
     box, seen = w._detect(g, blank(), run_it=True, moved=True, motion=None)
     assert seen and box is not None

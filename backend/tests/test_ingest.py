@@ -1,9 +1,9 @@
 """tests/test_ingest.py — the band is an untrusted network client, so these
-also exercise the 401/404/422 trust-boundary paths, not just the happy path.
+also exercise the 404/422 trust-boundary paths, not just the happy path.
+(There is no 401: the API has no auth. See app/main.py.)
 """
 
 from app import location as location_mod
-from tests.conftest import BAND_HEADERS
 
 FALL_PAYLOAD = {
     "band_id": "band_a3f2",
@@ -18,7 +18,7 @@ FALL_PAYLOAD = {
 
 
 async def test_fall_creates_event_and_opens_alert(client, resident, db):
-    r = await client.post("/v1/ingest/band", json=FALL_PAYLOAD, headers=BAND_HEADERS)
+    r = await client.post("/v1/ingest/band", json=FALL_PAYLOAD)
 
     if r.status_code == 500:
         # ponytail: app/alerts.py may still be mid-write by another agent — the
@@ -44,25 +44,14 @@ async def test_fall_creates_event_and_opens_alert(client, resident, db):
 
 async def test_unknown_band_404(client, resident):
     payload = dict(FALL_PAYLOAD, band_id="band_does_not_exist")
-    r = await client.post("/v1/ingest/band", json=payload, headers=BAND_HEADERS)
+    r = await client.post("/v1/ingest/band", json=payload)
     assert r.status_code == 404
-
-
-async def test_missing_band_key_401(client, resident):
-    r = await client.post("/v1/ingest/band", json=FALL_PAYLOAD)
-    assert r.status_code == 401
-
-
-async def test_bad_band_key_401(client, resident):
-    r = await client.post("/v1/ingest/band", json=FALL_PAYLOAD, headers={"X-Band-Key": "wrong"})
-    assert r.status_code == 401
 
 
 async def test_heartbeat_updates_band_doc(client, resident, db):
     r = await client.post(
         "/v1/ingest/heartbeat",
         json={"band_id": "band_a3f2", "battery_pct": 42, "uptime_s": 1000},
-        headers=BAND_HEADERS,
     )
     assert r.status_code == 204
 
@@ -75,7 +64,6 @@ async def test_heartbeat_low_battery_emits_event(client, resident, db):
     r = await client.post(
         "/v1/ingest/heartbeat",
         json={"band_id": "band_a3f2", "battery_pct": 10},
-        headers=BAND_HEADERS,
     )
     assert r.status_code == 204
     evt = await db.events.find_one({"resident_id": resident, "type": "band_low_battery"})
@@ -86,7 +74,6 @@ async def test_heartbeat_unknown_band_404(client, resident):
     r = await client.post(
         "/v1/ingest/heartbeat",
         json={"band_id": "band_nope", "battery_pct": 50},
-        headers=BAND_HEADERS,
     )
     assert r.status_code == 404
 
@@ -108,9 +95,9 @@ async def test_rf_scan_produces_zone_event(client, resident, db):
     }
 
     # Dwell hysteresis needs 2 consecutive matching ticks before it commits.
-    r1 = await client.post("/v1/ingest/rf", json=scan, headers=BAND_HEADERS)
+    r1 = await client.post("/v1/ingest/rf", json=scan)
     assert r1.status_code == 200
-    r2 = await client.post("/v1/ingest/rf", json=scan, headers=BAND_HEADERS)
+    r2 = await client.post("/v1/ingest/rf", json=scan)
     assert r2.status_code == 200
     assert r2.json()["zone"] == "kitchen"
 
@@ -126,5 +113,5 @@ async def test_rf_scan_bad_rssi_422(client, resident):
         "beacons": [{"uuid": "bcn_kitchen", "rssi": 50}],  # positive dBm is not physical
         "wifi": [],
     }
-    r = await client.post("/v1/ingest/rf", json=scan, headers=BAND_HEADERS)
+    r = await client.post("/v1/ingest/rf", json=scan)
     assert r.status_code == 422

@@ -9,14 +9,14 @@
 // screen. Where the real backend still has no equivalent endpoint at all,
 // the function says so and throws or degrades instead of faking data.
 import { draftOpeners, planFromThread as aiPlanFromThread, polishLetter, type FamilyPlan } from './ai';
-import { API_BASE, API_KEY } from './config';
-import { auth } from './copy/auth';
+import { API_BASE } from './config';
+import { family } from './copy/family';
 import { useSession } from '@/store/session';
 import type {
   ActivityDay, Alert, AlertKind, AlertSeverity, BaselineFeature, CallRow,
   ChatMessage, Contact, DaySummary, Fact, KEvent, LadderStep, LocationMethod,
   TranscriptLine,
-  LocationSegment, LoginResult, MemoryDeleted, MemoryScope, Presence, Profile,
+  LocationSegment, MemoryDeleted, MemoryScope, Presence, Profile,
   ProfilePatch, Resident, ResidentLocation, CameraMonitorTick, CameraSummary,
   SimulateKind, VoiceScript,
 } from './types';
@@ -30,7 +30,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${API_KEY}`, // static shared key — see config.ts
+      // No Authorization header: the backend has no auth (see config.ts).
       ...init?.headers,
     },
   });
@@ -59,11 +59,10 @@ const put = <T>(path: string, data?: unknown) =>
 const del = <T>(path: string, data?: unknown) =>
   request<T>(path, { method: 'DELETE', body: JSON.stringify(data ?? {}) });
 
-// The resident this session is looking out for. `POST /auth/login` returns a
-// `resident_id` and session.ts stores it, so read it from there rather than
-// hardcoding Eleanor — a zustand store is readable outside React, and this
-// module has no component to hook into. Falls back to the store's own default
-// if called before sign-in (the demo seed and `signIn` both set a real id).
+// The resident this session is looking out for. session.ts holds it (the
+// seed's one resident, or whatever the demo session set), so read it from
+// there rather than hardcoding Eleanor — a zustand store is readable outside
+// React, and this module has no component to hook into.
 const residentId = () => useSession.getState().residentId;
 
 // Her day, not UTC's. Mirrors `localDayKey` in hooks.ts; kept here so the
@@ -408,12 +407,12 @@ export const httpApi = {
 
   // POST /residents/{id}/notes — a staff or family note, stored as a real
   // event so it is retrievable and shows up on the timeline like anything else.
-  // `author` is required by NoteBody (residents.py) and has no default, so it
-  // is filled from the signed-in user here rather than asked of every caller —
-  // a note nobody signed is worth less than no note.
+  // `author` is required by NoteBody (residents.py) and has no default. There
+  // is no signed-in person to name (the app has no login), so the note is
+  // signed by its lane, with the same words the alert screen uses for who
+  // acted: "Staff" or "Family", from the copy module.
   addNote: async (residentId_: string, text: string, role: 'staff' | 'family' = 'family'): Promise<void> => {
-    const author = useSession.getState().user?.name?.trim()
-      || (role === 'staff' ? 'Staff' : 'Family');
+    const author = role === 'staff' ? family.alert.actorStaff : family.alert.actorFamily;
     await post(`/residents/${residentId_}/notes`, { text, author, role });
   },
 
@@ -517,20 +516,6 @@ export const httpApi = {
     await put(`/residents/${residentId()}/contacts`, body);
   },
   // ---- camera lane (VLM_PLAN §6.1) ------------------------------------------
-
-  // POST /auth/login. The server looks the username up in its `users` store
-  // and checks the password against a stored hash; a miss on either is a 401
-  // with one sentence, which surfaces here as the thrown Error's message.
-  // The wire field is still called `email` so the route's shape is unchanged,
-  // but it carries a username now (`user`), so no email check happens here:
-  // only "did you type anything", which saves a round trip and nothing more.
-  // The token that comes back is still the one shared app key.
-  login: async (username: string, password: string): Promise<LoginResult> => {
-    const trimmed = username.trim();
-    if (!trimmed) throw new Error(auth.errors.enterUsername);
-    if (!password) throw new Error(auth.errors.enterPassword);
-    return post<LoginResult>('/auth/login', { email: trimmed, password });
-  },
 
   // GET /residents/{id}/presence — no zone, no evidence, by contract.
   // ponytail: while the camera router is still landing, a 404 degrades to an

@@ -235,10 +235,11 @@ def post_rules(obs):
     # the same breath ("person holding food near mouth"). Declaring her absent on
     # that is the worst answer available: "out of view" is what the family reads
     # when she is sitting right there. A hand at a mouth is a person, so trust
-    # the gesture over the count and let the VLM's own evidence break the tie.
-    if o.get("person_count", 0) == 0 and (
-        o.get("hand_to_mouth_observed") or o.get("food_visible")
-    ):
+    # the gesture over the count. Food alone is not: this used to fire on
+    # `food_visible` too, which was harmless while COCO could name ten foods
+    # and rarely did, and is wrong now the detector names a bowl of cereal left
+    # on the table after she has gone — that must stay "absent".
+    if o.get("person_count", 0) == 0 and o.get("hand_to_mouth_observed"):
         o["person_count"] = 1
     if o.get("person_count", 0) == 0:
         o["activity"] = "absent"

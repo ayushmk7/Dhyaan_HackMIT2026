@@ -15,6 +15,7 @@ import type {
   CameraMonitorTick, CameraSummary, MemoryScope, Presence, Profile, ProfilePatch,
   SourceKind,
 } from '../types';
+import { eleanorContacts } from './data';
 
 const iso = (t: number) => new Date(t).toISOString();
 const clock = (t: number) =>
@@ -33,10 +34,11 @@ const newFact = (key: string, text: string, author: string): Fact => ({
   created_at: iso(Date.now()),
 });
 
-// Eleanor's seeded facts — what `Skip setup (dev)` writes instead of making
-// the presenter type nine answers at the expo table. Mirrors §4.2's examples
-// so the chat's contrast answers have something to contrast against.
-export const SEEDED_FACTS: { key: string; text: string }[] = [
+// Eleanor's seeded facts, what `seedEleanor` writes instead of making the
+// presenter type nine answers at the expo table. Mirrors §4.2's examples so
+// the chat's contrast answers have something to contrast against. Mock-only:
+// no screen imports this, so it can never be posted to a real server.
+const SEEDED_FACTS: { key: string; text: string }[] = [
   { key: 'wake', text: 'Eleanor is usually up around 6:30.' },
   { key: 'breakfast', text: 'Toast and tea, about 8.' },
   { key: 'lunch', text: 'Lunch is usually soup around 12:30.' },
@@ -361,7 +363,7 @@ class MockCamera {
     };
   }
 
-  seedEleanor(author = 'Priya Sharma') {
+  seedEleanor(author = eleanorContacts[0].name) {
     this.stopped = false;
     this.profile = emptyProfile();
     this.profile.consent = {

@@ -42,8 +42,15 @@ backend — a phone in Expo Go can't resolve `localhost` to your Mac, so
 ```bash
 cd frontend
 EXPO_PUBLIC_USE_MOCKS=false EXPO_PUBLIC_API_BASE=http://<mac-ip>:8000/v1 \
-  EXPO_PUBLIC_API_KEY=dev-key-change-me npx expo start --lan
+  npx expo start --lan
 ```
+
+**There is no login and no auth.** No API key, no band key, no token on the
+websocket: any process that can reach port 8000 can read every resident's
+history and write observations as any camera. This is a demo build for one
+laptop on one LAN; the notice at the top of `backend/app/main.py` says the
+same. Do not expose it. (The consent gates are still enforced; they protect
+the resident, not the server.)
 
 (`cd backend && make ip` prints `<mac-ip>` any time. The iOS Simulator, unlike
 a phone, is fine with the `localhost` default — just `npx expo start` and
@@ -56,7 +63,7 @@ Tests don't need `dev.sh` running (they spin up their own things via
 `conftest.py`), just mongo:
 
 ```bash
-cd backend && make mongo && make test   # 245 tests
+cd backend && make mongo && make test   # 263 tests
 ```
 
 The camera lane is separate — `dev.sh` doesn't start it, because it wants a

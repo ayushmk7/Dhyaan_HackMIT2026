@@ -5,7 +5,7 @@
 // the phone itself, not your Mac. Run `make ip` in backend/ to print your
 // Mac's LAN IP, then start Expo with:
 //   EXPO_PUBLIC_USE_MOCKS=false EXPO_PUBLIC_API_BASE=http://<that-ip>:8000/v1 \
-//   EXPO_PUBLIC_API_KEY=dev-key-change-me npx expo start
+//   npx expo start
 // The iOS Simulator (not a phone) can still use `localhost`, which is why
 // that's the default below.
 // Defaults to the REAL backend: `./dev.sh` brings mongo, ollama and the API up
@@ -19,18 +19,11 @@ export const USE_MOCKS = process.env.EXPO_PUBLIC_USE_MOCKS === 'true';
 export const API_BASE =
   process.env.EXPO_PUBLIC_API_BASE ?? 'http://localhost:8000/v1';
 
-// ponytail: one static shared-secret key (backend/app/config.py's API_KEY),
-// not a per-user JWT — the PRD's §10.5 JWT claims don't exist server-side.
-// Fine for a demo on one LAN; upgrade to per-user auth the day there's a
-// second tenant or this leaves the LAN.
-export const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? 'dev-key-change-me';
-
-// WS /v1/live authenticates via a `token` query param (a websocket upgrade
-// request can't carry a custom header) — see backend/app/routers/live.py.
-// Baking the token in here means even a naive `new WebSocket(WS_URL)` call
-// site (no header support needed) still authenticates.
+// No API key, no login, no token. The backend has no authentication at all
+// (see the notice at the top of backend/app/main.py): every request and the
+// websocket go out bare. Demo build for one LAN.
 const wsBase = API_BASE.replace(/^http/, 'ws'); // http->ws, https->wss
-export const WS_URL = `${wsBase}/live?token=${encodeURIComponent(API_KEY)}`;
+export const WS_URL = `${wsBase}/live`;
 
 // Client-side Claude key for the connection layer (demo only — see src/lib/ai.ts).
 export const ANTHROPIC_KEY = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '';

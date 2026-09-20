@@ -4,7 +4,6 @@ that has to actually delete. VLM_PLAN §4.
 
 import pytest_asyncio
 
-from tests.conftest import APP_HEADERS
 
 FACTS = [
     {"key": "breakfast", "text": "Eleanor usually has toast and tea for breakfast at about 8."},
@@ -21,7 +20,7 @@ async def consented(db, resident):
 
 async def _add(client, facts=None):
     r = await client.post("/v1/residents/res_eleanor/profile/facts",
-                          headers=APP_HEADERS, json=facts or FACTS)
+                          json=facts or FACTS)
     assert r.status_code == 200, r.text
     return r.json()["facts"]
 
@@ -40,18 +39,17 @@ async def test_facts_are_written_embedded_and_active(client, consented, db):
 
 async def test_facts_need_memory_consent(client, resident, db):
     r = await client.post("/v1/residents/res_eleanor/profile/facts",
-                          headers=APP_HEADERS, json=FACTS)
+                          json=FACTS)
     assert r.status_code == 403
     assert await db.profile_facts.count_documents({}) == 0
 
 
 async def test_fact_text_is_validated_at_the_boundary(client, consented):
     r = await client.post("/v1/residents/res_eleanor/profile/facts",
-                          headers=APP_HEADERS,
                           json=[{"key": "breakfast", "text": "x" * 301}])
     assert r.status_code == 422
     r = await client.post("/v1/residents/res_eleanor/profile/facts",
-                          headers=APP_HEADERS, json=[])
+                          json=[])
     assert r.status_code == 422
 
 
@@ -65,7 +63,6 @@ async def test_a_correction_supersedes_rather_than_overwrites(client, consented,
     facts = await _add(client)
     old = facts[0]["id"]
     r = await client.put(f"/v1/residents/res_eleanor/profile/facts/{old}",
-                         headers=APP_HEADERS,
                          json={"text": "Breakfast is now usually porridge, not toast."})
     assert r.status_code == 200, r.text
     new = r.json()["fact"]
@@ -85,10 +82,10 @@ async def test_a_correction_supersedes_rather_than_overwrites(client, consented,
 async def test_delete_a_fact_deactivates_it(client, consented, db):
     facts = await _add(client)
     r = await client.delete(
-        f"/v1/residents/res_eleanor/profile/facts/{facts[0]['id']}", headers=APP_HEADERS)
+        f"/v1/residents/res_eleanor/profile/facts/{facts[0]['id']}")
     assert r.status_code == 200
     assert (await db.profile_facts.find_one({"_id": facts[0]["id"]}))["active"] is False
-    profile = await client.get("/v1/residents/res_eleanor/profile", headers=APP_HEADERS)
+    profile = await client.get("/v1/residents/res_eleanor/profile")
     assert len(profile.json()["facts"]) == 2
 
 
@@ -98,14 +95,14 @@ async def test_delete_a_fact_deactivates_it(client, consented, db):
 
 async def test_bedroom_and_bathroom_zones_are_refused(client, resident, db):
     for zone in ("bedroom", "bathroom"):
-        r = await client.put("/v1/residents/res_eleanor/profile", headers=APP_HEADERS,
+        r = await client.put("/v1/residents/res_eleanor/profile",
                              json={"camera": {"zone": zone, "zone_hint": "x"}})
         assert r.status_code == 422, zone
     assert await db.cameras.count_documents({}) == 0
 
 
 async def test_an_allowed_zone_creates_the_camera(client, resident, db):
-    r = await client.put("/v1/residents/res_eleanor/profile", headers=APP_HEADERS,
+    r = await client.put("/v1/residents/res_eleanor/profile",
                          json={"camera": {"zone": "living_room",
                                           "zone_hint": "Table left, armchair right."}})
     assert r.status_code == 200
@@ -113,13 +110,13 @@ async def test_an_allowed_zone_creates_the_camera(client, resident, db):
 
 
 async def test_appearance_over_200_chars_is_refused(client, resident):
-    r = await client.put("/v1/residents/res_eleanor/profile", headers=APP_HEADERS,
+    r = await client.put("/v1/residents/res_eleanor/profile",
                          json={"appearance": "a" * 201})
     assert r.status_code == 422
 
 
 async def test_consent_requires_a_stated_relationship(client, resident):
-    r = await client.put("/v1/residents/res_eleanor/profile", headers=APP_HEADERS,
+    r = await client.put("/v1/residents/res_eleanor/profile",
                          json={"consent": {"camera": True, "signed_by": "Priya",
                                            "relationship": "   "}})
     assert r.status_code == 422
@@ -156,7 +153,7 @@ async def stuffed(client, consented, db):
 
 async def _forget(client, scope="all", confirm="Eleanor"):
     return await client.request(
-        "DELETE", "/v1/residents/res_eleanor/memory", headers=APP_HEADERS,
+        "DELETE", "/v1/residents/res_eleanor/memory",
         json={"scope": scope, "confirm": confirm})
 
 
@@ -201,7 +198,7 @@ async def test_a_mistyped_confirmation_deletes_nothing(client, stuffed, db):
 
 
 async def test_withdrawing_memory_consent_forgets_the_profile(client, stuffed, db):
-    r = await client.put("/v1/residents/res_eleanor/profile", headers=APP_HEADERS,
+    r = await client.put("/v1/residents/res_eleanor/profile",
                          json={"consent": {"memory": False, "relationship": "daughter"}})
     assert r.status_code == 200
     assert await db.profile_facts.count_documents({}) == 0

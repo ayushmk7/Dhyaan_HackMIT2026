@@ -4,6 +4,8 @@
 // ponytail: persistence + a backend /carefile endpoint are the upgrade path.
 import { create } from 'zustand';
 import { extractCareInfo, hasAI, type CareExtract } from '@/lib/ai';
+import { USE_MOCKS } from '@/lib/config';
+import { family } from '@/lib/copy/family';
 import { EXAMPLE_DISCHARGE, EXAMPLE_EXTRACT } from '@/lib/example-docs';
 
 export interface CareSource {
@@ -54,8 +56,11 @@ export const useCareFile = create<CareFileStore>((set, get) => ({
       let extract: CareExtract | null = null;
       if (input.text) {
         extract = await extractCareInfo({ text: input.text });
-        // Keyless demo path: the example document parses to its known contents.
-        if (!extract && !hasAI && input.text.trim() === EXAMPLE_DISCHARGE.trim()) {
+        // Keyless demo path: the example document parses to its known
+        // contents. Mock backend only: against a live server a canned parse
+        // would put a fictional cardiologist on a real person's emergency
+        // card, so live without a key is the honest error below.
+        if (!extract && !hasAI && USE_MOCKS && input.text.trim() === EXAMPLE_DISCHARGE.trim()) {
           extract = EXAMPLE_EXTRACT;
         }
       } else if (input.imageBase64 && input.mediaType) {
@@ -65,11 +70,7 @@ export const useCareFile = create<CareFileStore>((set, get) => ({
         });
       }
       if (!extract) {
-        return {
-          error: hasAI
-            ? 'Couldn’t read that as a care document. Try a clearer copy.'
-            : 'Live reading needs the AI key. The example document works without it.',
-        };
+        return { error: hasAI ? family.carefile.unreadable : family.carefile.needsAI };
       }
 
       const s = get();

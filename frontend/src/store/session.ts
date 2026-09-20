@@ -1,14 +1,14 @@
-// Who is signed in, who they are looking out for, and where they are in
-// onboarding. The whole app is gated on `user` — no user, no screens.
+// Who this phone is looking out for, and where it is in onboarding. There is
+// no signed-in person: the app has no login and the backend has no auth (see
+// backend/app/main.py). Nothing here is a credential.
 //
 // ponytail: in-memory only. The session survives every navigation, tab switch
 // and remount for as long as the app is running, which is what a demo needs;
-// a full reload signs you out, which reads as a real app locking. Ceiling:
-// no token refresh, no keychain. Upgrade: persist `user`/`token` once there
-// is an account system worth persisting (needs a storage dependency this
-// build deliberately does not add).
+// a full reload starts onboarding again. Upgrade: persist this once there is
+// something worth persisting (needs a storage dependency this build
+// deliberately does not add).
 import { create } from 'zustand';
-import type { AuthUser, CameraZone } from '@/lib/types';
+import type { CameraZone } from '@/lib/types';
 
 export type Role = 'family' | 'staff' | null;
 
@@ -21,8 +21,6 @@ export type FactDraft = { key: string; text: string };
 export type CameraDraft = { zone: CameraZone | null; zoneHint: string };
 
 type Session = {
-  user: AuthUser | null;
-  token: string | null;
   residentId: string;
 
   role: Role;
@@ -34,10 +32,8 @@ type Session = {
   factDrafts: FactDraft[];
   camera: CameraDraft;
 
-  signIn(user: AuthUser, token: string, residentId: string): void;
   /** Her real name, once the server has been asked. See `useHydrateResident`. */
   setResidentName(name: string): void;
-  signOut(): void;
   setRole(r: Role): void;
   setConsent(input: {
     residentName: string; signedBy: string; relationship: string; grants: Grants;
@@ -45,8 +41,9 @@ type Session = {
   setFact(key: string, text: string): void;
   setCamera(c: Partial<CameraDraft>): void;
   finishOnboarding(): void;
-  /** `Skip setup (dev)` — a signed-in session with Eleanor already set up. */
+  /** `Skip setup (dev)` — a session with Eleanor already set up. */
   seedDemoSession(drafts: FactDraft[]): void;
+  /** Drops everything, including the onboarding draft. */
   reset(): void;
 };
 
@@ -54,15 +51,11 @@ const emptyGrants: Grants = { falls: null, camera: null, memory: null };
 const emptyCamera: CameraDraft = { zone: null, zoneHint: '' };
 
 // ponytail: `res_eleanor` and `Eleanor` are the seed's one resident, and they
-// are the value the app opens with before anyone has signed in. They are a
-// placeholder, not a fact: `signIn` replaces the id with whatever
-// `POST /auth/login` returns, and `useHydrateResident` replaces the name with
-// what the server calls her. Ceiling: a first frame after sign-in can still
-// show the placeholder name for as long as the profile request takes. Upgrade:
-// return `display_name` from the login route so there is nothing to catch up.
+// are the value the app opens with. The name is a placeholder, not a fact:
+// `useHydrateResident` replaces it with what the server calls her. Ceiling: a
+// first frame can still show the placeholder name for as long as the profile
+// request takes.
 const blank = {
-  user: null,
-  token: null,
   residentId: 'res_eleanor',
   role: null as Role,
   onboarded: false,
@@ -77,18 +70,12 @@ const blank = {
 export const useSession = create<Session>((set) => ({
   ...blank,
 
-  signIn: (user, token, residentId) => set({ user, token, residentId, role: 'family' }),
-
   // Only ever widens: an empty or whitespace name from the server must not
   // wipe the one already on screen.
   setResidentName: (name) => {
     const clean = name.trim();
     if (clean) set({ residentName: clean });
   },
-  // Signing out drops everything, including the onboarding draft — the next
-  // person to sign in on this phone must not inherit the last one's answers.
-  signOut: () => set({ ...blank }),
-
   setRole: (role) => set({ role, onboarded: role === 'staff' }),
 
   setConsent: ({ residentName, signedBy, relationship, grants }) =>
@@ -108,22 +95,16 @@ export const useSession = create<Session>((set) => ({
 
   finishOnboarding: () => set({ onboarded: true }),
 
+  // Only what skipping setup needs: the lane, the flag, the seed's one
+  // resident id. It names nobody. Who signed consent, her name and her camera
+  // all come from the server (`useHydrateResident`, `GET /profile`); against
+  // a live backend this used to show an invented signer until that loaded.
   seedDemoSession: (drafts) =>
     set({
-      user: { name: 'Priya Sharma', email: 'priya@dhyaan.demo' },
-      token: 'demo',
       residentId: 'res_eleanor',
       role: 'family',
       onboarded: true,
-      residentName: 'Eleanor',
-      consentGivenBy: 'Priya Sharma',
-      consentRelationship: 'Daughter',
-      grants: { falls: true, camera: true, memory: true },
       factDrafts: drafts,
-      camera: {
-        zone: 'living_room',
-        zoneHint: 'The dining table is on the left, her armchair by the window on the right.',
-      },
     }),
 
   reset: () => set({ ...blank }),

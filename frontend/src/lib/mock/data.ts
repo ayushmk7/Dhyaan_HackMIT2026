@@ -280,11 +280,3 @@ export const eleanorBaselines: BaselineFeature[] = [
     ...withMockRealFields([0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0], 'high'),
   },
 ];
-
-export const homeZones = [
-  { id: 'bedroom', label: 'Bedroom' },
-  { id: 'bathroom', label: 'Bathroom' },
-  { id: 'kitchen', label: 'Kitchen' },
-  { id: 'living_room', label: 'Living room' },
-  { id: 'hallway', label: 'Hallway' },
-] as const;

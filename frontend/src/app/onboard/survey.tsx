@@ -11,6 +11,13 @@
 //     function of the countdown timer: a number drawn from a clock and
 //     labelled as radio.
 //
+// The rooms are the server's zone enum (backend/app/location.py `ZONES`),
+// which survey/start validates with a 422. There is no endpoint that lists
+// them, so the ids are mirrored here the way camera.tsx mirrors CAMERA_ZONES,
+// and the labels live in copy. They used to come from `@/lib/mock/data`, which
+// put a mock constant on a live screen. `front_door` and `OUTSIDE` are in the
+// enum but not offered: nobody stands in a doorway for thirty seconds.
+//
 // The rooms are rows on the paper, not cards. The room being walked right now
 // is the one thing on the screen: it lifts onto a tinted plate and the
 // countdown is set in the readout face. Every other row ends in a real
@@ -24,7 +31,6 @@ import {
 } from '@/components';
 import { api } from '@/lib/api';
 import { onboard } from '@/lib/copy/staff';
-import { homeZones } from '@/lib/mock/data';
 import { radius, sp, useTheme } from '@/theme';
 import { useSession } from '@/store/session';
 import { StepHeader } from './_layout';
@@ -37,6 +43,9 @@ type RoomState =
   | { kind: 'done'; scans: number; warning: string | null }
   | { kind: 'failed'; message: string };
 
+/** The zones a band walk may teach, in the order they are offered. */
+const ZONES = ['bedroom', 'bathroom', 'kitchen', 'living_room', 'hallway'] as const;
+
 const SURVEY_S = 30;
 /** How many rooms must be mapped before the family may move on. */
 const ROOMS_NEEDED = 3;
@@ -45,7 +54,7 @@ export default function Survey() {
   const t = useTheme();
   const { residentName, grants } = useSession();
   const [rooms, setRooms] = useState<Record<string, RoomState>>(
-    Object.fromEntries(homeZones.map((z) => [z.id, { kind: 'idle' }])),
+    Object.fromEntries(ZONES.map((z) => [z, { kind: 'idle' }])),
   );
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -118,11 +127,11 @@ export default function Survey() {
       </Entrance>
 
       <View style={{ marginTop: sp(4) }}>
-        {homeZones.map((z, i) => {
-          const s = rooms[z.id];
+        {ZONES.map((z, i) => {
+          const s = rooms[z];
           const live = s.kind === 'surveying';
           return (
-            <Entrance key={z.id} index={1 + i}>
+            <Entrance key={z} index={1 + i}>
               {i > 0 && !live && <Rule weight="hair" />}
               <View
                 style={live ? {
@@ -134,7 +143,7 @@ export default function Survey() {
               >
                 <Row style={{ justifyContent: 'space-between', alignItems: 'center' }} gap={3}>
                   <View style={{ flex: 1 }}>
-                    <Txt kind={live ? 'title' : 'label'}>{z.label}</Txt>
+                    <Txt kind={live ? 'title' : 'label'}>{copy.rooms[z]}</Txt>
                     {s.kind === 'done' && (
                       <Txt
                         kind="caption"
@@ -151,16 +160,16 @@ export default function Survey() {
                     )}
                   </View>
                   {s.kind === 'idle' && (
-                    <Btn kind="quiet" size="small" label={copy.mapRoom} disabled={surveying} onPress={() => start(z.id)} />
+                    <Btn kind="quiet" size="small" label={copy.mapRoom} disabled={surveying} onPress={() => start(z)} />
                   )}
                   {s.kind === 'done' && !s.warning && (
                     <DataLabel value={String(s.scans)}>{copy.readings}</DataLabel>
                   )}
                   {s.kind === 'done' && !!s.warning && (
-                    <Btn kind="quiet" size="small" label={copy.walkAgain} disabled={surveying} onPress={() => start(z.id)} />
+                    <Btn kind="quiet" size="small" label={copy.walkAgain} disabled={surveying} onPress={() => start(z)} />
                   )}
                   {s.kind === 'failed' && (
-                    <Btn kind="quiet" size="small" label={copy.tryAgain} disabled={surveying} onPress={() => start(z.id)} />
+                    <Btn kind="quiet" size="small" label={copy.tryAgain} disabled={surveying} onPress={() => start(z)} />
                   )}
                 </Row>
 
@@ -178,7 +187,7 @@ export default function Survey() {
         })}
       </View>
 
-      <Entrance index={1 + homeZones.length} style={{ marginTop: sp(6), gap: sp(3) }}>
+      <Entrance index={1 + ZONES.length} style={{ marginTop: sp(6), gap: sp(3) }}>
         {/* Why the button is still grey, or why the other rooms are. */}
         {surveying ? (
           <Txt kind="body" accessibilityLiveRegion="polite">{copy.oneAtATime}</Txt>

@@ -1,4 +1,10 @@
-"""Stage 3b: an open vocabulary for the keyframe path only.
+"""Stage 3b: a second open-vocabulary pass — for a COCO person gate only.
+
+Stage 3 (`gate.PersonGate`) now runs YOLO-World itself, with the vocabulary in
+`gate.VOCAB`, so with the default `YOLO_MODEL` this lane is redundant and the
+worker switches it off at start ("stage 3b off"). It is kept for the one-line
+revert: `YOLO_MODEL=yolo11s.pt` puts the COCO detector on the hot path, and
+this module then adds food to its keyframes exactly as it did before.
 
 COCO has exactly ten food words — sandwich, pizza, banana, apple, orange, cake,
 donut, hot dog, broccoli, carrot — so `gate.PersonGate` is structurally blind to

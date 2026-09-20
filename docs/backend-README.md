@@ -44,8 +44,9 @@ and emits `call_placed`; swapping in real Twilio does not touch the FSM.
 
 ## For Utsav — the band contract
 
-Endpoints are `POST /v1/ingest/{band,band/cancel,heartbeat,rf}`, all requiring
-the header `X-Band-Key: <BAND_KEY>`. **The JSON your firmware must send is in
+Endpoints are `POST /v1/ingest/{band,band/cancel,heartbeat,rf}`. No auth
+header: the API has none (demo build, see the notice in `app/main.py`); an
+`X-Band-Key` header is ignored if sent. **The JSON your firmware must send is in
 `fixtures/`** — those files are the contract, not the prose in the PRD:
 
 | File | Endpoint |
@@ -58,7 +59,7 @@ Test your firmware payload against a running server before you trust it:
 
 ```bash
 curl -X POST http://<mac-ip>:8000/v1/ingest/band \
-  -H "X-Band-Key: band-dev-key" -H "Content-Type: application/json" \
+  -H "Content-Type: application/json" \
   -d @fixtures/band_fall.json
 # -> {"event_id": "evt_...", "alert_id": "alt_...", "cancel_window_s": 30}
 ```
@@ -78,9 +79,9 @@ Classifications flow back in via `alerts.classify(alert_id, classification,
 detail)` with one of `okay | fell_but_fine | no_answer | distress | incoherent`.
 **Silence escalates** — not calling `classify` at all is treated as distress.
 
-**App API.** `Authorization: Bearer <API_KEY>` on every route. Websocket is
-`ws://<host>/v1/live?token=<API_KEY>&resident_id=<id>` (query param, because RN
-websockets cannot set headers). Mongo `_id` is always serialised as `id`, and
+**App API.** No auth on any route, and none on the websocket
+(`ws://<host>/v1/live?resident_id=<id>`): anyone who can reach the port can
+read and write everything. Demo build; `app/main.py` says so at the top. Mongo `_id` is always serialised as `id`, and
 every timestamp is an ISO-8601 string. `GET /v1/residents` is built to fill the
 home screen in one request.
 
@@ -198,7 +199,7 @@ the actual room beats any default in there.
                       same Apple ID is a webcam for free). A path plays a video or
                       a still at real time, looped — rehearsal and stage fallback.
 --camera-id cam_mac_01
---api http://localhost:8000     --band-key ...   (X-Band-Key, as the band lane)
+--api http://localhost:8000     --band-key ...   (sends X-Band-Key; the API ignores it)
 --mask 0,0,0.25,1     black out a private doorway BEFORE motion detection
 --preview             a window on the hub's own screen. `p` pauses the camera for
                       two hours (her control, on her hub); `q` quits.

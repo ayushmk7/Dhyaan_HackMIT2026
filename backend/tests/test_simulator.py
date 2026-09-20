@@ -11,7 +11,6 @@ from app import location as location_mod
 from app.routers.camera import HeartbeatIn as CameraHeartbeatIn
 from app.routers.camera import ObservationIn
 from app.routers.ingest import BandCancelIn, BandEventIn, HeartbeatIn, RFScanIn
-from tests.conftest import BAND_HEADERS
 
 from scripts import simulate_band as sim
 
@@ -45,7 +44,7 @@ def test_every_fixture_file_is_wired_to_a_model():
 
 async def test_fall_simulation_creates_event_and_opens_alert(client, resident, db):
     payload = sim.fall_payload(band_id="band_a3f2")
-    r = await client.post("/v1/ingest/band", json=payload, headers=BAND_HEADERS)
+    r = await client.post("/v1/ingest/band", json=payload)
     assert r.status_code == 201, r.text
     body = r.json()
 
@@ -60,14 +59,12 @@ async def test_fall_simulation_creates_event_and_opens_alert(client, resident, d
 
 
 async def test_cancel_resolves_without_a_call(client, resident, db):
-    fall = await client.post("/v1/ingest/band", json=sim.fall_payload(band_id="band_a3f2"),
-                              headers=BAND_HEADERS)
+    fall = await client.post("/v1/ingest/band", json=sim.fall_payload(band_id="band_a3f2"))
     alert_id = fall.json()["alert_id"]
 
     cancel = await client.post(
         "/v1/ingest/band/cancel",
         json=sim.cancel_payload(band_id="band_a3f2", alert_id=alert_id),
-        headers=BAND_HEADERS,
     )
     assert cancel.status_code == 200, cancel.text
     assert cancel.json()["state"] == "CANCELLED"
@@ -104,7 +101,7 @@ async def test_rf_simulation_produces_zone_event(client, resident, db):
     # matching scans before it commits to a room.
     for _ in range(2):
         payload = sim.rf_payload(zone="kitchen", band_id="band_a3f2")
-        r = await client.post("/v1/ingest/rf", json=payload, headers=BAND_HEADERS)
+        r = await client.post("/v1/ingest/rf", json=payload)
         assert r.status_code == 200, r.text
 
     assert r.json()["zone"] == "kitchen"

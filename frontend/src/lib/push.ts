@@ -30,15 +30,27 @@ export async function registerForPush(): Promise<{ token: string | null; reason?
   }
 }
 
-// TODO D10.3: fire the §10.4 FALL payload at this phone, end to end, no backend.
-export async function sendTestPush(token: string): Promise<void> {
+/**
+ * Fire the §10.4 FALL payload at this phone, end to end, with no backend.
+ *
+ * A diagnostic, reached only from the hidden debug panel. It used to hardcode
+ * "Possible fall: Eleanor" and `resident_id: 'res_eleanor'`, which meant a test
+ * notification named the seed's resident on any install. The caller passes who
+ * it is actually for, and the body says plainly that it is a test, because a
+ * notification that reads exactly like a real fall alert is one a person can
+ * act on by mistake.
+ */
+export async function sendTestPush(
+  token: string,
+  resident: { id: string; name: string },
+): Promise<void> {
   await fetch('https://exp.host/--/api/v2/push/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       to: token,
-      title: 'Possible fall: Eleanor',
-      body: 'Her band detected a fall at 3:42 PM. We’re calling her now.',
+      title: `Test alert: ${resident.name}`,
+      body: 'This is a test of the fall notification. Nothing has happened.',
       sound: 'dhyaan-urgent.wav',
       priority: 'high',
       interruptionLevel: 'timeSensitive',
@@ -46,8 +58,8 @@ export async function sendTestPush(token: string): Promise<void> {
       channelId: 'alerts',
       badge: 1,
       data: {
-        v: 1, kind: 'alert', alert_id: 'alr_demo', resident_id: 'res_eleanor',
-        severity: 'critical', deeplink: 'dhyaan://alert/alr_demo',
+        v: 1, kind: 'alert', alert_id: 'alr_demo', resident_id: resident.id,
+        severity: 'critical', deeplink: 'dhyaan://alert/alr_demo', test: true,
       },
     }),
   });

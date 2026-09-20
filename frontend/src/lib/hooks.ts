@@ -98,22 +98,21 @@ export const useCameraMonitor = (cameraId: string | undefined) =>
 /**
  * Teach the session what the server calls her.
  *
- * `POST /auth/login` returns a `resident_id` but not her name, so the store
- * opens on a placeholder ("Eleanor", the seed's one resident) and every screen
- * that greets her by name would keep showing it for a different account. This
- * asks the profile once the id is known and writes the real name back.
+ * The store opens on a placeholder ("Eleanor", the seed's one resident) and
+ * every screen that greets her by name would keep showing it for a different
+ * resident. This asks the profile once the id is known and writes the real
+ * name back.
  *
  * Mounted once, high in the tree. It renders nothing and returns nothing: a
  * screen should read `residentName` from the session, not from here.
  */
 export function useHydrateResident(): void {
   const residentId = useSession((s) => s.residentId);
-  const signedIn = useSession((s) => !!s.user);
   const setResidentName = useSession((s) => s.setResidentName);
   const { data } = useQuery({
     queryKey: ['profile', residentId],
     queryFn: () => api.getProfile(residentId),
-    enabled: signedIn && !!residentId,
+    enabled: !!residentId,
   });
   useEffect(() => {
     if (data?.name) setResidentName(data.name);

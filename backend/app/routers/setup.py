@@ -8,17 +8,16 @@ import re
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from ulid import ULID
 
 from ..db import db
-from ..deps import require_app_key
 from ..events import emit
 from ..location import ZONES, _scan_vector
 from .ingest import BeaconReading, WifiReading
 
-router = APIRouter(prefix="/v1", tags=["setup"], dependencies=[Depends(require_app_key)])
+router = APIRouter(prefix="/v1", tags=["setup"])
 
 
 def _ser(doc: dict) -> dict:

@@ -13,14 +13,11 @@ import pytest_asyncio
 # seeded resident, which looks like a code bug and is not.
 TEST_DB = f"dhyaan_test_{os.getpid()}"
 os.environ.setdefault("MONGO_DB", TEST_DB)
-os.environ.setdefault("API_KEY", "test-key")
-os.environ.setdefault("BAND_KEY", "test-band-key")
 
 from app import db as dbmod  # noqa: E402
-from app.config import API_KEY, BAND_KEY  # noqa: E402
 
-APP_HEADERS = {"Authorization": f"Bearer {API_KEY}"}
-BAND_HEADERS = {"X-Band-Key": BAND_KEY}
+# No auth headers anywhere: the API has none (see app/main.py). Every request
+# in this suite goes out bare, and that is the contract being tested.
 
 
 @pytest_asyncio.fixture

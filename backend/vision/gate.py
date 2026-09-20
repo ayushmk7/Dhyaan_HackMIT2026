@@ -7,10 +7,11 @@ two classes.
 """
 
 import os
+import time
 
 import numpy as np
 
-from . import TUNING
+from . import FRAME_H, FRAME_W, TUNING
 from . import posture as _posture
 
 
@@ -105,22 +106,142 @@ class MotionGate:
         return (x / fw, y / fh, (x + w) / fw, (y + h) / fh)
 
 
-# --- stage 3: person ----------------------------------------------------------
+# --- stage 3: person, food, dishes, seating — one open-vocabulary pass --------
+#
+# COCO's entire food vocabulary is ten words (banana, apple, sandwich, orange,
+# broccoli, carrot, hot dog, pizza, donut, cake). A crisp packet, a mug of soup,
+# a bowl of cereal or a slice of toast has no output neuron, so no threshold
+# and no bigger COCO model can ever report them. testcam/FOOD.md measured it:
+# on five photographs of real food the COCO detector reported food once, and
+# that once was wrong. YOLO-World takes its class list as free text at runtime
+# and named the cereal and the soup, for ~7 ms a frame at the lane's 448x252.
+
+DEFAULT_MODEL = "yolov8s-worldv2.pt"
+# The one-line revert: YOLO_MODEL=yolo11s.pt puts the COCO detector back. The
+# gate tells the two apart by capability (`set_classes`), not by name.
+MODEL_NAME = os.getenv("YOLO_MODEL", DEFAULT_MODEL)
+# Used only if the open-vocabulary model cannot come up (no CLIP, no network)
+# AND this file is already on disk — never downloaded, because the reason we
+# are here is usually that downloads do not work.
+COCO_FALLBACK = "yolo11s.pt"
+
+# --- the vocabulary -----------------------------------------------------------
+# KEEP THIS SHORT, and read this before adding a word. YOLO-World's confidence
+# is a cosine between an image region and a text embedding, so every score is
+# RELATIVE TO THE PROMPT LIST. Same crisp packet, same weights, only the list
+# differing (testcam/FOOD.md):
+#
+#     ["bag"]                       bag        0.75
+#     ["snack bag"]                 snack bag  0.48
+#     22 food words                 snack bag  0.11
+#     a 62-word household list      snack bag  0.09   (below any usable floor)
+#
+# Adding a prompt costs nothing in latency (7.4 ms at 1 prompt, 8.1 ms at 100)
+# and costs confidence on every other prompt. Twenty short plain nouns is what
+# was measured to work; short nouns beat articled phrases ("snack bag" > "a bag
+# of crisps"). The "background" bucket is not decoration: with no household
+# nouns in the list the room has to land on a food word, and the food scores
+# measurably dropped. Anything in it is never reported.
+#
+# Threshold, calibrated to THIS list on this machine (448x252 frames, imgsz
+# 640, the seven testcam fixtures, a flat grey frame and 20 live webcam frames
+# of a room with a person and no food):
+#
+#     cereal 0.64  snack bag 0.26  soup 0.14  food 0.26-0.53  cup 0.91
+#     bowl 0.28-0.66  plate 0.62-0.76  dining table 0.21-0.55
+#     live room with no food: highest non-person label 0.13 (a desk as
+#       "dining table"); no food word above 0.03 in 20 frames
+#     person: 0.90 live, 0.78-0.80 on a real photograph, 0.19 on a side
+#       profile under a wide hat, 0.11-0.25 on a downscaled crowd; not one
+#       false person on five people-free fixtures or the flat frame at a 0.01
+#       floor
+#
+# So: objects at 0.20 (0.07 above the live room's noise, loses soup-in-a-mug
+# at 0.14 but keeps its cup at 0.91), people at 0.15 (the bench's number; the
+# crowd shot goes 8 people -> 1 at 0.25). Both live in TUNING as world_conf and
+# world_person_conf. Changing the list re-opens the calibration.
+VOCAB = {
+    "person": ["person"],
+    # The words COCO never had, plus the generic that catches whatever the
+    # specifics miss. "food" is dropped from a scene when a specific word also
+    # fired (see scene()).
+    "food": ["food", "sandwich", "snack bag", "cereal", "soup", "noodles", "toast", "fruit"],
+    "dishes": ["cup", "mug", "bowl", "plate", "bottle"],
+    # vlm.from_scene reads "dining table" and "chair" for `spot`.
+    "seating": ["chair", "sofa", "dining table", "bed"],
+    "background": ["phone", "book"],
+}
+PROMPTS = [w for words in VOCAB.values() for w in words]
+# The bound the tests assert. Not a limit of the model — a limit of the maths
+# in the comment above.
+MAX_PROMPTS = 24
+
+# COCO's own words for the same four buckets, so a COCO model put back with
+# YOLO_MODEL reports exactly what it used to. Mapped by name, not id: this is
+# what lets one scene() serve both detectors.
+COCO_WORDS = {
+    "person": ["person"],
+    "food": ["banana", "apple", "sandwich", "orange", "broccoli", "carrot",
+             "hot dog", "pizza", "donut", "cake"],
+    "dishes": ["bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl"],
+    "seating": ["chair", "couch", "bed", "dining table"],
+}
+BUCKET = {w: b for table in (COCO_WORDS, VOCAB) for b, words in table.items() for w in words}
+
+EMPTY_SCENE = {"person_count": 0, "boxes": [], "food": [], "dishes": [], "seating": []}
+
+
+def dedupe_boxes(boxes, min_inside=0.7):
+    """One person, several boxes: drop any box mostly inside a larger kept one.
+
+    Ultralytics runs NMS per class at IoU 0.7, and YOLO-World hands back nested
+    person boxes NMS leaves alone — measured on person_sandwich.jpg: whole body,
+    then a torso box 98 % inside it whose IoU with it is only 0.47, because IoU
+    punishes the size difference. So the test is containment, not IoU: the
+    fraction of the SMALLER box that lies inside the larger. The head count is
+    what present/with_visitor hangs off, so it cannot be left to the default.
+    Two people side by side never contain each other; a child on a lap would
+    merge, which is the safe direction for a single-resident home.
+    Returns largest first, which is the order every caller wants.
+    """
+    out = []
+    for b in sorted(boxes, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True):
+        if not any(_inside(b, k) > min_inside for k in out):
+            out.append(b)
+    return out
+
+
+def _inside(small, big):
+    """Fraction of `small`'s area that overlaps `big`."""
+    ix = max(0.0, min(small[2], big[2]) - max(small[0], big[0]))
+    iy = max(0.0, min(small[3], big[3]) - max(small[1], big[1]))
+    area = max((small[2] - small[0]) * (small[3] - small[1]), 1e-6)
+    return ix * iy / area
+
 
 class PersonGate:
-    """YOLO11s on MPS: people and the objects that make a scene, in one pass.
+    """YOLO-World on MPS: people and the objects that make a scene, in one pass.
 
     `enabled=False` is the plan's first cut path (`--no-yolo`, VLM_PLAN §3.3 and
     §9): motion alone triggers keyframes and the VLM's `person_count: 0` means
     absent. It costs VLM calls on curtains and cats, and loses the posture rule
-    (no bbox -> no aspect -> no `on_floor` jump-the-queue).
+    (no bbox -> no aspect -> no `on_floor` jump-the-queue). The gate takes that
+    path by itself whenever the detector cannot come up — no ultralytics, no
+    weights and no network, no CLIP for the text embeddings — and says why,
+    once. It never raises out of __init__ or scene().
     """
 
     def __init__(self, enabled=True, tuning=None):
         self.t = dict(TUNING, **(tuning or {}))
         self.enabled = enabled
         self.model = None
+        self.model_name = "none"
+        self.open_vocab = False
+        self.classes = None          # COCO only: the ids worth asking for
         self.device = "cpu"
+        self.warm_s = 0.0
+        # Labels reported on the previous pass, for the hysteresis in scene().
+        self._held = set()
         if not enabled:
             return
         try:
@@ -135,21 +256,78 @@ class PersonGate:
             self.enabled = False
             return
 
-        self.device = "mps" if torch.backends.mps.is_available() else "cpu"
-        # yolo11s, not 11n. Measured on this camera, same frames: 11n 4.9 ms
-        # finding 4 people, 11s 6.0 ms finding 5. A person the detector misses
-        # is a resident reported absent, so 1.1 ms for the extra recall is the
-        # easiest trade in this pipeline. 11m costs 11.5 ms and finds no more.
-        self.model = YOLO(os.getenv("YOLO_MODEL", "yolo11s.pt"))
+        self.model = self._load(YOLO, MODEL_NAME)
+        if self.model is None and MODEL_NAME != COCO_FALLBACK and os.path.exists(COCO_FALLBACK):
+            print(f"[vision] using {COCO_FALLBACK} from disk instead: people and COCO's "
+                  "ten foods only, no cereal/soup/crisps until the open-vocabulary "
+                  "model can load.", flush=True)
+            self.model = self._load(YOLO, COCO_FALLBACK)
+        if self.model is None:
+            self.enabled = False
+            return
+        self.device = self._warm(torch)
+        print(f"[vision] {self.model_name} on {self.device}: "
+              + (f"open vocabulary, {len(PROMPTS)} prompts ({len(VOCAB['food'])} food), "
+                 f"conf person>={self.t['world_person_conf']} objects>={self.t['world_conf']}"
+                 if self.open_vocab else
+                 f"COCO, {len(self.classes)} classes, conf>={self.t['person_conf']}")
+              + f"; warm in {self.warm_s:.1f} s", flush=True)
 
-    # COCO class ids. The VLM was being asked for all of this at ~1120 ms/call;
-    # YOLO answers it in ~6 ms and does not hallucinate a sandwich.
-    FOOD_IDS = {46: "banana", 47: "apple", 48: "sandwich", 49: "orange",
-                50: "broccoli", 51: "carrot", 52: "hot dog", 53: "pizza",
-                54: "donut", 55: "cake"}
-    DISH_IDS = {39: "bottle", 40: "wine glass", 41: "cup", 42: "fork",
-                43: "knife", 44: "spoon", 45: "bowl"}
-    SEAT_IDS = {56: "chair", 57: "couch", 59: "bed", 60: "dining table"}
+    def _load(self, YOLO, name):
+        """Weights, then the vocabulary. Returns the model or None, never raises.
+
+        `YOLO(name)` downloads by name into the working directory when the file
+        is absent (this is what ultralytics does; nothing here is committed).
+        `set_classes()` builds CLIP text embeddings: 4.0 s the first time, and
+        on a fresh machine a one-off ~340 MB ViT-B/32 download. That is why it
+        happens here, at worker start, and never on the first frame.
+        """
+        try:
+            model = YOLO(name)
+            self.model_name = os.path.basename(name).replace(".pt", "")
+            if hasattr(model, "set_classes"):
+                t0 = time.monotonic()
+                model.set_classes(list(PROMPTS))   # copy: ultralytics mutates it
+                self.warm_s = time.monotonic() - t0
+                self.open_vocab, self.classes = True, None
+            else:
+                self.open_vocab = False
+                self.classes = sorted(i for i, n in model.names.items() if n in BUCKET)
+            return model
+        except Exception as e:                    # noqa: BLE001 — every load failure is the cut path
+            print(f"[vision] {name} unusable: {type(e).__name__}: {str(e)[:140]}", flush=True)
+            return None
+
+    def _warm(self, torch):
+        """One throwaway pass on a frame-sized blank, on MPS if MPS survives it.
+
+        YOLO-World carries the text embeddings as a buffer and some
+        ultralytics/MPS pairs fall over on the einsum in the contrastive head,
+        so the device is measured, not assumed. The pass also builds the graph
+        at the lane's own frame size, so the first real frame is not the slow
+        one. YOLO_DEVICE overrides the probe.
+        """
+        want = os.getenv("YOLO_DEVICE")
+        probe = np.zeros((FRAME_H, FRAME_W, 3), dtype=np.uint8)
+        t0 = time.monotonic()
+        for dev in [want] if want else (["mps"] if torch.backends.mps.is_available() else []) + ["cpu"]:
+            try:
+                self.model.predict(probe, device=dev, verbose=False, imgsz=self.t["person_imgsz"],
+                                   **({"classes": self.classes} if self.classes else {}))
+                self.warm_s += time.monotonic() - t0
+                return dev
+            except Exception as e:                # noqa: BLE001
+                print(f"[vision] {dev} failed the probe ({type(e).__name__}); trying the next device",
+                      flush=True)
+        return "cpu"
+
+    def _conf(self):
+        """(person floor, object floor). COCO's closed-set logits and YOLO-World's
+        cosines live an order of magnitude apart, so the threshold belongs to
+        the model in use, never inherited across the YOLO_MODEL switch."""
+        if self.open_vocab:
+            return self.t["world_person_conf"], self.t["world_conf"]
+        return self.t["person_conf"], self.t["person_conf"]
 
     def scene(self, frame):
         """One pass, everything structural: people, food, dishes, seating.
@@ -163,31 +341,54 @@ class PersonGate:
         never have to ask which of the two it got.
         """
         if not self.enabled or self.model is None:
-            return {"person_count": 0, "boxes": [], "food": [], "dishes": [], "seating": []}
+            return dict(EMPTY_SCENE, boxes=[], food=[], dishes=[], seating=[])
         # Hand the frame to posture_band(), which is called later in the cycle
         # with only a box. Nothing is retained: the slot holds one reference to
         # the frame the worker already has, and the next frame replaces it.
         remember_frame(frame)
-        want = [0] + list(self.FOOD_IDS) + list(self.DISH_IDS) + list(self.SEAT_IDS)
-        res = self.model.predict(
-            frame, classes=want, conf=self.t["person_conf"],
-            imgsz=self.t["person_imgsz"], device=self.device, verbose=False,
-        )[0]
-        boxes, food, dishes, seating = [], [], [], []
-        for cls, box in zip(res.boxes.cls.tolist(), res.boxes.xyxy.tolist()):
-            c = int(cls)
-            if c == 0:
-                boxes.append(tuple(box))
-            elif c in self.FOOD_IDS:
-                food.append(self.FOOD_IDS[c])
-            elif c in self.DISH_IDS:
-                dishes.append(self.DISH_IDS[c])
-            elif c in self.SEAT_IDS:
-                seating.append(self.SEAT_IDS[c])
-        boxes.sort(key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)
+        person_conf, obj_conf = self._conf()
+        try:
+            res = self.model.predict(
+                frame, conf=min(person_conf, obj_conf), imgsz=self.t["person_imgsz"],
+                device=self.device, verbose=False,
+                **({"classes": self.classes} if self.classes else {}),
+            )[0]
+        except Exception as e:                    # noqa: BLE001
+            # A detector that dies mid-run becomes the cut path, live, rather
+            # than taking the camera down with it. The worker reads `enabled`
+            # every frame.
+            print(f"[vision] {self.model_name} failed on a frame ({type(e).__name__}: "
+                  f"{str(e)[:120]}); continuing motion-only.", flush=True)
+            self.enabled = False
+            return dict(EMPTY_SCENE, boxes=[], food=[], dishes=[], seating=[])
+        names = self.model.names
+        # Hysteresis. A calibrated-low cosine floor means a real snack bag sits
+        # at 0.26-0.28 over a 0.20 floor, and measured on a clip with a 1 px
+        # hand-held jitter it crossed the line four times in a second — and
+        # every crossing is a "what I see changed" post. So a label that was
+        # reported last pass stays while it holds `world_hold` of its floor. It
+        # is not memory of a stale plate: the label must still be detected on
+        # THIS frame, just at a lower bar to stay than to arrive.
+        hold = self.t["world_hold"] if self.open_vocab else 1.0
+        boxes, found = [], {"food": set(), "dishes": set(), "seating": set()}
+        for cls, conf, box in zip(res.boxes.cls.tolist(), res.boxes.conf.tolist(),
+                                  res.boxes.xyxy.tolist()):
+            label = names[int(cls)]
+            bucket = BUCKET.get(label)
+            if bucket == "person":
+                if conf >= person_conf * (hold if "person" in self._held else 1.0):
+                    boxes.append(tuple(box))
+            elif bucket in found and conf >= obj_conf * (hold if label in self._held else 1.0):
+                found[bucket].add(label)
+        # The generic word is the net under the specifics: "cereal" says more
+        # than "cereal, food", and the evidence line has room for two.
+        if len(found["food"]) > 1:
+            found["food"].discard("food")
+        boxes = dedupe_boxes(boxes)
+        self._held = set().union(*found.values()) | ({"person"} if boxes else set())
         return {"person_count": len(boxes), "boxes": boxes,
-                "food": sorted(set(food)), "dishes": sorted(set(dishes)),
-                "seating": sorted(set(seating))}
+                "food": sorted(found["food"]), "dishes": sorted(found["dishes"]),
+                "seating": sorted(found["seating"])}
 
 # --- posture ------------------------------------------------------------------
 # Measured on 20 live webcam frames of someone seated at a desk: the bbox aspect
