@@ -262,9 +262,20 @@ static bool confirmPressed() {
   if (fired) return true;
 
   // Touch anywhere on the giant button (generously: lower 3/4 of the screen).
+  // [claude] 2026-09-20: the ES8311 codec SHARES the I2C bus with the touch
+  // controller, and audio traffic (the spoken prompt, ~4-6s into an alert)
+  // corrupts single touch reads into phantom taps — live, the box acked
+  // alerts nobody touched. Require 3 consecutive in-region samples 40ms
+  // apart: bus garbage never repeats consistently; a real finger does.
   if (haveDisplay && state == ST_ALERT) {
     int32_t x, y;
-    if (lcd.getTouch(&x, &y) && y >= BTN_Y - 20) return true;
+    bool ok = true;
+    for (int i = 0; i < 3; i++) {
+      if (!(lcd.getTouch(&x, &y) && y >= BTN_Y - 20)) { ok = false; break; }
+      Serial.printf("touch sample %d: x=%d y=%d\n", i, (int)x, (int)y);
+      delay(40);
+    }
+    if (ok) return true;
   }
   return false;
 }
