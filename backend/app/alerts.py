@@ -364,10 +364,23 @@ async def open_alert(resident_id: str, trigger_event_id: str, kind: str, severit
 
     alert_id = f"alt_{ULID()}"
     now = datetime.now(timezone.utc).isoformat()
+    # Where she is RIGHT NOW rides on the alert: the takeover and the phone
+    # call both say "in the kitchen" instead of leaving responders to guess.
+    # Same source as GET /residents/{id}/location; a stale zone (>30 min) is
+    # worse than none, so it stays null then.
+    zone = None
+    zone_ev = await db().events.find_one(
+        {"resident_id": resident_id, "zone": {"$ne": None}}, sort=[("ts_epoch", -1)],
+    )
+    if zone_ev:
+        age_s = datetime.now(timezone.utc).timestamp() - float(zone_ev.get("ts_epoch") or 0)
+        if age_s < 1800:
+            zone = zone_ev["zone"]
     doc = {
         "_id": alert_id,
         "resident_id": resident_id,
         "trigger_event_id": trigger_event_id,
+        "zone": zone,
         "kind": kind,
         "severity": severity,
         "state": "SUSPECTED",
