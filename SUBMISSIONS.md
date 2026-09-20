@@ -19,9 +19,17 @@ and HTTPS uplink. Raw acceleration becomes a phone call to a daughter. Code:
 `band/`.
 
 ## Espressif — AIoT
-Both boards in the system: ESP32-S3-DevKitC-1 and ESP32-S3-BOX flashed as
-iBeacon room anchors (`beacons/`, NimBLE 2.x) feeding the k-NN + Bayes indoor
-localizer that powers bathroom-dwell alerts and home/away.
+Both boards are active nodes, not just anchors. The S3-BOX (`beacons/boxassist/`)
+runs BLE advertising, WiFi+TLS polling, a touch UI, and speaker playback
+concurrently on one S3: it stays the kitchen iBeacon while watching the care
+backend, and on a fall it takes over its screen ("Are you OK?"), speaks the
+prompt in the same Deepgram voice that makes the phone calls, and a tap
+acknowledges the alert through the whole system — proven live on hardware
+(tap -> HTTPS through a phone hotspot -> alert acknowledged everywhere).
+The DevKitC (`beacons/bathhelp/`) is the bathroom anchor plus a nurse-call
+help button and alert status LED. Both feed the k-NN + Bayes indoor localizer
+(`backend/app/location.py`) that powers bathroom-dwell alerts and home/away.
+Roadmap: esp-sr on-device "help me" wake phrase on the BOX's mic array.
 
 ## Long Lake — "Convince a Non-Believer"
 Our users are the people frontier AI overlooked: an 81-year-old who will never
