@@ -266,11 +266,6 @@ const activityOf = (t: CameraMonitorTick) =>
   t.activity ? String(t.activity).replace(/_/g, ' ').toUpperCase() : NONE;
 const confOf = (t: CameraMonitorTick) =>
   typeof t.confidence === 'number' ? t.confidence.toFixed(2) : NONE;
-const fpsOf = (t: CameraMonitorTick) => t.fps.toFixed(1);
-const latencyOf = (t: CameraMonitorTick) =>
-  typeof t.latency_ms === 'number' ? `${t.latency_ms} MS` : NONE;
-const batchOf = (t: CameraMonitorTick) =>
-  typeof t.batch_frames === 'number' ? pad(t.batch_frames) : NONE;
 const modelOf = (t: CameraMonitorTick) => (t.model ?? '').trim() || NONE;
 /** Seconds since the worker stamped this tick, on the phone's clock. Two digits, so the cell never grows. */
 const ageOf = (t: CameraMonitorTick, now: number) => {
@@ -303,15 +298,16 @@ function Reading({ label, value, last }: { label: string; value: string; last?: 
 function Telemetry({ tick, now }: { tick: CameraMonitorTick; now: number }) {
   const k = copy.keys;
   const rows: { label: string; value: string }[] = [
-    // What the pipeline is doing, and what it thinks it sees.
+    // What it is looking at, and what it thinks it sees.
     { label: k.gate, value: gateOf(tick) },
     { label: k.people, value: peopleOf(tick) },
     { label: k.activity, value: activityOf(tick) },
     { label: k.conf, value: confOf(tick) },
-    // How it is running.
-    { label: k.fps, value: fpsOf(tick) },
-    { label: k.latency, value: latencyOf(tick) },
-    { label: k.batch, value: batchOf(tick) },
+    // Whether this is live, and what is doing the looking. Frame rate, per-call
+    // latency and batch size are gone: they are the engineer's numbers, and a
+    // family reading "2596 MS" learns nothing it can act on. Tick age stays
+    // because a stale feed is a thing a person should see; the model name stays
+    // because it is the claim that this runs here and not in someone's cloud.
     { label: k.age, value: ageOf(tick, now) },
     { label: k.model, value: modelOf(tick) },
   ];
