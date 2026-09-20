@@ -91,7 +91,7 @@ class Uplink:
             self._spool(path, body)
             log.error("spooled critical %s after retries: %s", path, last_err)
         else:
-            log.error("dropped non-critical %s: %s", path, last_err)
+            log.warning("dropped non-critical %s: %s", path, last_err)
         return None
 
     def _spool(self, path: str, body: dict[str, Any]) -> None:

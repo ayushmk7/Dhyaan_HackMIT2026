@@ -35,16 +35,14 @@ TERMINAL_STATES = {"RESOLVED_OK", "CANCELLED", "ACKNOWLEDGED", "EXHAUSTED"}
 
 CLASSIFICATIONS = {"okay", "fell_but_fine", "no_answer", "distress", "incoherent"}
 
-# Not in app/config.py because the PRD pins them as fixed constants (§4.2:
-# "exactly one retry, 15 s"; call-connect window is ours to define since the
-# real Twilio/Deepgram AnsweredBy signal isn't wired yet). Monkeypatch these
-# module attributes directly in tests, same as the app.config ones.
-RETRY_WAIT_S = 15
+# PRD §4.2 pins defaults (retry 15 s; silence window is ours until real AMD).
+# Env/config overrides keep demo snappy; tests still monkeypatch these names.
+RETRY_WAIT_S = cfg.RETRY_WAIT_S
 # ponytail: stands in for "the voice agent got no tool call" (PRD §4.4 "silence
 # escalates"). Real telephony will replace this with the actual no-answer /
 # AMD / 20s-silence signals from the bridge; until then, if nobody calls
 # classify() before this fires, we escalate exactly like a bad answer.
-RESIDENT_RESPONSE_TIMEOUT_S = 90
+RESIDENT_RESPONSE_TIMEOUT_S = cfg.RESIDENT_RESPONSE_TIMEOUT_S
 
 log = logging.getLogger("dhyaan.alerts")
 
