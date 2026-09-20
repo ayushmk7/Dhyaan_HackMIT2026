@@ -188,12 +188,22 @@ def from_scene(scene, posture_hint=None):
         activity, evidence = "absent", "no one in view"
     elif VISITORS and n >= 2:
         activity, evidence = "with_visitor", f"{n} people in view"
+    elif posture == "on_floor":
+        # Ranked above food on purpose: someone on the floor holding a sandwich
+        # is on the floor. This branch did not exist - `on_floor` fell through
+        # to "sitting", so a correctly detected fall was reported as sitting.
+        activity, evidence = "on_floor", "one person, on the floor"
     elif scene["food"]:
         activity, evidence = "eating", f"one person, {', '.join(scene['food'][:2])} in view"
     elif posture == "upright":
         activity, evidence = "walking", "one person, upright"
-    else:
+    elif posture == "seated":
         activity, evidence = "sitting", "one person, seated"
+    else:
+        # Posture unknown (knees occluded, no landmarker). She is present and
+        # neither upright nor on the floor, so "sitting" is the fair reading -
+        # but do not claim the evidence SAW her seated, because it did not.
+        activity, evidence = "sitting", "one person, in view"
     if items and "in view" not in evidence:
         evidence = f"{evidence} ({', '.join(items[:3])})"
     return dict(
