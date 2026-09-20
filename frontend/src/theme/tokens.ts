@@ -12,9 +12,12 @@ export const palette = {
 
   // Brand: one confident, saturated green (care = growth = "she's okay").
   // Washed-out palettes are the intern-firing offense; commit.
-  slate: '#3478F6',      // interactive tint = iOS system blue (name is historical)
-  slateDeep: '#2A66D9',
-  slateWash: '#EAF1FE',
+  // Chrome carries NO hue. Interactive = ink; affordance comes from form
+  // (filled button, chevron, weight), never from color. Every hue in the app
+  // has exactly one meaning: moss=OK, rust=alarm, hue.*=data category.
+  slate: '#1C1C1E',      // interactive ink (name is historical)
+  slateDeep: '#000000',
+  slateWash: '#E9E9EE',
 
   moss: '#2E9968',
   mossWash: '#DFF4E8',
@@ -40,7 +43,7 @@ export type ResidentState = 'ok' | 'learning' | 'attention' | 'alerting' | 'offl
 
 export const stateColor: Record<ResidentState, { fg: string; wash: string; word: string }> = {
   ok: { fg: palette.moss, wash: palette.mossWash, word: 'OK' },
-  learning: { fg: palette.slate, wash: palette.slateWash, word: 'Learning her routine' },
+  learning: { fg: palette.inkMuted, wash: palette.line, word: 'Learning her routine' },
   attention: { fg: palette.ochre, wash: palette.ochreWash, word: 'Worth a look' },
   alerting: { fg: palette.rust, wash: palette.rustWash, word: 'Needs someone now' },
   offline: { fg: palette.inkMuted, wash: palette.line, word: 'Band offline' },
