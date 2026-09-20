@@ -32,9 +32,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { router, useIsFocused } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, StyleSheet, View } from 'react-native';
+import { RefreshControl, View } from 'react-native';
 import {
-  Btn, Card, EmptyState, ErrorState, LoadingState, Marquee, Screen, Stagger, Txt,
+  Btn, Card, EmptyState, ErrorState, LoadingState, Screen, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
@@ -160,28 +160,16 @@ function LiveFrame({ cameraId, live }: { cameraId: string; live: boolean }) {
 // The readings
 // ---------------------------------------------------------------------------
 
-/** One reading: its name on the left, its value on the right. */
-function Reading({ label, value, last }: { label: string; value: string; last?: boolean }) {
-  return (
-    <View style={[styles.reading, last ? null : styles.readingRule]}>
-      <Txt kind="micro" tone="muted" numberOfLines={1} style={{ flex: 1 }}>{label}</Txt>
-      <Txt kind="stamp" numberOfLines={1} style={{ flex: 1, textAlign: 'right' }}>{value}</Txt>
-    </View>
-  );
-}
-
 /**
- * A run of readings under its own heading, with real air above it. Same shape
- * Her day and Settings use: the groups are what a person is asking, not what
- * the tick happens to carry in order.
+ * One highlight: its name small and quiet, its value under it in the machine
+ * face. Two of these to a row, so the whole console is four rows rather than
+ * three headed tables — the readings are a glance, not a report.
  */
-function Group({ title, rows }: { title: string; rows: { label: string; value: string }[] }) {
+function Cell({ label, value }: { label: string; value: string }) {
   return (
-    <View>
-      <Marquee title={title} first />
-      {rows.map((r, i) => (
-        <Reading key={r.label} label={r.label} value={r.value} last={i === rows.length - 1} />
-      ))}
+    <View style={styles.cell}>
+      <Txt kind="micro" tone="muted" numberOfLines={1}>{label}</Txt>
+      <Txt kind="stamp" numberOfLines={1} style={{ marginTop: 1 }}>{value}</Txt>
     </View>
   );
 }
@@ -238,7 +226,7 @@ const openSettings = () => router.push('/(family)/settings');
 
 export default function CameraConsole() {
   const qc = useQueryClient();
-  const { residentId, residentName } = useSession();
+  const { residentId } = useSession();
   const cameras = useCameras();
   const isFocused = useIsFocused();
 
@@ -351,51 +339,44 @@ export default function CameraConsole() {
       );
     }
 
-    const g = copy.groups;
+    const k = copy.keys;
     return (
-      <Stagger gap={9}>
-        <View>
-          <LiveFrame cameraId={cam.id} live={!tick.simulated} />
-          {/* The sentence sits UNDER the picture now. Burned across the bottom
-              of the pane it covered a third of the room and had to be clamped
-              to two lines; here it has the width of the screen. */}
-          <Txt kind="body" accessibilityLiveRegion="polite" style={{ marginTop: sp(4) }}>
-            {sentenceOf(tick)}
-          </Txt>
-        </View>
+      <View>
+        <LiveFrame cameraId={cam.id} live={!tick.simulated} />
+        {/* The sentence sits UNDER the picture. Burned across the bottom of the
+            pane it covered a third of the room and had to be clamped to two
+            lines; here it has the width of the screen. */}
+        <Txt kind="body" accessibilityLiveRegion="polite" style={{ marginTop: sp(4) }}>
+          {sentenceOf(tick)}
+        </Txt>
 
-        <Group
-          title={g.her(residentName)}
-          rows={[
-            { label: copy.keys.posture, value: word(tick.posture) },
-            { label: copy.keys.activity, value: word(tick.activity) },
-            { label: copy.keys.eating, value: eatingOf(tick) },
-            { label: copy.keys.where, value: whereOf(location.data) },
-            { label: copy.keys.people, value: pad(tick.person_count) },
-          ]}
-        />
+        {/* Everything the hub window prints, as eight highlights on one plate.
+            The three headed tables this replaced said the same things down a
+            screen and a half of scrolling. */}
+        <Card style={{ marginTop: sp(5) }}>
+          <View style={styles.grid}>
+            <Cell label={k.posture} value={word(tick.posture)} />
+            <Cell label={k.activity} value={word(tick.activity)} />
+            <Cell label={k.eating} value={eatingOf(tick)} />
+            <Cell label={k.where} value={whereOf(location.data)} />
+            <Cell label={k.people} value={pad(tick.person_count)} />
+            <Cell label={k.seating} value={list(tick.seating)} />
+            <Cell label={k.food} value={list(tick.food)} />
+            <Cell label={k.dishes} value={list(tick.dishes)} />
+          </View>
+        </Card>
 
-        <Group
-          title={g.room}
-          rows={[
-            { label: copy.keys.food, value: list(tick.food) },
-            { label: copy.keys.dishes, value: list(tick.dishes) },
-            { label: copy.keys.seating, value: list(tick.seating) },
-          ]}
-        />
+        {/* The worker's own state, on one line. It is context for the eight
+            above, not a reading about her, so it does not get a plate. */}
+        <Txt kind="micro" tone="muted" numberOfLines={1} style={{ marginTop: sp(3) }}>
+          {[word(tick.gate),
+            typeof tick.confidence === 'number' ? tick.confidence.toFixed(2) : NONE,
+            ageOf(tick, now),
+            (tick.model ?? '').trim() || NONE].join('  ·  ')}
+        </Txt>
 
-        <Group
-          title={g.worker}
-          rows={[
-            { label: copy.keys.gate, value: word(tick.gate) },
-            { label: copy.keys.conf, value: typeof tick.confidence === 'number' ? tick.confidence.toFixed(2) : NONE },
-            { label: copy.keys.age, value: ageOf(tick, now) },
-            { label: copy.keys.model, value: (tick.model ?? '').trim() || NONE },
-          ]}
-        />
-
-        <Txt kind="caption" tone="muted">{copy.privacy}</Txt>
-      </Stagger>
+        <Txt kind="caption" tone="muted" style={{ marginTop: sp(5) }}>{copy.privacy}</Txt>
+      </View>
     );
   })();
 
@@ -466,18 +447,12 @@ const styles = {
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },
-  // A hairline between readings, none under the last: the table should look
-  // like a table, not like four separate things.
-  readingRule: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.06)',
-  },
-  reading: {
+  grid: {
     flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-    gap: sp(4),
-    minHeight: 34,
-    paddingVertical: sp(1.5),
+    flexWrap: 'wrap' as const,
+    rowGap: sp(4),
   },
+  // Exactly half, so the second column starts on the same line down every row.
+  // A value too long for its half truncates rather than reflowing the grid.
+  cell: { width: '50%' as const, paddingRight: sp(3) },
 };

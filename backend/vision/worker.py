@@ -200,6 +200,51 @@ class Worker:
         except Exception as e:
             log(f"heartbeat failed: {type(e).__name__}")
 
+    def _bg(self, name, send, item):
+        """Hand `item` to `send` on a named daemon thread with a ONE-deep
+        mailbox: newest wins, and a slow network costs a tick or a frame rather
+        than costing the capture loop a millisecond. The console is telemetry;
+        it must never be able to slow the cascade down."""
+        qs = self.__dict__.setdefault("_bgq", {})
+        q = qs.get(name)
+        if q is None:
+            import queue
+            import threading
+
+            q = qs[name] = queue.Queue(maxsize=1)
+
+            def drain():
+                while not getattr(self, "_stopping", False):
+                    it = q.get()
+                    if it is None:
+                        return
+                    try:
+                        send(it)
+                    except Exception:            # noqa: BLE001
+                        pass   # a console nobody is watching is not an incident
+
+            threading.Thread(target=drain, daemon=True, name=f"dhyaan-{name}").start()
+        try:
+            q.put_nowait(item)
+        except Exception:                        # noqa: BLE001
+            pass       # the one we drop is already older than the one in hand
+
+    def _readings(self):
+        """Everything the hub window prints, in one dict.
+
+        The window and the monitor tick both read THIS, so the app and the
+        screen on the hub cannot drift apart: if the window says `seated`, the
+        phone says `seated`, off the same values in the same tick. Held between
+        detector runs (`self.scene` is reset every sampled frame) so neither
+        surface blanks its own readings twice a second.
+        """
+        if self.scene:
+            self._scene_seen = {k: list(self.scene.get(k) or [])
+                                for k in ("food", "dishes", "seating")}
+        obs = self.last_obs or {}
+        return {"activity": obs.get("activity"), "posture": obs.get("posture"),
+                "person_count": self.people, **self._scene_seen}
+
     def monitor(self, gate, force=False):
         """A tick for the hub console: counts, normalised boxes, one sentence.
 
@@ -219,10 +264,15 @@ class Worker:
                                 for k in ("food", "dishes", "seating")}
         body = {"camera_id": self.camera_id,
                 "ts": datetime.now(timezone.utc).isoformat(),
-                "fps": round(self.fps, 2), "person_count": self.people,
-                "boxes": self.boxes, "gate": gate, "model": self.model,
-                "simulated": self.synthetic,
-                **self._scene_seen, **self.last_obs}
+                "fps": round(self.fps, 2), "boxes": self.boxes,
+                "gate": gate, "model": self.model, "simulated": self.synthetic,
+                **self.last_obs, **self._readings()}
+        # Off the loop. This used to be a synchronous POST, which was fine at
+        # 1 Hz and is not at 3 Hz: it put the network on the critical path of
+        # every third frame.
+        self._bg("monitor", self._post_monitor, body)
+
+    def _post_monitor(self, body):
         try:
             r = self._http.post(f"{self.api}/v1/ingest/camera/monitor", json=body)
             # Say it once. A silently-swallowed 422 here is a console that is
@@ -904,9 +954,19 @@ class Worker:
         # Every person, not just the subject: the one we are following in green,
         # anyone else in grey. Without this you cannot see WHY it decided what it
         # decided - a hopping subject looked identical to a steady one.
-        for b in (self.scene or {}).get("boxes", []):
-            x0, y0, x1, y1 = (int(v) for v in b)
-            same = box is not None and iou(b, box) > 0.9
+        #
+        # Drawn from `self.boxes`, NOT `self.scene["boxes"]`. The scene is a fact
+        # about the frame in hand and `_detect` clears it on every frame no
+        # detector ran on — which, once you sit still, is all but one frame in
+        # five seconds, because MOG2 stops reporting motion and only the slow
+        # re-confirm fires. Drawing from it made the green box blink on and off
+        # while nothing about the room had changed. `self.boxes` is the
+        # persistent copy that exists for exactly this; it is normalised, so it
+        # scales back up to whatever the view happens to be.
+        subject = self._subject
+        for b in self.boxes:
+            x0, y0, x1, y1 = int(b[0] * w), int(b[1] * h), int(b[2] * w), int(b[3] * h)
+            same = subject is not None and iou((x0, y0, x1, y1), subject) > 0.9
             cv2.rectangle(view, (x0, y0), (x1, y1),
                           (60, 200, 60) if same else (120, 120, 120), 2 if same else 1)
             if same:
@@ -937,33 +997,12 @@ class Worker:
                                [int(cv2.IMWRITE_JPEG_QUALITY), 60])
         if not ok:
             return
-        q = getattr(self, "_streamq", None)
-        if q is None:
-            import queue
-            import threading
+        self._bg("frame", self._post_frame, buf.tobytes())
 
-            q = self._streamq = queue.Queue(maxsize=1)
-
-            def drain():
-                while not getattr(self, "_stopping", False):
-                    jpg = q.get()
-                    if jpg is None:
-                        return
-                    try:
-                        self._http.post(
-                            f"{self.api}/v1/ingest/camera/frame",
-                            params={"camera_id": self.camera_id},
-                            content=jpg,
-                            headers={"Content-Type": "image/jpeg"},
-                        )
-                    except Exception:            # noqa: BLE001
-                        pass   # a console nobody is watching is not an incident
-
-            threading.Thread(target=drain, daemon=True, name="dhyaan-frame").start()
-        try:
-            q.put_nowait(buf.tobytes())
-        except Exception:                        # noqa: BLE001
-            pass   # newest frame wins; the dropped one was a fifth of a second old
+    def _post_frame(self, jpg):
+        self._http.post(f"{self.api}/v1/ingest/camera/frame",
+                        params={"camera_id": self.camera_id},
+                        content=jpg, headers={"Content-Type": "image/jpeg"})
 
     def _show(self, frame, fg, box, score, status):
         """Returns False to quit. `p` pauses the camera for 2 h — her control, on
@@ -997,16 +1036,14 @@ class Worker:
         # What it currently believes, in words, so the window answers "is it
         # seeing this?" without reading a log or the database.
         sh, sw = shown.shape[:2]
-        last = getattr(self, "_last_obs", None)
-        sc = self.scene or {}
-        lines = []
-        if last:
-            lines.append(f"activity {last['activity']}    posture {last['posture']}")
-        lines.append(f"people {sc.get('person_count', 0)}    FOOD "
-                     f"{', '.join(sc.get('food') or []) or '-'}")
-        lines.append(f"DRINK/DISH {', '.join(sc.get('dishes') or []) or '-'}"
-                     f"    seating {', '.join((sc.get('seating') or [])[:2]) or '-'}")
-        lines.append(f"{self.state()} | {status}")
+        r = self._readings()
+        lines = [
+            f"activity {r['activity'] or '-'}    posture {r['posture'] or '-'}",
+            f"people {r['person_count']}    FOOD {', '.join(r['food']) or '-'}",
+            f"DRINK/DISH {', '.join(r['dishes']) or '-'}"
+            f"    seating {', '.join(r['seating'][:2]) or '-'}",
+            f"{self.state()} | {status}",
+        ]
         # Read rate vs draw rate. They are different numbers and the gap
         # between them is what looks like lag.
         lines.append(f"camera {self.fps:.0f} fps    window {self.draw_fps:.0f} fps")

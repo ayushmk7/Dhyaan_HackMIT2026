@@ -444,15 +444,10 @@ export const family = {
     // never leaves a stale frame up instead.
     noPicture: 'No picture just now. The camera is running, but nothing has reached this phone.',
 
-    // The readings, in the runs a person actually asks them in: how she is,
-    // what is around her, and how the worker is doing. Nothing is a sentence:
-    // these are names of things, and the values beside them are the tick's own
-    // words and numbers.
-    groups: {
-      her: (name: string) => `How ${name} is`,
-      room: 'What it can see in the room',
-      worker: 'The worker',
-    },
+    // The eight highlights, and the worker's own state on the line under them.
+    // Names of things, not sentences: the values beside them are the tick's own
+    // words and numbers, and they are the same values the hub's own window
+    // prints (backend/vision/worker.py::_readings).
     keys: {
       posture: 'POSTURE',
       activity: 'ACTIVITY',

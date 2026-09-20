@@ -1021,3 +1021,59 @@ def test_a_flapping_posture_cannot_become_a_write_storm(monkeypatch):
     # is how this test was checked for being vacuous. It was, once: the first
     # version used a still frame, MOG2 absorbed it, and the detector never ran.
     assert min(gaps) >= w.tuning["quick_min_s"] * 0.9, f"gaps {gaps}"
+
+
+def test_the_subject_box_does_not_blink_while_she_sits_still(monkeypatch):
+    """`_detect` clears `self.scene` on every frame no detector ran on, and once
+    she stops moving MOG2 stops reporting motion, so the detector only fires on
+    the 5 s re-confirm. Drawing the overlay from the scene meant the green box
+    blinked on and off while nothing about the room had changed. `self.boxes` is
+    the persistent copy that exists for exactly this."""
+    import numpy as np
+
+    w = worker.Worker(source=0, camera_id="cam_x", api="http://localhost:0",
+                      band_key="k", dry_run=True)
+    g = fake_gate([hit("person", (10, 10, 40, 120))])
+
+    box, seen = w._detect(g, blank(), run_it=True, moved=True, motion=None)
+    assert seen and w.boxes and w.scene is not None
+    drawn_live = w._annotate(blank(), None, box)
+
+    # ...the very next frame, with no detector pass at all.
+    w._detect(g, blank(), run_it=False, moved=False, motion=None)
+    assert w.scene is None, "the scene is a fact about the frame in hand"
+    assert w.boxes, "the console geometry survives it"
+    drawn_still = w._annotate(blank(), None, None)
+
+    # Same picture both times: the box is still there and still green.
+    assert np.array_equal(drawn_live, drawn_still)
+    assert (drawn_still != blank()).any(), "something was actually drawn"
+
+
+# ---- one source for the window and the console ------------------------------
+
+def test_the_window_and_the_console_read_the_same_values():
+    """`_readings` is what both the hub's overlay and the monitor tick print.
+
+    The bug it prevents: `self.scene` is reset every sampled frame, so anything
+    reading it directly blanks its own words two or three times a second and
+    then shows them again. The window did exactly that, and the console would
+    have inherited it. Holding the last words is the whole point, so a run that
+    has already seen a mug keeps saying mug until the detector says otherwise.
+    """
+    from vision.worker import Worker
+
+    w = Worker.__new__(Worker)                    # no camera, no HTTP, no loop
+    w.scene = {"food": ["sandwich"], "dishes": ["mug"], "seating": ["chair"]}
+    w._scene_seen = {"food": [], "dishes": [], "seating": []}
+    w.people = 1
+    w.last_obs = {"activity": "eating", "posture": "seated"}
+
+    seen = w._readings()
+    assert seen["food"] == ["sandwich"] and seen["dishes"] == ["mug"]
+    assert seen["activity"] == "eating" and seen["posture"] == "seated"
+    assert seen["person_count"] == 1
+
+    # The very next frame: the detector did not run, so `scene` is None again.
+    w.scene = None
+    assert w._readings() == seen, "the readings blanked between detector runs"

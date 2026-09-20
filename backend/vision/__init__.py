@@ -93,7 +93,11 @@ TUNING = dict(
     # --- worker cadence ---
     config_poll_s=10,
     heartbeat_s=30,
-    monitor_s=1.0,            # at most one monitor tick a second (telemetry, not data)
+    # Three a second. It was one, which is a readable rate for a log and a
+    # visibly laggy one for a console sitting next to a 5 fps picture: the
+    # words trailed the frame they described. The POST is off the loop now
+    # (Worker._bg), so the extra ticks cost the cascade nothing.
+    monitor_s=float(os.getenv("MONITOR_S", "0.33")),
     # A camera can stop delivering frames without ever erroring: Continuity
     # Camera hands the phone back, a USB cable moves, macOS sleeps the device.
     # read() then returns the same frame forever and the loop happily keeps
