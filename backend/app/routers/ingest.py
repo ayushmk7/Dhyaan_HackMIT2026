@@ -229,6 +229,53 @@ async def ingest_heartbeat(body: HeartbeatIn):
             },
         )
 
+    # The slow-collapse case fall detectors miss: lying down somewhere that
+    # isn't a bed, during the day, with no fall event. OFF BY DEFAULT
+    # (LYING_WARN_S=0): a lying label alone cannot tell a collapse from a
+    # couch nap or a pendant on a table — flipping this on responsibly means
+    # corroborating with the camera lane (same fusion falls already use).
+    # Set LYING_WARN_S>0 to arm it for a controlled walkthrough.
+    if body.activity_label is not None:
+        import os
+        from zoneinfo import ZoneInfo
+        lying_warn_s = int(os.getenv("LYING_WARN_S", "0"))
+        if body.activity_label != "lying":
+            if prev.get("lying_since") or prev.get("lying_flagged"):
+                await db().bands.update_one(
+                    {"_id": body.band_id},
+                    {"$unset": {"lying_since": "", "lying_flagged": ""}})
+        else:
+            since = prev.get("lying_since")
+            if since is None:
+                await db().bands.update_one(
+                    {"_id": body.band_id}, {"$set": {"lying_since": now}})
+            elif not prev.get("lying_flagged"):
+                held_s = (datetime.now(timezone.utc)
+                          - datetime.fromisoformat(str(since))).total_seconds()
+                res = await db().residents.find_one({"_id": prev["resident_id"]})
+                hour = datetime.now(ZoneInfo((res or {}).get("timezone")
+                                             or "America/New_York")).hour
+                zone_ev = await db().events.find_one(
+                    {"resident_id": prev["resident_id"], "zone": {"$ne": None}},
+                    sort=[("ts_epoch", -1)])
+                zone = (zone_ev or {}).get("zone")
+                if lying_warn_s > 0 and held_s >= lying_warn_s and 8 <= hour < 22 and zone != "bedroom":
+                    await db().bands.update_one(
+                        {"_id": body.band_id}, {"$set": {"lying_flagged": True}})
+                    mins = int(held_s // 60)
+                    where = f"in the {zone.replace('_', ' ')}" if zone else "at home"
+                    await emit(
+                        resident_id=prev["resident_id"], source="band",
+                        type="prolonged_inactivity",
+                        embedding_text=(
+                            f"She has been lying down {where} for about "
+                            f"{mins} minutes during the day, with no fall detected."
+                        )[:400],
+                        source_id=body.band_id,
+                        payload={"label": "lying", "held_s": int(held_s),
+                                 "zone": zone, "simulated": body.simulated},
+                    )
+
     if body.gait is not None:
         g = body.gait
         await emit(
