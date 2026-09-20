@@ -1,5 +1,7 @@
-// Dhyaan design tokens. The single source of color/space/type truth.
+// Dhyaan design tokens. The single source of color/space/type/depth truth.
 // Palette from the bird: slate wing, rust back. Rust means "alert" — nothing else.
+
+import { Platform, TextStyle } from 'react-native';
 
 export const palette = {
   // Neutral chrome, transcribed from the Apple Health design sheet: cool gray
@@ -76,7 +78,8 @@ export const zoneColor: Record<string, string> = {
 
 export const sp = (n: number) => n * 4;
 
-export const radius = { card: 16, pill: 999, tile: 16, badge: 8 } as const;
+// Glass wants a generous, continuous corner; content cards stay tighter.
+export const radius = { card: 16, pill: 999, tile: 16, badge: 8, glass: 22, sheet: 28, bar: 30 } as const;
 
 // One soft elevation for every white card — never borders.
 export const cardShadow = {
@@ -112,3 +115,78 @@ export const type = {
   label: { fontSize: 15, lineHeight: 20, fontWeight: '600' as const },
   caption: { fontSize: 13, lineHeight: 18 },
 } as const;
+
+// ---------------------------------------------------------------------------
+// Liquid glass + brutalism. Everything below is the depth/structure layer added
+// on top of the colour law above — it adds no hues, only elevation and honesty.
+// ---------------------------------------------------------------------------
+
+// Four elevation tiers, and they mean things. `flat` = the page itself.
+// `raised` = content cards resting on it. `float` = chrome that content passes
+// UNDER (bars, headers, the presence hero). `takeover` = the alert, which owns
+// the screen. A surface picks a tier; it does not invent a shadow.
+export const elevation = {
+  flat: {},
+  raised: cardShadow,
+  float: {
+    shadowColor: '#0B1017',
+    shadowOpacity: 0.14,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+  },
+  takeover: {
+    shadowColor: '#0B1017',
+    shadowOpacity: 0.28,
+    shadowRadius: 40,
+    shadowOffset: { width: 0, height: 18 },
+  },
+} as const;
+
+// Glass constants. Tints are near-colourless on purpose: chrome carries no hue,
+// so glass borrows its colour from whatever is scrolling beneath it.
+export const glass = {
+  tint: {
+    neutral: 'rgba(255,255,255,0.10)',
+    night: 'rgba(16,22,29,0.22)',
+    alarm: 'rgba(210,64,30,0.18)', // the takeover only — rust still means alarm
+  },
+  // Used when isLiquidGlassAvailable() is false: a deliberate frosted plate,
+  // not a sad grey box. Opaque enough to read text over a moving background.
+  fallback: {
+    neutral: { fill: 'rgba(255,255,255,0.82)', line: 'rgba(255,255,255,0.75)' },
+    night: { fill: 'rgba(26,35,45,0.86)', line: 'rgba(255,255,255,0.10)' },
+    alarm: { fill: 'rgba(150,41,12,0.78)', line: 'rgba(255,255,255,0.22)' },
+  },
+  // Blur radii for anything that fakes depth without the native effect.
+  blur: { thin: 12, regular: 22, thick: 36 },
+} as const;
+
+// Brutalist rule weights. `ink` is the 2px hard rule under a section heading —
+// the structural gesture that keeps the glass from being soft mush.
+export const rule = { hair: 0.5, ink: 2, heavy: 4 } as const;
+
+// Motion. One easing, one spring, one stagger step — a page loads as one
+// sequence, not as fifteen independent animations.
+export const motion = {
+  stagger: 70,
+  duration: { quick: 160, base: 420, slow: 640 },
+  ease: [0.16, 1, 0.3, 1] as [number, number, number, number], // iOS-ish expo-out
+  // reanimated withSpring configs
+  enter: { damping: 20, stiffness: 180, mass: 0.9 },
+  press: { damping: 24, stiffness: 520, mass: 0.6 },
+  pressScale: 0.965,
+} as const;
+
+// Menlo, not a webfont: it is the monospace iOS actually has. Brutalism here is
+// honesty about machine origin, so the ugly-honest face is the right one.
+// ponytail: no Android-specific face; 'monospace' resolves to Roboto Mono there.
+const MONO = Platform.select({ ios: 'Menlo', default: 'monospace' }) as string;
+
+// Machine voice. Tabular figures so a live number never shifts its own layout.
+// NEVER used for human sentences — see DESIGN.md, the voice law.
+export const mono: Record<'data' | 'big' | 'micro' | 'stamp', TextStyle> = {
+  data: { fontFamily: MONO, fontSize: 15, lineHeight: 20, fontVariant: ['tabular-nums'], letterSpacing: -0.2 },
+  big: { fontFamily: MONO, fontSize: 26, lineHeight: 30, fontVariant: ['tabular-nums'], letterSpacing: -1 },
+  micro: { fontFamily: MONO, fontSize: 10, lineHeight: 13, letterSpacing: 1.1, fontVariant: ['tabular-nums'] },
+  stamp: { fontFamily: MONO, fontSize: 12, lineHeight: 16, fontVariant: ['tabular-nums'], letterSpacing: 0 },
+};

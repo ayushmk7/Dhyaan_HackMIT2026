@@ -6,6 +6,8 @@ network. The two stateful bits (MOG2's background model, YOLO's weights) are the
 two classes.
 """
 
+import os
+
 import numpy as np
 
 from . import TUNING
@@ -87,7 +89,7 @@ class MotionGate:
 # --- stage 3: person ----------------------------------------------------------
 
 class PersonGate:
-    """YOLO11n, person class only, on MPS.
+    """YOLO11s on MPS: people and the objects that make a scene, in one pass.
 
     `enabled=False` is the plan's first cut path (`--no-yolo`, VLM_PLAN §3.3 and
     §9): motion alone triggers keyframes and the VLM's `person_count: 0` means
@@ -102,27 +104,67 @@ class PersonGate:
         self.device = "cpu"
         if not enabled:
             return
-        from ultralytics import YOLO      # lazy: importing torch costs ~3 s
-        import torch
+        try:
+            from ultralytics import YOLO      # lazy: importing torch costs ~3 s
+            import torch
+        except ImportError:
+            # ponytail: no ultralytics/torch installed -> take the --no-yolo cut
+            # path rather than refusing to start. Motion alone becomes presence
+            # and the VLM's person_count decides absence (§3.3). Ceiling: the
+            # posture rule and the 5 s re-confirm go with it, so a nap can read
+            # as "out of view". Upgrade: install the `vision` extra.
+            self.enabled = False
+            return
 
         self.device = "mps" if torch.backends.mps.is_available() else "cpu"
-        self.model = YOLO("yolo11n.pt")   # 5 MB, auto-downloads once
+        # yolo11s, not 11n. Measured on this camera, same frames: 11n 4.9 ms
+        # finding 4 people, 11s 6.0 ms finding 5. A person the detector misses
+        # is a resident reported absent, so 1.1 ms for the extra recall is the
+        # easiest trade in this pipeline. 11m costs 11.5 ms and finds no more.
+        self.model = YOLO(os.getenv("YOLO_MODEL", "yolo11s.pt"))
 
-    def detect(self, frame):
-        """Largest person box as (x0, y0, x1, y1) floats, or None."""
-        if not self.enabled:
-            return None
+    # COCO class ids. The VLM was being asked for all of this at ~1120 ms/call;
+    # YOLO answers it in ~6 ms and does not hallucinate a sandwich.
+    FOOD_IDS = {46: "banana", 47: "apple", 48: "sandwich", 49: "orange",
+                50: "broccoli", 51: "carrot", 52: "hot dog", 53: "pizza",
+                54: "donut", 55: "cake"}
+    DISH_IDS = {39: "bottle", 40: "wine glass", 41: "cup", 42: "fork",
+                43: "knife", 44: "spoon", 45: "bowl"}
+    SEAT_IDS = {56: "chair", 57: "couch", 59: "bed", 60: "dining table"}
+
+    def scene(self, frame):
+        """One pass, everything structural: people, food, dishes, seating.
+
+        Returns {person_count, boxes, food, dishes, seating}. This is the half of
+        an observation that does not need language, and it is ~200x cheaper than
+        asking the VLM for it. `boxes` are pixel xyxy in the frame handed in,
+        largest first — the caller normalises before anything leaves the process.
+
+        Off (or with no model) it returns the same shape, empty. A caller must
+        never have to ask which of the two it got.
+        """
+        if not self.enabled or self.model is None:
+            return {"person_count": 0, "boxes": [], "food": [], "dishes": [], "seating": []}
+        want = [0] + list(self.FOOD_IDS) + list(self.DISH_IDS) + list(self.SEAT_IDS)
         res = self.model.predict(
-            frame, classes=[0], conf=self.t["person_conf"],
+            frame, classes=want, conf=self.t["person_conf"],
             imgsz=self.t["person_imgsz"], device=self.device, verbose=False,
         )[0]
-        best, best_area = None, 0.0
-        for b in res.boxes.xyxy.tolist():
-            area = (b[2] - b[0]) * (b[3] - b[1])
-            if area > best_area:
-                best, best_area = tuple(b), area
-        return best
-
+        boxes, food, dishes, seating = [], [], [], []
+        for cls, box in zip(res.boxes.cls.tolist(), res.boxes.xyxy.tolist()):
+            c = int(cls)
+            if c == 0:
+                boxes.append(tuple(box))
+            elif c in self.FOOD_IDS:
+                food.append(self.FOOD_IDS[c])
+            elif c in self.DISH_IDS:
+                dishes.append(self.DISH_IDS[c])
+            elif c in self.SEAT_IDS:
+                seating.append(self.SEAT_IDS[c])
+        boxes.sort(key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)
+        return {"person_count": len(boxes), "boxes": boxes,
+                "food": sorted(set(food)), "dishes": sorted(set(dishes)),
+                "seating": sorted(set(seating))}
 
 # --- posture, from the bbox alone (pure) --------------------------------------
 

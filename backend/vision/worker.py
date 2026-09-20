@@ -13,7 +13,7 @@ import httpx
 
 from . import DEMO, TUNING, VLM_MODEL, FRAME_H, FRAME_W
 from .capture import Camera, to_jpeg_b64
-from .gate import MotionGate, PersonGate, apply_mask
+from .gate import MotionGate, PersonGate, apply_mask, posture_band
 from .keyframe import KeyframeSelector, RingBatch
 from . import vlm
 
@@ -50,6 +50,7 @@ class Worker:
         self.cfg = dict(NO_CONSENT)       # fail closed until a poll succeeds
         self.local_paused_until = None
         self.dropped_batches = 0
+        self.scene = None
         self.frames_seen = 0
         self.last_fps_mark = (time.monotonic(), 0)
         self.fps = 0.0
@@ -233,7 +234,13 @@ class Worker:
                 if moved or (selector.present and person_gate.enabled and now - last_person_check >= 5):
                     last_person_check = now
                     if person_gate.enabled:
-                        box = person_gate.detect(masked)
+                        # One YOLO pass gives the box AND the structural facts
+                        # (person_count, food, dishes, seating). It costs the
+                        # same ~6 ms as asking only for a person.
+                        _t0 = time.monotonic()
+                        self.scene = person_gate.scene(masked)
+                        self.scene_ms = int((time.monotonic() - _t0) * 1000)
+                        box = self.scene["boxes"][0] if self.scene["boxes"] else None
                         seen = box is not None
                     else:
                         seen = moved
@@ -280,6 +287,24 @@ class Worker:
         images = [b64 for _, b64 in items]
         prompt = vlm.build_prompt(self.cfg, len(images), span,
                                   [w.strftime("%H:%M:%S") for w in wall])
+        # The VLM is now optional per cycle. YOLO already answered the four
+        # structural questions (person, visitor, food, posture) in ~6 ms; the
+        # model is only here for the sentence, so it runs every Nth batch and
+        # every cycle in between posts YOLO's own observation instead. Set
+        # vlm_every_n=1 to go back to a model call every time.
+        scene = getattr(self, "scene", None)
+        self._since_vlm = getattr(self, "_since_vlm", 0) + 1
+        every = self.tuning.get("vlm_every_n", TUNING.get("vlm_every_n", 4))
+        if scene and self._since_vlm < every:
+            obs = vlm.post_rules(vlm.from_scene(scene, posture_band(
+                scene["boxes"][0] if scene["boxes"] else None, self.tuning)))
+            self.post(vlm.to_payload(self.camera_id, self.cfg["resident_id"],
+                                     wall[-1].isoformat(), span, len(images), obs,
+                                     model="yolo11s",
+                                     latency_ms=getattr(self, "scene_ms", 0)))
+            return f"YOLO -> {obs['activity']}"
+        self._since_vlm = 0
+
         try:
             obs, latency = vlm.call(images, prompt, model=self.model,
                                     **({"host": self.ollama} if self.ollama else {}))
@@ -295,6 +320,20 @@ class Worker:
                                             evidence="VLM unavailable; shape only."),
                     model=self.model, latency_ms=0, simulated=True))
             return f"vlm failed ({self.dropped_batches} dropped)"
+        # YOLO saw the frame too, at ~6 ms, and it counts people and spots a
+        # sandwich more reliably than a 3B model asked to do it in prose. Its
+        # facts win; the VLM keeps the half only language can do - the activity
+        # and the sentence. `post_rules` then re-derives activity from the
+        # corrected counts, so "2 people" still becomes with_visitor.
+        scene = getattr(self, "scene", None)
+        if scene:
+            obs["person_count"] = scene["person_count"]
+            obs["food_visible"] = bool(scene["food"])
+            obs["plate_or_cup_present"] = bool(scene["dishes"])
+            if scene["food"] or scene["dishes"]:
+                seen_items = ", ".join((scene["food"] + scene["dishes"])[:3])
+                if seen_items not in obs.get("evidence", ""):
+                    obs["evidence"] = f"{obs.get('evidence','')[:40]} ({seen_items})".strip()
         obs = vlm.post_rules(obs)
         self.post(vlm.to_payload(self.camera_id, self.cfg["resident_id"],
                                  wall[-1].isoformat(), span, len(images), obs,

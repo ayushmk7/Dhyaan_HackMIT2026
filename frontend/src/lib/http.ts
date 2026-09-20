@@ -10,6 +10,7 @@
 // the function says so and throws or degrades instead of faking data.
 import { planFromThread as aiPlanFromThread, polishLetter, type FamilyPlan } from './ai';
 import { API_BASE, API_KEY } from './config';
+import { useSession } from '@/store/session';
 import type {
   ActivityDay, Alert, AlertKind, AlertSeverity, BaselineFeature, CallRow,
   ChatMessage, Contact, DaySummary, Fact, KEvent, LocationMethod,
@@ -55,13 +56,12 @@ const put = <T>(path: string, data?: unknown) =>
 const del = <T>(path: string, data?: unknown) =>
   request<T>(path, { method: 'DELETE', body: JSON.stringify(data ?? {}) });
 
-// ponytail: every real endpoint added below is scoped to Eleanor —
-// backend/scripts/seed.py only seeds her, and every other real function in
-// this file already hardcodes the same id (getContacts, chat, getEvent's old
-// scan). Not read from session state: session.ts has no resident id field,
-// only a display name. Upgrade: thread a real resident id through once
-// there's more than one onboarded resident.
-const RESIDENT_ID = 'res_eleanor';
+// The resident this session is looking out for. `POST /auth/login` returns a
+// `resident_id` and session.ts stores it, so read it from there rather than
+// hardcoding Eleanor — a zustand store is readable outside React, and this
+// module has no component to hook into. Falls back to the store's own default
+// if called before sign-in (the demo seed and `signIn` both set a real id).
+const residentId = () => useSession.getState().residentId;
 
 // zoneId -> in-flight survey, so surveyStop(zoneId) can find the survey_id
 // surveyRoom(zoneId) started (see surveyRoom's comment below for why).
@@ -253,10 +253,10 @@ export const httpApi = {
   },
 
   // ponytail: no standalone contacts endpoint — contacts are embedded in
-  // GET /residents/{id}. Hardcoded to res_eleanor, matching the mock facade's
-  // own single-resident assumption. Upgrade: add GET /residents/{id}/contacts.
+  // GET /residents/{id}, so this pays for the whole resident doc to read four
+  // rows off it. Upgrade: add GET /residents/{id}/contacts.
   getContacts: async (): Promise<Contact[]> =>
-    (await get<{ contacts: Contact[] }>('/residents/res_eleanor')).contacts,
+    (await get<{ contacts: Contact[] }>(`/residents/${residentId()}`)).contacts,
 
   listOpenAlerts: async (): Promise<Alert[]> =>
     (await get<RawAlert[]>('/alerts?state=open')).map(toAlert),
@@ -313,7 +313,7 @@ export const httpApi = {
       retrieved_count: number;
       refused?: boolean;
       refusal_kind?: ChatMessage['refusal_kind'];
-    }>('/residents/res_eleanor/chat', { question });
+    }>(`/residents/${residentId()}/chat`, { question });
     return {
       id: `msg_${Date.now().toString(36)}`,
       role: 'dhyaan',
@@ -343,9 +343,9 @@ export const httpApi = {
   // signature only ever passes fall/bathroom, which the contract's own note
   // says must produce one, so a missing alert_id surfaces as a real error
   // rather than a fabricated Alert card.
-  simulate: async (kind: 'fall' | 'bathroom' = 'fall', residentId = RESIDENT_ID): Promise<Alert> => {
+  simulate: async (kind: 'fall' | 'bathroom' = 'fall', forResident = residentId()): Promise<Alert> => {
     const body = await post<{ event_id: string; alert_id?: string }>('/admin/simulate', {
-      resident_id: residentId,
+      resident_id: forResident,
       kind,
     });
     if (!body.alert_id) {
@@ -364,7 +364,7 @@ export const httpApi = {
   pairBand: async (code: string): Promise<{ band_id: string; rssi: number }> => {
     const body = await post<{ ok: boolean; band?: { band_id?: string; id?: string; rssi?: number } }>(
       '/bands/pair',
-      { band_id: code, resident_id: RESIDENT_ID },
+      { band_id: code, resident_id: residentId() },
     );
     return { band_id: body.band?.band_id ?? body.band?.id ?? code, rssi: body.band?.rssi ?? -60 };
   },
@@ -385,11 +385,11 @@ export const httpApi = {
   // sampling loop and the zoneId->survey_id mapping both live here.
   surveyRoom: async (zoneId: string): Promise<{ survey_id: string; expect_s: number }> => {
     const { survey_id } = await post<{ survey_id: string; zone: string }>(
-      `/residents/${RESIDENT_ID}/survey/start`,
+      `/residents/${residentId()}/survey/start`,
       { zone: zoneId },
     );
     const timer = setInterval(() => {
-      post(`/residents/${RESIDENT_ID}/survey/sample`, { survey_id, beacons: [], wifi: [] }).catch((e) => {
+      post(`/residents/${residentId()}/survey/sample`, { survey_id, beacons: [], wifi: [] }).catch((e) => {
         console.warn('survey sample failed', e);
       });
     }, 2000);
@@ -404,7 +404,7 @@ export const httpApi = {
     if (active) clearInterval(active.timer);
     const surveyId = active?.surveyId ?? zoneId; // fallback: caller already held a real survey_id
     const body = await post<{ zone: string; samples: number; stored: boolean }>(
-      `/residents/${RESIDENT_ID}/survey/stop`,
+      `/residents/${residentId()}/survey/stop`,
       { survey_id: surveyId },
     );
     return {
@@ -433,7 +433,7 @@ export const httpApi = {
       relationship: c.relationship,
       ladder_order: c.ladder_order,
     }));
-    await put(`/residents/${RESIDENT_ID}/contacts`, body);
+    await put(`/residents/${residentId()}/contacts`, body);
   },
   // ---- camera lane (VLM_PLAN §6.1) ------------------------------------------
 
@@ -523,14 +523,14 @@ export const httpApi = {
     })).deleted,
 
   simulateCamera: async (kind: 'meal' | 'visitor' | 'out_of_view'): Promise<void> => {
-    await post('/admin/simulate', { resident_id: RESIDENT_ID, kind });
+    await post('/admin/simulate', { resident_id: residentId(), kind });
   },
 
   // Not part of the mock facade's surface (mockApi has no such method) — kept
   // only because lib/push.ts imports httpApi.registerPushToken directly,
   // guarded by `if (!USE_MOCKS)` and already wrapped in a try/catch there.
   registerPushToken: async (expoPushToken: string): Promise<void> => {
-    await post('/push/register', { token: expoPushToken, resident_id: RESIDENT_ID, role: 'family' });
+    await post('/push/register', { token: expoPushToken, resident_id: residentId(), role: 'family' });
   },
   // ponytail: connection layer has no backend endpoints yet — live path is a
   // Muse Spark call over GET /residents/{id}/events (Meta challenge), and a
@@ -543,7 +543,7 @@ export const httpApi = {
       when: null, tasks: [], open_questions: [], reply_text: '',
     },
   sundayLetter: async (): Promise<string> => {
-    const events = await httpApi.getEvents('res_eleanor');
+    const events = await httpApi.getEvents(residentId());
     return (await polishLetter(events.map((e) => e.embedding_text).join('\n'))) ?? '';
   },
 };
