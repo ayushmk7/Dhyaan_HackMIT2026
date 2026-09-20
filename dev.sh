@@ -91,7 +91,12 @@ if curl -s http://localhost:8000/health 2>/dev/null | grep -q '"ok":true'; then
   API_PID=""
 else
   info "starting API on 0.0.0.0:8000"
-  (cd "$BACKEND" && exec .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000) &
+  # DEMO_FAST shrinks presence.py's dedup gaps and durations to a tenth, so a
+  # camera run puts meals and visits on the timeline inside a two-minute loop
+  # instead of needing real minutes of eating. This is the dev script, and a
+  # demo nobody can watch happen is not a demo. Override it in the environment
+  # to exercise the real thresholds: DEMO_FAST=0 ./dev.sh
+  (cd "$BACKEND" && DEMO_FAST="${DEMO_FAST:-1}" exec .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000) &
   API_PID=$!
   PIDS+=("$API_PID")
   for i in $(seq 1 30); do

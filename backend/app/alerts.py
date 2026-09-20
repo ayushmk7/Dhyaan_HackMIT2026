@@ -232,12 +232,68 @@ def _schedule(alert_id: str, delay_s: float, trigger: str) -> None:
     _timers[alert_id] = asyncio.create_task(_wait())
 
 
+# Which trigger each waiting state is waiting FOR, and how long it waits. This
+# is the timer half of TABLE, and it has to agree with the `_schedule(...)` call
+# in the action that enters each state — a state here with the wrong trigger
+# would re-arm an alert onto a transition TABLE has no entry for. States absent
+# from this map are not waiting on a clock: VOICEMAIL and FELL_BUT_FINE chain
+# straight through, CLASSIFYING waits on a human, and the terminal states are
+# done.
+def _pending_timer(state: str) -> tuple[str, float] | None:
+    return {
+        "LOCAL_CANCEL": ("cancel_timeout", float(cfg.CANCEL_WINDOW_S)),
+        "CALLING_RESIDENT": ("silence", float(RESIDENT_RESPONSE_TIMEOUT_S)),
+        "RETRY_RESIDENT": ("retry_timeout", float(RETRY_WAIT_S)),
+        "CALLING_CONTACT_1": ("contact_timeout", float(cfg.CONTACT_WAIT_S)),
+        "CALLING_CONTACT_2": ("contact_timeout", float(cfg.CONTACT_WAIT_S)),
+        "ESCALATED_FINAL": ("exhausted_timeout", float(cfg.EXHAUSTED_AFTER_S)),
+    }.get(state)
+
+
+async def _rearm_pending() -> int:
+    """Re-arm the ladder for alerts that were mid-escalation when we stopped.
+
+    Timers are in-memory asyncio tasks, so a process restart used to strand
+    every open alert exactly where it stood: the app kept showing a live
+    takeover that would never advance and never close. In development the API
+    runs under `uvicorn --reload`, so that is not a rare crash-only case — it
+    is every time someone saves a file.
+
+    The remaining wait is measured from the alert's own `updated_at`, so an
+    alert that was 28 seconds into a 30 second cancel window resumes with two
+    seconds left rather than a fresh thirty. Anything already past due fires on
+    the next tick instead of being back-dated.
+    """
+    rearmed = 0
+    now = datetime.now(timezone.utc)
+    async for alert in db().alerts.find({"state": {"$nin": list(TERMINAL_STATES)}}):
+        pending = _pending_timer(alert.get("state", ""))
+        if not pending:
+            continue
+        trigger, window_s = pending
+        try:
+            since = datetime.fromisoformat(alert["updated_at"])
+        except (KeyError, TypeError, ValueError):
+            since = now
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=timezone.utc)
+        left = window_s - (now - since).total_seconds()
+        _schedule(alert["_id"], max(0.1, left), trigger)
+        rearmed += 1
+    if rearmed:
+        log.info("re-armed %d in-flight alert timer(s) after restart", rearmed)
+    return rearmed
+
+
 def start_timers() -> None:
-    # ponytail: nothing to warm up — timers are per-alert asyncio tasks created
-    # on demand. This exists so main.py's lifespan has a symmetric call. On a
-    # process restart, in-flight alerts stop ticking; re-deriving pending
-    # timers from `events` on boot is the upgrade if that ever matters.
-    pass
+    """Lifespan hook. Kicks off the re-arm as a task because the lifespan calls
+    this synchronously and the re-arm needs the database."""
+    try:
+        asyncio.get_running_loop().create_task(_rearm_pending())
+    except RuntimeError:
+        # No loop (a synchronous test importing the module). Nothing in flight
+        # to re-arm in that case either.
+        pass
 
 
 def stop_timers() -> None:

@@ -1,23 +1,35 @@
 // THE LIVE ALERT — phase-driven takeover (§10.1 screen 8, abhinavtodo D6.1).
-// Explicit phases: suspected → calling → contacts → final → acknowledged.
-// Full-bleed vermilion, layered gradient, choreographed entrance, haptics, ringtone.
-import { LinearGradient } from 'expo-linear-gradient';
+//
+// The phase is derived from `alert.state` — the FSM state from
+// backend/app/alerts.py, the one field that is always present and always real.
+// It used to be read off the LAST LADDER STEP, and `lib/http.ts` hands every
+// real alert `ladder: []`, so against the real backend this screen pinned
+// itself at 'suspected' forever: no ringing pulse, no "she didn't answer", no
+// ladder, no final escalation. The ladder is now used for the one thing it is
+// good for — filling in the step-by-step history when a backend sends one —
+// and the screen reads correctly either way.
+//
+// Everything white sits on vermilion, and vermilion means alarm and nothing
+// else in this app. The hard cream rules and the mono state readout are the
+// counterweight: under the noise, this is a machine you can audit.
 import * as Haptics from 'expo-haptics';
 import { useAudioPlayer } from 'expo-audio';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, Vibration, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Vibration, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Btn, ErrorState, LadderTimeline, Txt } from '@/components';
+import {
+  Btn, DataLabel, Entrance, ErrorState, FLOATING_BAR_CLEARANCE, FloatingBar, Glass,
+  LadderTimeline, Marquee, Rule, Screen, Stagger, Txt, Wash,
+} from '@/components';
 import { CancelCountdownRing, ElapsedStat, RingingPulse } from '@/components/alert-extras';
-import { Entrance } from '@/components/entrance';
 import { api } from '@/lib/api';
-import { timeOf } from '@/lib/format';
+import { residentNumber, timeOf } from '@/lib/format';
 import { useAlert, useContacts, useResident } from '@/lib/hooks';
 import { emergencyLine, useCareFile } from '@/store/carefile';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
-import { palette, radius, sp, type } from '@/theme/tokens';
+import { palette, radius, sp } from '@/theme/tokens';
 
 const WHITE = '#FFFFFF';
 const WHITE_SOFT = 'rgba(255,255,255,0.8)';
@@ -32,23 +44,54 @@ const kindWord: Record<string, string> = {
 
 type Phase = 'suspected' | 'ringing_resident' | 'no_answer' | 'contacts' | 'final' | 'closed';
 
+/**
+ * backend/app/alerts.py's STATES, lowercased. The mock writes the same words
+ * in lower case and the real FSM writes them in upper, so one table normalized
+ * to lower case serves both. Terminal states never reach here — `closed` is
+ * decided before this is consulted.
+ */
+const PHASE_BY_STATE: Record<string, Phase> = {
+  idle: 'suspected',
+  suspected: 'suspected',
+  local_cancel: 'suspected',
+  calling_resident: 'ringing_resident',
+  classifying: 'ringing_resident',
+  retry_resident: 'no_answer',
+  voicemail: 'no_answer',
+  scheduled_callback: 'no_answer',
+  fell_but_fine: 'no_answer',
+  calling_contact_1: 'contacts',
+  calling_contact_2: 'contacts',
+  escalated_final: 'final',
+  exhausted: 'final',
+};
+
+/** The 30 s window she can cancel from the band. It belongs to two FSM states. */
+const CANCEL_WINDOW_S = 30;
+const inCancelWindow = (state: string) => state === 'suspected' || state === 'local_cancel';
+
+/** The line for a phase the FSM expresses several different ways. */
+const noAnswerLine = (state: string, name: string): string => {
+  switch (state) {
+    case 'retry_resident':
+      return `${name} didn’t pick up. Dhyaan is trying her once more.`;
+    case 'voicemail':
+      return `${name} didn’t pick up. Dhyaan left her a message and is calling her family next.`;
+    case 'fell_but_fine':
+      return `${name} says she fell but is all right. Dhyaan is telling her family anyway.`;
+    case 'scheduled_callback':
+      return `${name} asked Dhyaan to call back. Her family is being told too.`;
+    default:
+      return `${name} didn’t answer. Calling her family next.`;
+  }
+};
+
+
 // Outside the component so the compiler's immutability rule doesn't apply;
 // wrapped so a sound failure never kills the takeover.
 type RingtonePlayer = { loop: boolean; play(): void; pause(): void };
 const startRingtone = (p: RingtonePlayer) => { try { p.loop = true; p.play(); } catch { /* noop */ } };
 const stopRingtone = (p: RingtonePlayer) => { try { p.pause(); } catch { /* noop */ } };
-
-function phaseOf(lastStep: string | undefined, closed: boolean): Phase {
-  if (closed) return 'closed';
-  switch (lastStep) {
-    case 'calling_resident': return 'ringing_resident';
-    case 'no_answer': return 'no_answer';
-    case 'calling_contact_1':
-    case 'calling_contact_2': return 'contacts';
-    case 'escalated_final': return 'final';
-    default: return 'suspected';
-  }
-}
 
 function BigWhiteBtn({ label, onPress }: { label: string; onPress: () => void }) {
   return (
@@ -57,7 +100,7 @@ function BigWhiteBtn({ label, onPress }: { label: string; onPress: () => void })
       onPress={onPress}
       style={({ pressed }) => [styles.bigBtn, { backgroundColor: pressed ? '#F1E4DC' : WHITE }]}
     >
-      <Text style={{ color: palette.rustDeep, fontSize: 18, fontWeight: '700' }}>{label}</Text>
+      <Txt kind="label" style={{ color: palette.rustDeep, fontSize: 18, fontWeight: '700' }}>{label}</Txt>
     </Pressable>
   );
 }
@@ -69,7 +112,7 @@ function OutlineBtn({ label, onPress }: { label: string; onPress: () => void }) 
       onPress={onPress}
       style={({ pressed }) => [styles.outlineBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.12)' }]}
     >
-      <Text style={{ color: WHITE, fontSize: 16, fontWeight: '600' }}>{label}</Text>
+      <Txt kind="label" tone="white" style={{ fontSize: 16 }}>{label}</Txt>
     </Pressable>
   );
 }
@@ -80,7 +123,7 @@ export default function AlertTakeover() {
   const { data: alert, isLoading, isError, refetch } = useAlert(id ?? '');
   const { data: contacts } = useContacts();
   const live = useLive();
-  const { role, residentName } = useSession();
+  const { role, residentName, user } = useSession();
   const careFile = useCareFile();
   const emsLine = emergencyLine(careFile);
   const { data: resident } = useResident(alert?.resident_id ?? '');
@@ -96,8 +139,15 @@ export default function AlertTakeover() {
     : (alert?.calls ?? []).flatMap((c) => ('transcript' in c ? c.transcript : []));
   const closed = !!alert?.closed_at || !!closedNote || (!isActive && !isLoading && !isError && !alert);
 
-  const lastStep = ladder[ladder.length - 1];
-  const phase = phaseOf(lastStep?.step, closed);
+  const state = (alert?.state ?? '').toLowerCase();
+  const statePhase: Phase = closed ? 'closed' : PHASE_BY_STATE[state] ?? 'suspected';
+  const lastStep = ladder[ladder.length - 1]?.step;
+  // The ladder refines exactly one beat the FSM cannot express on its own: the
+  // mock holds CALLING_RESIDENT while its ladder has already recorded that
+  // nobody picked up. It never decides the phase on its own — an empty ladder
+  // changes nothing here.
+  const phase: Phase =
+    statePhase === 'ringing_resident' && lastStep === 'no_answer' ? 'no_answer' : statePhase;
 
   const name =
     alert?.resident_id === 'res_eleanor'
@@ -105,6 +155,10 @@ export default function AlertTakeover() {
       : resident?.display_name?.split(' ')[0] ?? 'the resident';
   const contact1 = contacts?.[0]?.name.split(' ')[0] ?? 'her family';
   const contact2 = contacts?.[1]?.name.split(' ')[0];
+  const herPhone = residentNumber(resident, contacts, name);
+  // Who is actually tapping the button. `acked_by` used to be hard-coded to a
+  // demo name on each branch.
+  const actor = user?.name?.trim() || (role === 'staff' ? 'Staff' : 'Family');
 
   const hasAlert = !!alert;
 
@@ -144,180 +198,237 @@ export default function AlertTakeover() {
   // A flaky LAN hop, not "nobody needs help any more" — never conflate the two.
   if (isError && !alert) {
     return (
-      <View style={[styles.paperFill, { padding: sp(6) }]}>
+      <Screen scroll={false} style={{ justifyContent: 'center' }}>
         <ErrorState message="Couldn’t reach Dhyaan to load this alert." onRetry={refetch} />
         <Btn label="Back to home" kind="quiet" onPress={() => router.replace('/')} style={{ marginTop: sp(3) }} />
-      </View>
+      </Screen>
     );
   }
 
   if (!alert && !isLoading) {
     return (
-      <View style={[styles.paperFill, { padding: sp(6) }]}>
+      <Screen scroll={false} style={{ justifyContent: 'center' }}>
         <Txt kind="title">That alert has already been handled.</Txt>
         <Btn label="Back to home" onPress={() => router.replace('/')} style={{ marginTop: sp(5) }} />
-      </View>
+      </Screen>
     );
   }
 
   // Calm close-out — plus the applause line.
   if (closed && alert) {
-    const who = alert.acked_by ?? 'Someone';
+    // `acked_by` is null for every real alert (the backend takes `by` on the
+    // ack and never stores it). Say what is true instead of naming "Someone".
+    const who = alert.acked_by?.trim();
     const sentence =
       closedNote ??
       (alert.resolution === 'false_positive'
         ? 'Marked as a false alarm. Nothing else will happen.'
-        : `${who} is on it. The ladder has stopped.`);
+        : who
+          ? `${who} is on it. The ladder has stopped.`
+          : 'This alert has been answered. The ladder has stopped.');
     return (
-      <View style={[styles.paperFill, { padding: sp(6) }]}>
-        <Txt kind="display" tone="ok">{sentence}</Txt>
-        <Txt kind="body" tone="muted" style={{ marginTop: sp(3) }}>
-          Saved to {name}’s timeline.
-        </Txt>
-        {!!alert.closed_at && (
-          <ElapsedStat openedAt={alert.opened_at} closedAt={alert.closed_at} name={name} />
-        )}
-        <Btn label="Back to home" onPress={() => router.replace('/')} style={{ marginTop: sp(7) }} />
-      </View>
+      <Screen scroll={false} style={{ justifyContent: 'center' }}>
+        <Stagger gap={4}>
+          <Txt kind="display" tone="ok">{sentence}</Txt>
+          <View>
+            <Txt kind="body" tone="muted">Saved to {name}’s timeline.</Txt>
+            {!closedNote && !who && alert.resolution !== 'false_positive' && (
+              <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
+                Dhyaan didn’t record who answered it.
+              </Txt>
+            )}
+          </View>
+          {/* ElapsedStat's sentence is about a fall hitting the floor, so it
+              is only true for a fall. A bathroom alert gets the close-out
+              without the applause line rather than a sentence that is wrong. */}
+          {alert.closed_at && alert.kind === 'fall' ? (
+            <View>
+              <Rule />
+              <ElapsedStat openedAt={alert.opened_at} closedAt={alert.closed_at} name={name} />
+            </View>
+          ) : null}
+          <Btn label="Back to home" onPress={() => router.replace('/')} />
+        </Stagger>
+      </Screen>
     );
   }
 
-  const gradient: [string, string] =
-    phase === 'final' ? [palette.rustDeep, '#4A1608'] : [palette.rust, palette.rustDeep];
+  const middle = (() => {
+    if (phase === 'suspected') {
+      return inCancelWindow(state) ? (
+        // The window runs from when the alert opened — the mock's
+        // `cancel_window` ladder step does not exist on the real backend.
+        <CancelCountdownRing since={alert?.opened_at ?? ''} windowS={CANCEL_WINDOW_S} />
+      ) : (
+        <Txt kind="body" tone="white" style={styles.betweenLine}>
+          Dhyaan is working out what to do next.
+        </Txt>
+      );
+    }
+    if (phase === 'ringing_resident') return <RingingPulse label={`Calling ${name} now…`} />;
+    if (phase === 'no_answer') {
+      return <Txt kind="body" tone="white" style={styles.betweenLine}>{noAnswerLine(state, name)}</Txt>;
+    }
+    if (phase === 'contacts') {
+      return (
+        <RingingPulse
+          label={
+            state === 'calling_contact_2' && contact2
+              ? `Calling ${contact1} and ${contact2} at the same time`
+              : contact2
+                ? `Calling ${contact1} · ${contact2} is next if she doesn’t pick up`
+                : `Calling ${contact1}`
+          }
+        />
+      );
+    }
+    return (
+      <Txt kind="body" tone="white" style={styles.betweenLine}>
+        Nobody has answered yet. Every contact is being told, with her address.
+      </Txt>
+    );
+  })();
 
   return (
-    <View style={{ flex: 1 }}>
-      <LinearGradient colors={gradient} style={StyleSheet.absoluteFill} />
-      <LinearGradient
-        colors={['rgba(255,255,255,0.08)', 'rgba(0,0,0,0.22)']}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
+    <View style={{ flex: 1, backgroundColor: palette.rustDeep }}>
+      <Wash tone="alarm" height="100%" />
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + sp(5),
           paddingHorizontal: sp(5),
-          paddingBottom: sp(4),
+          paddingBottom: FLOATING_BAR_CLEARANCE + sp(6),
         }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Beat 0 — the machine's own header. Uppercase mono is correct here
+            and nowhere else on this screen: it is telemetry, not a sentence. */}
         <Entrance index={0}>
-          <Text style={[type.caption, { color: WHITE_SOFT }]}>
-            {kindWord[alert?.kind ?? 'fall']} · {alert ? timeOf(alert.opened_at) : ''}
-          </Text>
+          <DataLabel tone={WHITE_SOFT} value={alert ? timeOf(alert.opened_at) : ''}>
+            {kindWord[alert?.kind ?? 'fall']}
+          </DataLabel>
+          <Rule color={WHITE} style={{ marginTop: sp(2), opacity: 0.55 }} />
         </Entrance>
+
         <Entrance index={1}>
-          <Text style={[type.display, { color: WHITE, marginTop: sp(2) }]}>
+          <Txt kind="display" tone="white" style={{ marginTop: sp(4) }}>
             {alert?.kind === 'bathroom'
               ? `${name} has been in the bathroom a long time.`
               : `${name} may have fallen.`}
-          </Text>
+          </Txt>
         </Entrance>
 
-        <Entrance index={2}>
-          {phase === 'suspected' && (
-            <CancelCountdownRing
-              since={ladder.find((s) => s.step === 'cancel_window')?.at ?? alert?.opened_at ?? ''}
-            />
-          )}
-          {phase === 'ringing_resident' && <RingingPulse label={`Calling ${name} now…`} />}
-          {phase === 'no_answer' && (
-            <Text style={[styles.betweenLine]}>
-              {name} didn’t answer. Calling her family next.
-            </Text>
-          )}
-          {phase === 'contacts' && (
-            <RingingPulse
-              label={
-                lastStep?.step === 'calling_contact_2' && contact2
-                  ? `Calling ${contact1} and ${contact2} at the same time`
-                  : contact2
-                    ? `Calling ${contact1} · ${contact2} is next if she doesn’t pick up`
-                    : `Calling ${contact1}`
-              }
-            />
-          )}
-          {phase === 'final' && (
-            <Text style={styles.betweenLine}>
-              Nobody has answered yet. Every contact is being told, with her address.
-            </Text>
-          )}
-        </Entrance>
+        <Entrance index={2}>{middle}</Entrance>
 
-        <Entrance index={3} style={{ marginTop: sp(4) }}>
-          <LadderTimeline steps={ladder} night />
+        <Entrance index={3}>
+          <Marquee title="What Dhyaan has done" night />
+          {ladder.length > 0 ? (
+            <LadderTimeline steps={ladder} night />
+          ) : (
+            // No ladder history over REST (lib/http.ts sends []). Show the
+            // machine's real position instead of an empty timeline.
+            <Glass tone="alarm" style={{ padding: sp(4), gap: sp(2.5) }}>
+              <DataLabel tone={WHITE} value={alert?.state ?? '—'}>State</DataLabel>
+              <DataLabel tone={WHITE} value={alert ? timeOf(alert.opened_at) : '—'}>Opened</DataLabel>
+              <Txt kind="caption" tone="white" style={{ opacity: 0.85, marginTop: sp(1) }}>
+                Dhyaan isn’t sending the step-by-step history for this alert. This is where it has
+                got to, and it is updating as it goes.
+              </Txt>
+            </Glass>
+          )}
         </Entrance>
 
         {transcript.length > 0 && (
-          <View style={{ marginTop: sp(2) }}>
-            <Text style={[type.title, { color: WHITE, marginBottom: sp(3) }]}>
-              What the call is hearing
-            </Text>
+          <Entrance index={4}>
+            <Marquee title="What the call is hearing" night />
             {transcript.map((line, i) => (
-              <Text
+              <Txt
                 key={i}
+                kind="body"
+                tone="white"
                 style={
                   line.speaker === 'agent'
-                    ? { fontStyle: 'italic' as const, fontSize: 16, lineHeight: 24, color: WHITE_SOFT, marginBottom: sp(2) }
-                    : { ...type.body, color: WHITE, fontWeight: '700', marginBottom: sp(2) }
+                    ? { fontStyle: 'italic', fontSize: 16, lineHeight: 24, opacity: 0.8, marginBottom: sp(2) }
+                    : { fontWeight: '700', marginBottom: sp(2) }
                 }
               >
                 {line.speaker === 'agent' ? 'Dhyaan: ' : `${name}: `}{line.text}
-              </Text>
+              </Txt>
             ))}
+          </Entrance>
+        )}
+
+        {/* Beat 5 — everything that is not the one commitment. The floating bar
+            below holds that, and only that. */}
+        <Entrance index={5}>
+          <Marquee title="If you’d rather do it yourself" night />
+          <View style={{ gap: sp(2.5) }}>
+            {role === 'staff' ? (
+              <>
+                <OutlineBtn
+                  label="Resolved, checked on her"
+                  onPress={() => act(() => api.resolve(id!, 'ok'), 'Resolved. Noted on her record.')}
+                />
+                <OutlineBtn
+                  label="False alarm"
+                  onPress={() => act(() => api.resolve(id!, 'false_positive'), 'Marked as a false alarm. Nothing else will happen.')}
+                />
+              </>
+            ) : (
+              <>
+                {herPhone ? (
+                  <OutlineBtn label={`Call ${name}`} onPress={() => Linking.openURL(`tel:${herPhone}`)} />
+                ) : (
+                  <Txt kind="caption" tone="white" style={{ opacity: 0.8 }}>
+                    Dhyaan doesn’t have a number for {name} — it has her contacts, not her own line —
+                    so it can’t hand you one to dial. Dhyaan is calling her itself.
+                  </Txt>
+                )}
+                <OutlineBtn label="Call 911" onPress={() => Linking.openURL('tel:911')} />
+                <Txt kind="caption" tone="white" style={{ opacity: 0.8, textAlign: 'center' }}>
+                  {phase === 'final'
+                    ? 'Dhyaan does not dial 911 for you. If you can’t reach her, this button opens your dialer.'
+                    : 'Opens your dialer. Dhyaan never calls 911 itself.'}
+                </Txt>
+              </>
+            )}
           </View>
+        </Entrance>
+
+        {emsLine && (
+          <Entrance index={6}>
+            <Marquee title="For the paramedics" night />
+            <Glass tone="alarm" style={{ padding: sp(4) }}>
+              <DataLabel tone={WHITE_SOFT}>From her care file</DataLabel>
+              <Txt kind="body" tone="white" style={{ marginTop: sp(2) }}>{emsLine}</Txt>
+            </Glass>
+          </Entrance>
         )}
       </ScrollView>
 
-      <Entrance index={4}>
-        <View style={{
-          paddingHorizontal: sp(5),
-          paddingBottom: Math.max(insets.bottom, sp(4)),
-          paddingTop: sp(3),
-          gap: sp(2.5),
-        }}>
-          {emsLine && (
-            <View style={{
-              borderWidth: 1, borderColor: 'rgba(255,255,255,0.45)',
-              borderRadius: radius.card, padding: sp(3),
-            }}>
-              <Text style={[type.caption, { color: WHITE_SOFT }]}>For EMS, from her care file</Text>
-              <Text style={[type.caption, { color: WHITE, marginTop: 2 }]}>{emsLine}</Text>
-            </View>
-          )}
-          {actionError && (
-            <Text style={[type.caption, { color: WHITE, textAlign: 'center', fontWeight: '600' }]}>
-              {actionError}
-            </Text>
-          )}
-          {role === 'staff' ? (
-            <>
-              <BigWhiteBtn label="Assign to me" onPress={() => act(() => api.ack(id!, 'Marcus'), 'Assigned to you. The ladder has stopped.')} />
-              <OutlineBtn label="Resolved, checked on her" onPress={() => act(() => api.resolve(id!, 'ok'), 'Resolved. Noted on her record.')} />
-              <OutlineBtn label="False alarm" onPress={() => act(() => api.resolve(id!, 'false_positive'), 'Marked as a false alarm. Nothing else will happen.')} />
-            </>
-          ) : (
-            <>
-              <BigWhiteBtn label="I’ve got her" onPress={() => act(() => api.ack(id!, 'Priya'), 'You’ve got her. The ladder has stopped.')} />
-              <OutlineBtn label={`Call ${name}`} onPress={() => Linking.openURL('tel:+16175550100')} />
-              <OutlineBtn label="Call 911" onPress={() => Linking.openURL('tel:911')} />
-              <Text style={[type.caption, { color: WHITE_SOFT, textAlign: 'center' }]}>
-                {phase === 'final'
-                  ? 'Dhyaan does not dial 911 for you. If you can’t reach her, this button opens your dialer.'
-                  : 'Opens your dialer. Dhyaan never calls 911 itself.'}
-              </Text>
-            </>
-          )}
-        </View>
-      </Entrance>
+      {/* The one commitment. Content travels under it. */}
+      <FloatingBar tone="alarm">
+        {!!actionError && (
+          <Txt kind="caption" tone="white" style={{ textAlign: 'center', fontWeight: '600', marginBottom: sp(2) }}>
+            {actionError}
+          </Txt>
+        )}
+        {role === 'staff' ? (
+          <BigWhiteBtn
+            label="Assign to me"
+            onPress={() => act(() => api.ack(id!, actor), 'Assigned to you. The ladder has stopped.')}
+          />
+        ) : (
+          <BigWhiteBtn
+            label="I’ve got her"
+            onPress={() => act(() => api.ack(id!, actor), 'You’ve got her. The ladder has stopped.')}
+          />
+        )}
+      </FloatingBar>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  paperFill: { flex: 1, backgroundColor: palette.paper, justifyContent: 'center' },
   bigBtn: {
     minHeight: 56, borderRadius: radius.card,
     alignItems: 'center', justifyContent: 'center',
@@ -327,8 +438,5 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.6)',
   },
-  betweenLine: {
-    ...type.body, color: WHITE, fontWeight: '600',
-    marginTop: sp(4), textAlign: 'center',
-  },
+  betweenLine: { fontWeight: '600', marginTop: sp(4), textAlign: 'center' },
 });

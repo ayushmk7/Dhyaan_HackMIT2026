@@ -177,6 +177,7 @@ export function Sparkline({ series, tone = palette.slate, height = 34 }: { serie
     return (
       <View style={{ height, justifyContent: 'flex-end' }}>
         <Txt kind="caption" tone="muted">
+          {/* voice-ok: an empty state, which DESIGN.md exempts. */}
           {series.length === 0 ? 'No readings yet' : 'Only one reading so far'}
         </Txt>
       </View>

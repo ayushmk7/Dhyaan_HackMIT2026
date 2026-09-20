@@ -65,6 +65,7 @@ class Worker:
         self.cfg = dict(NO_CONSENT)       # fail closed until a poll succeeds
         self.local_paused_until = None
         self.dropped_batches = 0
+        self._last_shape = None
         self.synthetic = str(source) == "synthetic"
         # The structural facts for THIS frame, or None when no detector ran.
         # Reset every sampled frame — a stale plate must never reach a later
@@ -187,6 +188,40 @@ class Worker:
         except Exception:
             pass
 
+    def post_async(self, payload):
+        """Fire the ingest POST on a worker thread.
+
+        It is only ~3 ms, but it sits in the capture loop and the loop now runs
+        at 15 fps, so it is 3 ms stolen from every frame for a result nothing
+        downstream waits on. One thread, one queue, drop-oldest if the API
+        stalls: a backed-up network must slow the network, not the camera.
+        """
+        if self.dry_run:
+            return self.post(payload)
+        q = getattr(self, "_postq", None)
+        if q is None:
+            import queue, threading
+
+            q = self._postq = queue.Queue(maxsize=32)
+
+            def drain():
+                while True:
+                    item = q.get()
+                    if item is None:
+                        return
+                    try:
+                        self.post(item)
+                    except Exception as e:      # noqa: BLE001
+                        log(f"post failed: {type(e).__name__}: {str(e)[:120]}")
+
+            threading.Thread(target=drain, daemon=True, name="dhyaan-post").start()
+        try:
+            q.put_nowait(payload)
+        except Exception:                        # noqa: BLE001
+            # Full queue: the API is slower than the camera. Drop this one and
+            # say so rather than letting the loop block behind it.
+            log("post queue full — dropped an observation (API slower than the camera)")
+
     def post(self, payload):
         """--dry-run prints the exact JSON instead of posting it, so it can be
         diffed against fixtures/camera_observation.json."""
@@ -305,6 +340,26 @@ class Worker:
                 if run_detector:
                     last_person_check = now
                 box, seen = self._detect(person_gate, masked, run_detector, moved, motion)
+
+                # The keyframe selector rations VLM calls: min_gap_s holds two
+                # keyframes 6-20 s apart. That was right when every observation
+                # cost ~2.4 s of model time. It is nonsense now the detector
+                # answers in ~13 ms, and it WAS the perceived lag - the app sat
+                # six seconds behind a camera that already knew. So post the
+                # detector's own observation the moment what it sees changes,
+                # and leave the selector to its slow VLM cadence.
+                if self.scene is not None:
+                    shape = (self.scene["person_count"], bool(self.scene["food"]),
+                             bool(self.scene["dishes"]), posture_band(box, self.tuning))
+                    if shape != self._last_shape:
+                        self._last_shape = shape
+                        quick = vlm.post_rules(
+                            vlm.from_scene(self.scene, posture_band(box, self.tuning)))
+                        self.post_async(vlm.to_payload(
+                            self.camera_id, self.cfg["resident_id"],
+                            datetime.now(timezone.utc).isoformat(), 0.0, 1, quick,
+                            model=os.getenv("YOLO_MODEL", "yolo11s.pt").replace(".pt", ""),
+                            latency_ms=getattr(self, "scene_ms", 0)))
 
                 reason = selector.update(now, seen, box)       # stage 4
                 status = f"motion {score:.3f}" + (" · person" if seen else "") + \

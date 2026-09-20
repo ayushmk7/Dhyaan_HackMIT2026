@@ -57,7 +57,23 @@ const mockApi = {
   },
   // Chat runs through the camera-lane mock: it is the only one that knows the
   // three citation kinds and the §5.5 refusals.
-  async chat(question: string): Promise<ChatMessage> { await wait(1100); return mockCamera.chat(question); },
+  // The in-memory world holds exactly one resident, so a question about anyone
+  // else has no answer here. Refusing is the honest reply — answering about the
+  // wrong person is the one failure mode a care app cannot have.
+  async chat(question: string, forResident?: string): Promise<ChatMessage> {
+    await wait(1100);
+    if (forResident && forResident !== 'res_eleanor') {
+      return {
+        id: `msg_${Date.now().toString(36)}`,
+        role: 'dhyaan',
+        text: 'Dhyaan can only answer about the person this account looks after.',
+        citations: [],
+        refused: true,
+        refusal_kind: 'no_data',
+      };
+    }
+    return mockCamera.chat(question);
+  },
   async talkAbout(): Promise<string[]> {
     // Live Claude over today's real observations when a key exists; mock heuristics otherwise.
     const live = await draftOpeners(dhyaan.getEvents('res_eleanor', 20).map((e) => e.embedding_text));
@@ -91,6 +107,11 @@ const mockApi = {
     dhyaan.addNote(text, role);
   },
 
+  async getLocation(residentId: string) {
+    await wait(120);
+    return dhyaan.getResident(residentId)?.location ?? null;
+  },
+
   // No nightly job in the mock — the seeded world already has its summaries.
   async rollup() { await wait(300); },
 
@@ -103,7 +124,7 @@ const mockApi = {
   async pairBand(code: string) {
     await wait(900);
     if (code.length !== 6) throw new Error('That code doesn’t look right. It’s 6 digits.');
-    return { band_id: 'band_a3f2', rssi: -54 };
+    return { band_id: 'band_a3f2' };
   },
   async surveyRoom(_zoneId: string) {
     await wait(400);
@@ -111,7 +132,7 @@ const mockApi = {
   },
   async surveyStop(_surveyId: string) {
     await wait(300);
-    return { n_scans: 10, n_anchors: 6, separability_db: 9.2, warning: null as string | null };
+    return { n_scans: 10, warning: null as string | null };
   },
   async saveContacts(_contacts: unknown) { await wait(400); },
 

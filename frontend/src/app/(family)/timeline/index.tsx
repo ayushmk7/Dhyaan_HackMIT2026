@@ -131,24 +131,26 @@ export default function HerDay() {
   // same voice as the story, because on a family screen it is a real thing to
   // want — not an admin button.
   const [writing, setWriting] = useState(false);
-  const [wrote, setWrote] = useState(false);
-  const [writeError, setWriteError] = useState<string | null>(null);
+  // Both are held against the day they belong to, so paging to another day
+  // doesn't inherit the last day's outcome.
+  const [wroteFor, setWroteFor] = useState<string | null>(null);
+  const [writeError, setWriteError] = useState<{ date: string; text: string } | null>(null);
   const writeStory = useCallback(async () => {
     setWriting(true);
     setWriteError(null);
     try {
       await api.rollup();
-      setWrote(true);
+      setWroteFor(date);
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['summaries', residentId] }),
         qc.invalidateQueries({ queryKey: ['activity', residentId] }),
       ]);
     } catch {
-      setWriteError('Dhyaan couldn’t write it just now. Try again in a moment.');
+      setWriteError({ date, text: 'Dhyaan couldn’t write it just now. Try again in a moment.' });
     } finally {
       setWriting(false);
     }
-  }, [qc, residentId]);
+  }, [date, qc, residentId]);
 
   const isToday = date === localDayKey();
   const dayLabel = dayOf(`${date}T12:00:00`);
@@ -254,7 +256,7 @@ export default function HerDay() {
         ) : (
           <Card>
             <Txt kind="body" tone="muted">{/* voice-ok */}
-              {wrote
+              {wroteFor === date
                 ? `Dhyaan went back through ${isToday ? 'today' : 'that day'} and didn’t have enough yet to write about.`
                 : `Dhyaan writes the day’s story each evening. ${isToday ? 'Today’s isn’t written yet.' : 'There isn’t one for this day.'}`}
             </Txt>
@@ -266,10 +268,11 @@ export default function HerDay() {
               style={{ marginTop: sp(3) }}
             />
             <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
+              {/* voice-ok: an empty state, which DESIGN.md exempts. */}
               It takes a few seconds. Dhyaan normally does this overnight.
             </Txt>
-            {!!writeError && (
-              <Txt kind="caption" tone="alert" style={{ marginTop: sp(2) }}>{writeError}</Txt>
+            {writeError?.date === date && (
+              <Txt kind="caption" tone="alert" style={{ marginTop: sp(2) }}>{writeError.text}</Txt>
             )}
           </Card>
         )}

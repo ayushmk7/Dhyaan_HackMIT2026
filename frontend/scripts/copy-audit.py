@@ -28,8 +28,13 @@ for path in glob.glob('src/**/*.ts*', recursive=True):
         if (stripped.startswith('//') or stripped.startswith('*') or stripped.startswith('/*')
                 or stripped.startswith('{/*') or stripped.endswith('*/') or 'voice-ok' in l):
             continue
-        # em dash inside a string literal, not a code comment tail
+        # em dash inside a string literal, not a code comment tail.
+        # A bare '—' literal is the missing-value glyph ("LATENCY  —"), which is
+        # typography, not prose, and telemetry needs a character that means "no
+        # reading" without pretending to be one. Only em dashes with words
+        # around them are the AI tell this rule is for.
         code = l.split('//')[0]
+        code = re.sub(r'''(['"`])\s*—\s*\1''', '""', code)
         if '—' in code and re.search(r'''['"`][^'"`]*—''', code):
             violations.append((path, i, f'em dash: {stripped[:60]}'))
         if re.search(r'''['"`][^'"`]*, never ''', code):

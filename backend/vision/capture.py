@@ -121,9 +121,11 @@ class SyntheticCamera:
 
     Deterministic: the frame and the script are pure functions of the loop
     phase, and the phase is wall-clock, so two runs started at the same second
-    see the same day. The loop is 120 s: empty room, she comes in, eats at the
-    table with a plate, crosses to the armchair, a visitor sits with her, she
-    gets up and leaves, empty room.
+    see the same day. The loop is ONE MINUTE — an empty room long enough to go
+    out of view, she comes in, sits, eats at the table with a plate, crosses to
+    the armchair, a visitor joins her — so that a one-minute run of the lane
+    puts a meal, a visitor and a spell of moving about on the timeline. A real
+    day is not a minute long; this is a rehearsal, and it says so on every row.
 
     ponytail: rectangles and circles, no sprites, no video file to ship.
     Ceiling: it proves the lane, not the perception — a bug in the prompt or the
@@ -132,7 +134,15 @@ class SyntheticCamera:
     """
 
     FPS = 30
-    LOOP_S = 120.0
+    LOOP_S = 60.0
+
+    # The loop's boundaries, in seconds. Sized against the two rules downstream:
+    # the dedup needs two observations before it believes an episode, and a meal
+    # needs `MIN_DUR_S` of them (12 s under DEMO_FAST). At a keyframe every 6 s
+    # that is a 12 s window for anything, and a 20 s one for the meal. The empty
+    # stretch is 13 s because `absent_after_s` is 12 — she has to be gone long
+    # enough to actually go out of view.
+    EMPTY_UNTIL, ARRIVE_UNTIL, SIT_UNTIL, MEAL_UNTIL, CROSS_UNTIL = 13, 25, 27, 47, 48
 
     def __init__(self):
         self.t0 = time.monotonic()
@@ -160,18 +170,16 @@ class SyntheticCamera:
 
         jitter = int(6 * np.sin(t * 2.2))     # never perfectly still: MOG2 would
         #                                       otherwise absorb her into the wall
-        if t < 12 or t >= 110:
+        if t < self.EMPTY_UNTIL:
             return []
-        if t < 22:                            # walking in from the right
-            return [(440 - (t - 12) * 12, 60 + jitter, 215)]
-        if t < 74:                            # seated at the table
+        if t < self.ARRIVE_UNTIL:             # walking in from the right
+            return [(440 - (t - self.EMPTY_UNTIL) * 11, 60 + jitter, 215)]
+        if t < self.MEAL_UNTIL:               # at the table: sitting, then eating
             return [(330 + jitter, 96, 190)]
-        if t < 80:                            # crossing to the armchair
-            return [(330 - (t - 74) * 36, 60, 215)]
-        if t < 100:                           # settled in the armchair
-            her = [(86, 100 + jitter, 196)]
-            return her + [(170 - jitter, 98, 200)] if 82 <= t < 98 else her
-        return [(86 + (t - 100) * 40, 60, 215)]   # up and out of the room
+        if t < self.CROSS_UNTIL:              # crossing to the armchair
+            return [(330 - (t - self.MEAL_UNTIL) * 240, 60, 215)]
+        return [(86, 100 + jitter, 196),      # settled, with someone visiting
+                (170 - jitter, 98, 200)]
 
     def script(self, t=None):
         """What is happening at loop phase `t`, as an Observation plus the
@@ -195,17 +203,16 @@ class SyntheticCamera:
 
         if not figs:
             return dict(ABSENT_SCRIPT, boxes=[])
-        if t < 22 or 74 <= t < 80 or t >= 100:
-            return obs("walking", "doorway" if t < 22 or t >= 100 else "other",
-                       posture="upright", movement="normal")
-        if 30 <= t < 70:
+        if t < self.ARRIVE_UNTIL:
+            return obs("walking", "doorway", posture="upright", movement="normal")
+        if t < self.SIT_UNTIL:
+            return obs("sitting", "table")
+        if t < self.MEAL_UNTIL:
             return obs("eating", "table", plate_or_cup_present=True, food_visible=True,
                        hand_to_mouth_observed=True, confidence=0.86)
-        if 82 <= t < 98:
-            return obs("with_visitor", "armchair", confidence=0.79)
-        if t < 74:
-            return obs("sitting", "table")
-        return obs("reading", "armchair")
+        if t < self.CROSS_UNTIL:
+            return obs("walking", "other", posture="upright", movement="normal")
+        return obs("with_visitor", "armchair", confidence=0.79)
 
     # --- the drawing ----------------------------------------------------------
 
@@ -219,7 +226,7 @@ class SyntheticCamera:
         cv2.rectangle(f, (300, 158), (315, 205), (96, 120, 150), -1)  # table leg
         cv2.rectangle(f, (40, 120), (130, 200), (120, 110, 105), -1)  # armchair
 
-        if 30 <= t < 70:
+        if self.SIT_UNTIL <= t < self.MEAL_UNTIL:
             cv2.ellipse(f, (330, 140), (22, 9), 0, 0, 360, (240, 240, 235), -1)  # plate
             cv2.rectangle(f, (352, 132), (356, 148), (230, 230, 225), -1)        # cup
             # the fork hand, going to the mouth and back — the one motion that

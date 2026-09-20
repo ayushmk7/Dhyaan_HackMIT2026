@@ -3,7 +3,7 @@
 // the consensus, commitments, and open questions, plus a reply ready to send back.
 //
 // `api.planFromThread` can reject (no key, no network, a 500) — without a catch
-// the button span forever, so every path out of `make()` clears `busy` and says
+// the button spun forever, so every path out of `make()` clears `busy` and says
 // something true.
 import React, { useCallback, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Share, View } from 'react-native';
@@ -31,7 +31,7 @@ export default function Plan() {
     } catch {
       // Without this the spinner ran until the screen was closed.
       setPlan(null);
-      setError('Dhyaan couldn’t read that thread just now. Nothing was sent anywhere — try again in a moment.');
+      setError('Dhyaan couldn’t read that thread just now. Nothing was sent anywhere. Try again in a moment.');
     } finally {
       setBusy(false);
     }
@@ -120,6 +120,7 @@ export default function Plan() {
                       onPress={() => Share.share({ message: plan.reply_text })}
                     />
                     <Txt kind="caption" tone="muted">
+                      {/* voice-ok: an empty state, which DESIGN.md exempts. */}
                       This opens your share sheet. Dhyaan doesn’t post to your group chat itself.
                     </Txt>
                   </View>

@@ -122,7 +122,7 @@ export default function Survey() {
                 {s.kind === 'surveying' && (
                   <>
                     <Rule style={{ marginTop: sp(2.5) }} />
-                    <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
+                    <Txt kind="caption" style={{ marginTop: sp(2) }}>
                       Walking now. A reading goes to her hub every two seconds.
                     </Txt>
                   </>

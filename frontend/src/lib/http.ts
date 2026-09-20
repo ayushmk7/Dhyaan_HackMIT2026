@@ -13,7 +13,7 @@ import { API_BASE, API_KEY } from './config';
 import { useSession } from '@/store/session';
 import type {
   ActivityDay, Alert, AlertKind, AlertSeverity, BaselineFeature, CallRow,
-  ChatMessage, Contact, DaySummary, Fact, KEvent, LocationMethod,
+  ChatMessage, Contact, DaySummary, Fact, KEvent, LadderStep, LocationMethod,
   LocationSegment, LoginResult, MemoryDeleted, MemoryScope, Presence, Profile,
   ProfilePatch, Resident, ResidentLocation, CameraMonitorTick, CameraSummary,
   SimulateKind, VoiceScript,
@@ -112,10 +112,11 @@ function toLocation(raw: RawLocation | null | undefined): ResidentLocation | nul
   };
 }
 
-// ponytail: the wire format has no `closed: bool` — this mirrors
-// backend/app/routers/residents.py's `_terminal_states()` by hand (its
-// fallback set + the router's own MANUALLY_RESOLVED addition). Keep in sync;
-// upgrade by having the API return `closed`/`closed_at` directly.
+// The API now sends `closed_at` itself (residents.py `_closed_at`), so this
+// set is only the fallback for a payload that predates it — the websocket and
+// REST both go through the server's one shaper now. Kept rather than deleted
+// because an alert that fails to read as closed leaves the full-screen
+// takeover stuck on the phone, and that is the wrong thing to be brave about.
 const TERMINAL_ALERT_STATES = new Set([
   'RESOLVED_OK', 'CANCELLED', 'ACKNOWLEDGED', 'EXHAUSTED', 'MANUALLY_RESOLVED',
 ]);
@@ -136,6 +137,8 @@ interface RawAlert {
   room?: string | null;
   trigger_event?: KEvent | null;
   calls?: KEvent[]; // raw voice-source events — see toCallRow
+  closed_at?: string | null; // server-computed; see toAlert
+  ladder?: LadderStep[]; // replayed from events by residents.py `_ladder_step`
 }
 
 // ponytail: real voice.py only ever emits `{to, role, alert_id, call_sid}` —
@@ -154,14 +157,20 @@ function toCallRow(e: KEvent): CallRow {
   };
 }
 
-function toAlert(raw: RawAlert): Alert {
+export function toAlert(raw: RawAlert): Alert {
   return {
     ...raw,
     kind: raw.kind as AlertKind,
     severity: raw.severity as AlertSeverity,
-    closed_at: TERMINAL_ALERT_STATES.has(raw.state) ? raw.resolved_at ?? raw.updated_at ?? null : null,
+    // Prefer the server's own answer; derive only if it didn't send one.
+    closed_at: raw.closed_at !== undefined
+      ? raw.closed_at
+      : TERMINAL_ALERT_STATES.has(raw.state) ? raw.resolved_at ?? raw.updated_at ?? null : null,
     acked_by: null, // real backend never persists/returns who acked — see types.ts
-    ladder: [], // real backend has no ladder history over REST — see types.ts
+    // The ladder is replayed from the transition events the FSM already
+    // writes (PRD §4.3), so the takeover's phase machine runs against a live
+    // backend now. Empty array, not undefined: every call site spreads it.
+    ladder: raw.ladder ?? [],
     calls: (raw.calls ?? []).map(toCallRow),
   };
 }
@@ -169,6 +178,7 @@ function toAlert(raw: RawAlert): Alert {
 interface RawResidentListItem {
   id: string;
   display_name: string;
+  phone_e164: string | null;
   room: string | null;
   state: string;
   battery_pct: number | null;
@@ -181,6 +191,7 @@ function toResident(raw: RawResidentListItem): Resident {
   return {
     id: raw.id,
     display_name: raw.display_name,
+    phone_e164: raw.phone_e164 ?? null,
     room: raw.room,
     state: raw.state as Resident['state'],
     last_seen: raw.last_seen,
@@ -286,12 +297,12 @@ export const httpApi = {
   // suppress_until, verdict}. The one call site
   // (app/(family)/timeline/[eventId].tsx) ignores the return value, so this
   // shapes a compatible stand-in instead of the real body; don't build new
-  // features on downweighted/suppress_until, they're not real. Also: that
-  // call site passes an EVENT id, but the real route is keyed by ALERT id
-  // (it looks up the alert's single trigger_event_id internally) — this
-  // 404s unless the id given also happens to be an open alert's id. Upgrade:
-  // add a real per-event feedback route, or thread the owning alert id
-  // through from the timeline screen.
+  // features on downweighted/suppress_until, they're not real.
+  //
+  // The route is named for an alert but accepts either id: residents.py falls
+  // back to `trigger_event_id`, then to the bare event, because the family
+  // gives feedback from the TIMELINE where the thing on screen is an event.
+  // So passing an event id here is correct, not a latent 404.
   feedback: async (
     eventId: string,
     verdict: 'expected' | 'false_positive',
@@ -307,14 +318,14 @@ export const httpApi = {
   // 'observed' — every citation the old route could produce was an event, and
   // labelling one 'told' or 'pattern' without the server saying so would be
   // exactly the fabrication the kind tag exists to prevent.
-  chat: async (question: string): Promise<ChatMessage> => {
+  chat: async (question: string, forResident = residentId()): Promise<ChatMessage> => {
     const body = await post<{
       answer: string;
       citations: { id?: string; event_id?: string; kind?: string; ts: string; text: string }[];
       retrieved_count: number;
       refused?: boolean;
       refusal_kind?: ChatMessage['refusal_kind'];
-    }>(`/residents/${residentId()}/chat`, { question });
+    }>(`/residents/${forResident}/chat`, { question });
     return {
       id: `msg_${Date.now().toString(36)}`,
       role: 'dhyaan',
@@ -360,9 +371,20 @@ export const httpApi = {
 
   // POST /residents/{id}/notes — a staff or family note, stored as a real
   // event so it is retrievable and shows up on the timeline like anything else.
+  // `author` is required by NoteBody (residents.py) and has no default, so it
+  // is filled from the signed-in user here rather than asked of every caller —
+  // a note nobody signed is worth less than no note.
   addNote: async (residentId_: string, text: string, role: 'staff' | 'family' = 'family'): Promise<void> => {
-    await post(`/residents/${residentId_}/notes`, { text, role });
+    const author = useSession.getState().user?.name?.trim()
+      || (role === 'staff' ? 'Staff' : 'Family');
+    await post(`/residents/${residentId_}/notes`, { text, author, role });
   },
+
+  // GET /residents/{id}/location — one zone for one resident. Staff-only by
+  // D-001; no family screen may call it. Cheaper than `getResident`, which
+  // fetches the whole roster to read one row.
+  getLocation: async (residentId_: string): Promise<ResidentLocation | null> =>
+    toLocation(await get<RawLocation>(`/residents/${residentId_}/location`)),
 
   // POST /admin/rollup — runs the nightly baseline + narrative pass now.
   // Without it a freshly seeded backend has no daily summaries at all and
@@ -372,16 +394,18 @@ export const httpApi = {
   // POST /bands/pair — contract body is {band_id, resident_id}, but
   // onboard/pair.tsx only ever collects a 6-digit code shown on the band, no
   // separate band_id field. Treated as the same value (the band's own code
-  // *is* its id for pairing purposes here). Contract's `band: {...}` is left
-  // unspecified in the doc, so band_id/rssi are read defensively off it
-  // with sane fallbacks instead of assuming a shape. Upgrade: nail down
-  // `band`'s real fields with the backend and stop guessing.
-  pairBand: async (code: string): Promise<{ band_id: string; rssi: number }> => {
-    const body = await post<{ ok: boolean; band?: { band_id?: string; id?: string; rssi?: number } }>(
+  // *is* its id for pairing purposes here).
+  //
+  // No `rssi`. The old version returned `body.band?.rssi ?? -60` — a fabricated
+  // signal strength for a band the hub has not heard from yet, which is the
+  // whole reason pairing cannot confirm a band is really there. The screen now
+  // says that instead of showing a number.
+  pairBand: async (code: string): Promise<{ band_id: string }> => {
+    const body = await post<{ ok: boolean; band?: { band_id?: string; id?: string } }>(
       '/bands/pair',
       { band_id: code, resident_id: residentId() },
     );
-    return { band_id: body.band?.band_id ?? body.band?.id ?? code, rssi: body.band?.rssi ?? -60 };
+    return { band_id: body.band?.band_id ?? body.band?.id ?? code };
   },
 
   // ponytail: this phone has no BLE radio access, so `surveyRoom` can only
@@ -413,7 +437,7 @@ export const httpApi = {
   },
   surveyStop: async (
     zoneId: string,
-  ): Promise<{ n_scans: number; n_anchors: number; separability_db: number; warning: string | null }> => {
+  ): Promise<{ n_scans: number; warning: string | null }> => {
     const active = activeSurveys.get(zoneId);
     activeSurveys.delete(zoneId);
     if (active) clearInterval(active.timer);
@@ -422,15 +446,13 @@ export const httpApi = {
       `/residents/${residentId()}/survey/stop`,
       { survey_id: surveyId },
     );
+    // Only what the server actually measured. This used to also return
+    // `n_anchors` (approximated from the sample count) and `separability_db: 0`
+    // — a phone with no radio access cannot count anchors or compute a
+    // separation, so those were two numbers dressed as measurements. Deleted
+    // rather than zeroed: a field that exists invites a screen to render it.
     return {
       n_scans: body.samples,
-      // ponytail: the real stop response has no per-anchor breakdown (no BLE
-      // beacons from a phone to count) — approximated from sample count so
-      // the "N anchors" readout still moves with real activity instead of
-      // being a fabricated number. Ceiling: not a real anchor count. Upgrade:
-      // have the backend return one, or drop the anchor UI for phone surveys.
-      n_anchors: Math.min(6, body.samples),
-      separability_db: 0, // not computed over REST — honest zero, not a fabricated confidence score
       warning: body.stored ? null : 'Not enough signal collected. this room may not be recognized reliably yet.',
     };
   },

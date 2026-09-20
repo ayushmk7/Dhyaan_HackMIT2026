@@ -493,8 +493,8 @@ def test_the_synthetic_day_is_deterministic_and_scripted():
 
     cam = SyntheticCamera()
     assert (cam._draw(5.0) == cam._draw(5.0)).all()          # pure function of the phase
-    assert (cam._draw(5.0) == cam._draw(115.0)).all()        # both ends are an empty room
-    assert (cam._draw(5.0) != cam._draw(40.0)).any()         # ...and the middle is not
+    assert (cam._draw(2.0) == cam._draw(11.0)).all()         # an empty room does not move
+    assert (cam._draw(5.0) != cam._draw(35.0)).any()         # ...and the middle of it does
 
     g = MotionGate()
     fired = []
@@ -506,3 +506,27 @@ def test_the_synthetic_day_is_deterministic_and_scripted():
     # It must drive the real cascade with no webcam and no detector: someone
     # arrives, is seen more than once, and goes away again.
     assert "appear" in fired and "dwell" in fired and "absent" in fired
+
+
+def test_the_scripted_day_contains_the_three_episodes_the_dedup_needs():
+    """A one-minute loop has to be worth a timeline: something to call a walk,
+    a meal long enough to clear MIN_DUR_S, a visitor, and enough empty room to
+    actually go out of view."""
+    from vision.capture import SyntheticCamera
+
+    cam = SyntheticCamera()
+    day = [cam.script(t / 2) for t in range(int(SyntheticCamera.LOOP_S * 2))]
+    seen = [s["activity"] for s in day]
+    for activity in ("absent", "walking", "eating", "with_visitor"):
+        assert activity in seen, f"the scripted day never does {activity}"
+    # Long enough to survive the rules downstream, in loop seconds.
+    assert seen.count("eating") / 2 >= 18
+    # `--source synthetic` takes the DEMO cadence whether or not --demo was
+    # passed, so that is the rule the empty stretch has to clear.
+    assert seen.count("absent") / 2 >= DEMO["absent_after_s"]
+
+    for s in day:
+        assert len(s["boxes"]) == s["person_count"], "a box per person, or the console lies"
+        for b in s["boxes"]:
+            assert len(b) == 4 and all(0.0 <= c <= 1.0 for c in b), b
+    assert max(len(s["boxes"]) for s in day) == 2      # her and one visitor
