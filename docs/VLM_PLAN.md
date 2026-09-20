@@ -7,8 +7,8 @@ that actually works, with every shortcut's ceiling named. Nothing here relaxes c
 zone rules, or validation at a trust boundary.
 
 Binding inputs: `PRODUCT_SPEC.md` §8 (creepiness budget), `DECISIONS.md` D-001 (family never
-sees a room), `TECHNICAL_PRD.md` §6 (cascade) and §12 (privacy), `frontend/DESIGN.md`,
-`distinctive-frontend.md`. Where this plan and the original brief disagree, §1 says so.
+sees a room), `TECHNICAL_PRD.md` §6 (cascade) and §12 (privacy), `docs/frontend-DESIGN.md`.
+Where this plan and the original brief disagree, §1 says so.
 
 ---
 
@@ -460,7 +460,7 @@ next to each one.
 Keeping frames buys three things: re-running the VLM after a prompt fix, a human review queue for
 false positives, and "show me why" for the family. The first two are real and we forgo them
 knowingly; the observations rows (sentences) are the review queue we can afford. The third is the
-one we must not build — `frontend/DESIGN.md` rule 3 and `PRODUCT_SPEC.md` §8.2 both say evidence
+one we must not build — `docs/frontend-DESIGN.md` rule 3 and `PRODUCT_SPEC.md` §8.2 both say evidence
 is a sentence, never a picture. So: **no frames retained, structurally** — no disk write in the
 worker (grep the package for `imwrite`/`open(` in review), frames cross exactly one socket
 (loopback to Ollama), and the API cannot return what it never receives. The upgrade, if a review
@@ -632,7 +632,7 @@ Citations render by kind in the app: *You told us · Tue* / *Dhyaan saw · 10:40
 
 ## 7. Frontend work
 
-Aesthetic, documented per `distinctive-frontend.md` and kept from `frontend/DESIGN.md`: *a
+Aesthetic, documented in `docs/frontend-DESIGN.md`: *a
 letter from her kitchen table* — warm paper, ink, slate for touch, vermilion only for alerts.
 The redesign pushes the four vectors harder without new dependencies:
 
@@ -717,7 +717,7 @@ Must not touch: `backend/vision/`, `pyproject.toml`, `Makefile`, `frontend/`, `a
 
 ### Agent C — app (`frontend/`)
 
-Owns: everything under `frontend/src/`, `frontend/assets/images/grain.png`, `frontend/DESIGN.md`
+Owns: everything under `frontend/src/`, `frontend/assets/images/grain.png`, `docs/frontend-DESIGN.md`
 (update the aesthetic section), `frontend/package.json` only if a dependency is truly needed (the
 plan needs none).
 Builds against: the mock facade first (`USE_MOCKS=true`, extended in `lib/mock/`), then
@@ -739,7 +739,7 @@ Hour 0 is when the three agents start reading this file. Times are per agent, in
 | 5–7 | `worker.py`: config poll, consent gate, heartbeat, POST, ring; `--demo`; `--source file.mp4` | `GET /activity` with family filter; `rag.py` pool + kinds + quota + time window | **Today** home + `PresenceHero`; `Her day` |
 | 7–8 | **Checkpoint: A→B end to end on the webcam.** Fix enums/timestamps. | Checkpoint with A; `DEMO_FAST` | **Checkpoint: flip `USE_MOCKS=false`**; fix shapes |
 | 8–11 | Tune keyframe rules on a real sit-eat-leave loop; `--no-yolo` cut path verified; test file | `rag.py` guard (hard/soft), prompt rules, scrub, Ollama text fallback; `chat.py` response; `test_rag_guard.py` | **Ask** with kind citations + refusal treatment; **Settings** facts/camera/forget |
-| 11–13 | `simulate` fallback verified with B; README section | `simulate` kinds; `login`; seed polish; `make test` green | Polish: entrance choreography, empty states, emoji grep, DESIGN.md |
+| 11–13 | `simulate` fallback verified with B; README section | `simulate` kinds; `login`; seed polish; `make test` green | Polish: entrance choreography, empty states, emoji grep, docs/frontend-DESIGN.md |
 | 13–14 | **Feature freeze.** Full run: login → onboarding → sit/eat/leave → chat → forget. Each agent fixes only their own files. | | |
 | 14–18 | Rehearse the §10 script six times. Record the fallback clip (`--source` file). Tune `DEMO_FAST` and `--demo` so bite→sentence is under 35 s. | | |
 | 18–22 | Slack for what broke. Sleep in shifts. | | |

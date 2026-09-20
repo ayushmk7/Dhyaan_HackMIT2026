@@ -40,7 +40,7 @@ backend `beacons` table): `eee6331c-6ea1-4873-83ed-ae648d10e07f` · major `1`.
 ## After flashing
 
 1. Verify from a Mac: `python3 band/tools/rssi_monitor.py` (expect minors you flashed).
-2. Measure `MEASURED_POWER_1M` per board (utsavtodo E8.1): band at exactly 1 m,
+2. Measure `MEASURED_POWER_1M` per board: band at exactly 1 m,
    line of sight, take the 15 s median RSSI; write it into the sketch and
    `config.json → rf.beacons[].tx_power_1m`, reflash. The −59 default is a guess.
 3. Run the room survey from the app; check `separability_db` per pair.

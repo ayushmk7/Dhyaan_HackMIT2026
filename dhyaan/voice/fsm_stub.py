@@ -1,4 +1,4 @@
-"""The seam to the real FSM — REPLACE AT INTEGRATION (abhinavtodo B1.1–B1.3).
+"""The seam to the real FSM — REPLACE AT INTEGRATION.
 
 Ayush's backend owns the real implementations:
   - `dhyaan/events.py`  → emit(...)                      (PRD §3.4)

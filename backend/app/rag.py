@@ -165,7 +165,7 @@ def _template_narrative(name: str, date_local: str, docs: list[dict]) -> str:
 
     This is what the family reads on Her day, so it is written to be read, not
     logged: no leading date stamp, no "had 33 recorded events", no "bed exit(s)"
-    or "3 meal(s)", and no em dashes (DESIGN.md bans them in user-facing copy).
+    or "3 meal(s)", and no em dashes (docs/frontend-DESIGN.md bans them in user-facing copy).
     It also still has to work as a retrieval chunk, which is why meals are named
     rather than counted: "she ate breakfast and dinner" is something a semantic
     search for "has she been eating" can actually match, and "3 meals observed"

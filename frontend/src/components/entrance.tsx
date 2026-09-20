@@ -1,4 +1,4 @@
-// Orchestrated entrance (distinctive-frontend.md §3): one staggered load
+// Orchestrated entrance (see docs/frontend-DESIGN.md): one staggered load
 // sequence per screen, nothing else animates unprompted. Reanimated, so the
 // whole sequence runs on the UI thread and survives a slow first fetch.
 import React, { useEffect, useState } from 'react';

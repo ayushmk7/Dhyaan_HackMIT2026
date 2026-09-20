@@ -10,7 +10,7 @@ HackMIT 2026 · team of 3 · 24 hours · local-first on a MacBook Pro M5 Pro (48
 
 > **Build status — Saturday 19 Sept, ~17:00 (H6).** This PRD is the original design. Where it and the
 > code disagree, the code and [`./backend-README.md`](././backend-README.md) describe what runs, and
-> [`backend/fixtures/*.json`](./backend/fixtures/) are the band's wire contract. Design changes made
+> [`backend/fixtures/*.json`](../backend/fixtures/) are the band's wire contract. Design changes made
 > since the first draft are logged, with reasons, in [`DECISIONS.md`](./DECISIONS.md) (D-011).
 >
 > | Area | This PRD describes | What is built |
@@ -3072,9 +3072,9 @@ fourteen hours, and here is the labelling pipeline (`review_state`, §3) we buil
 
 ## 13. 24-hour build plan
 
-> **Superseded for staffing (D-011).** The team is three people, and the per-person plans in
-> `utsavtodo.md`, `ayushneedtodo.md` and `abhinavtodo.md` replace the A–D split below. The phase
-> checkpoints (T+3, T+6, T+12, T+18) still apply.
+> **Superseded for staffing (D-011).** The team is three people; the A–D split below is the
+> original 24 h build plan, kept for history. The phase checkpoints (T+3, T+6, T+12, T+18)
+> still apply.
 
 **Team of 4 (original plan).** A = backend/events/FSM. B = voice (Twilio + Deepgram). C = vision + RF localization.
 D = React Native + dashboard + demo.

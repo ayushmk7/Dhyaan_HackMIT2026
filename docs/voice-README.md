@@ -1,7 +1,7 @@
 # dhyaan/voice — Twilio ⇄ Deepgram voice slice (lane B)
 
 Everything here runs and is tested **offline** — no Twilio, Deepgram, or Apple
-account needed until a phone actually rings. `tests/test_bridge.py` exercises the
+account needed until a phone actually rings. `dhyaan/tests/test_bridge.py` exercises the
 full bridge (fake Twilio socket + fake Deepgram server): Settings gating, media
 encoding both ways, barge-in, tool calls, silence default, voicemail-as-no-answer,
 retry-once.
@@ -11,7 +11,7 @@ retry-once.
 ```sh
 python3 -m venv .venv-voice && source .venv-voice/bin/activate
 pip install -r requirements.txt
-pytest tests/test_bridge.py -q            # offline proof — must be green
+pytest dhyaan/tests/test_bridge.py -q            # offline proof — must be green
 uvicorn dhyaan.voice.app:app --port 8000  # the standalone voice app (+ /health)
 ```
 

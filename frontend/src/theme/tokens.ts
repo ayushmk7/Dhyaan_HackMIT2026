@@ -567,7 +567,7 @@ export const motion = {
 const MONO = Platform.select({ ios: 'Menlo', default: 'monospace' }) as string;
 
 // Machine voice. Tabular figures so a live number never shifts its own layout.
-// NEVER used for human sentences. See DESIGN.md, the voice law. Same six sizes
+// NEVER used for human sentences. See docs/frontend-DESIGN.md, the voice law. Same six sizes
 // as `type`, same line-height and tracking rules; `micro` is the one entry that
 // tracks OUT (+1), because it is the uppercase overline and caps need air.
 const monoStep = (size: number, letterSpacing = track(size)): TextStyle =>

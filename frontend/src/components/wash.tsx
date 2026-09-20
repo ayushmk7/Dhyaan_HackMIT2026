@@ -1,4 +1,4 @@
-// The atmospheric ground (distinctive-frontend.md §4). Glass is only as good as
+// The atmospheric ground (see docs/frontend-DESIGN.md). Glass is only as good as
 // what it refracts, so the ground is layered: a base ramp, two crossed blooms
 // that fake a mesh gradient, and 64x64 grain at 4%.
 //

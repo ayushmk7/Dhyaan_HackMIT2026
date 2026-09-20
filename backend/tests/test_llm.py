@@ -108,7 +108,7 @@ async def test_daily_narrative_falls_back_to_template_and_writes_event(resident,
     # proves the same thing and also pins the voice.
     assert "She went for a walk." in narrative
     assert "recorded events" not in narrative
-    assert "—" not in narrative  # DESIGN.md: no em dashes in user-facing copy
+    assert "—" not in narrative  # docs/frontend-DESIGN.md: no em dashes in user-facing copy
 
     stored = await db.events.find_one({"resident_id": resident, "type": "daily_summary"})
     assert stored is not None

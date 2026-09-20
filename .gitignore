@@ -13,3 +13,10 @@ testcam/models/
 testcam/weights/
 testcam/fixtures/
 weights/
+
+# Ultralytics auto-downloads these by name on first run; never commit a weight.
+*.pt
+# The launch-video source is kept (brag-output/composition/); renders are not.
+brag-output*/**/node_modules/
+brag-output*/**/renders/
+brag-output*/*.mp4

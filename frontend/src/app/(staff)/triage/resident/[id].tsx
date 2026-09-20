@@ -86,7 +86,7 @@ function BaselineRow({ b }: { b: BaselineFeature }) {
           <Row gap={2} style={{ alignItems: 'baseline' }}>
             <Txt kind="data" tone={deviating ? 'warn' : 'ink'}>{fmt(last)}</Txt>
             <Txt kind="caption" tone="muted">{copy.routine.oneReading(b.unit)}</Txt>
-              {/* voice-ok: an empty state, which DESIGN.md exempts. */}
+              {/* voice-ok: an empty state, which docs/frontend-DESIGN.md exempts. */}
           </Row>
         )}
       </View>

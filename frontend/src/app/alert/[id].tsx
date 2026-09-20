@@ -1,4 +1,4 @@
-// THE LIVE ALERT — phase-driven takeover (§10.1 screen 8, abhinavtodo D6.1).
+// THE LIVE ALERT — phase-driven takeover (§10.1 screen 8).
 //
 // The phase is derived from `alert.state` — the FSM state from
 // backend/app/alerts.py, the one field that is always present and always real.

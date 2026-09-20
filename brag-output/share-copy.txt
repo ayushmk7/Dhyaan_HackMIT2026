@@ -1,0 +1,1 @@
+Dhyaan: a band that feels the fall at 208 Hz, ESP32 anchors that know which room she is in, and a VLM that runs on the laptop so the camera's frames never leave it. The band opens the alert, the camera confirms it seconds later, and the first phone to ring is hers.

@@ -17,7 +17,7 @@ static const uint8_t SITE_UUID[16] = {
   0x83, 0xed, 0xae, 0x64, 0x8d, 0x10, 0xe0, 0x7f,
 };
 static const uint16_t SITE_MAJOR = 1;
-static const int8_t   MEASURED_POWER_1M = -59; // PLACEHOLDER — overwrite from the 1 m survey (utsavtodo E8.1)
+static const int8_t   MEASURED_POWER_1M = -59; // PLACEHOLDER — overwrite from the 1 m survey
 static const uint16_t ADV_INTERVAL_MS   = 100; // hackathon value; product pucks run 500-1000 ms
 
 void setup() {

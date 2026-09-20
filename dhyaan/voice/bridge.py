@@ -1,4 +1,4 @@
-"""Twilio ⇄ Deepgram Voice Agent bridge — TECHNICAL_PRD §5.4, abhinavtodo B3–B7.
+"""Twilio ⇄ Deepgram Voice Agent bridge — TECHNICAL_PRD §5.4.
 
 The three rules people get wrong (§5.4), enforced and tested here:
   1. Twilio → Deepgram is RAW BINARY (base64-decode, send bytes). Deepgram → Twilio

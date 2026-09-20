@@ -60,7 +60,7 @@ class Uplink:
                     return None
 
                 if r.status_code == 409:
-                    # Cancel too late (ayushextra A6) — final.
+                    # Cancel too late — final.
                     self.uplink_ok = True
                     try:
                         return r.json()

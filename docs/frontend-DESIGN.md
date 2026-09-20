@@ -331,6 +331,24 @@ words out loud to another person, caps are a bug. Human sentences are sentence
 case, SF, and ink. Gray is metadata only (a time, a count, a unit): a grey
 paragraph is the AI tell, which is why `EmptyState` renders its sentence in ink.
 
+## The five rules
+
+1. **Chrome is mute.** No caption ever explains a control ("Safe to press",
+   "Change the order by re-running setup"). A label is its own documentation.
+   Voice lives in exactly three places: empty states, errors, consent content.
+2. **No em dashes in any user-facing string.** Rewrite the sentence. Max one " · "
+   pair per line.
+3. **Gray is metadata only** (timestamps, counts, units). Every sentence and every
+   primary label is ink. A gray paragraph is an instant fail.
+4. **SF only in chrome.** Native large-title headers own screen titles. The serif
+   (Fraunces) is allowed for exactly one thing: Eleanor's own quoted words.
+5. **No rhetoric.** UI copy is a plain label or one functional, spoken sentence
+   ("Detects falls and calls her, then her contacts."). Banned: parallel
+   fragments ("X. It Y."), "X, never Y", taglines, poetic inversion. If it
+   sounds quotable, rewrite it or delete it.
+6. **Every screen has a visual anchor** — an Avatar, an IconBadge rail, the day
+   bar, the alert gradient. A screen that is only text is unfinished.
+
 ## Voice
 
 - No emojis anywhere (`scripts/copy-audit.py` and a CI grep enforce this).

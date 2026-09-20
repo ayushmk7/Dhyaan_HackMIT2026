@@ -25,15 +25,44 @@ import type {
 // transport
 // ---------------------------------------------------------------------------
 
+/**
+ * Every request times out. React Native's `fetch` has no default deadline, so a
+ * host that accepts nothing (the usual cause: a phone pointed at `localhost`,
+ * which is the phone, not the Mac) leaves the promise pending forever. React
+ * Query then sits in `isPending` and the screen shows its loading state for
+ * good — "Checking on Eleanor…" with no way out and nothing in the logs.
+ *
+ * Ten seconds, and the failure names the address it could not reach, because
+ * "Couldn't reach Dhyaan" without the URL tells nobody which of the four
+ * plausible causes it was.
+ */
+const TIMEOUT_MS = 10_000;
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      // No Authorization header: the backend has no auth (see config.ts).
-      ...init?.headers,
-    },
-  });
+  const url = `${API_BASE}${path}`;
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...init,
+      signal: abort.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        // No Authorization header: the backend has no auth (see config.ts).
+        ...init?.headers,
+      },
+    });
+  } catch (e) {
+    const timedOut = e instanceof Error && e.name === 'AbortError';
+    throw new Error(
+      timedOut
+        ? `Dhyaan didn't answer at ${API_BASE}. Is the backend running, and can this device reach that address?`
+        : `Couldn't reach Dhyaan at ${API_BASE}. ${e instanceof Error ? e.message : ''}`.trim(),
+    );
+  } finally {
+    clearTimeout(timer);
+  }
   const body = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
     // Real backend is plain FastAPI: {"detail": "message"} or, on a 422,

@@ -212,7 +212,7 @@ export function Sparkline({ series, tone, height = 34 }: { series: number[]; ton
     return (
       <View style={{ height, justifyContent: 'flex-end' }}>
         <Txt kind="caption" tone="muted">
-          {/* voice-ok: an empty state, which DESIGN.md exempts. */}
+          {/* voice-ok: an empty state, which docs/frontend-DESIGN.md exempts. */}
           {series.length === 0 ? 'No readings yet' : 'Only one reading so far'}
         </Txt>
       </View>

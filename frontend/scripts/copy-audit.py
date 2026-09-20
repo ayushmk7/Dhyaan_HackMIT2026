@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copy audit — catches the AI-UI tells (DESIGN.md) before a judge does.
+"""Copy audit — catches the AI-UI tells (docs/frontend-DESIGN.md) before a judge does.
 
 Rules:
   1. No user-facing string literal in a screen. All copy lives in src/lib/copy/.
@@ -15,7 +15,7 @@ Rule 1 replaces the old "muted text longer than six words" heuristic, which
 went blind the moment screens started rendering {copy.x}: the regex matched the
 text node, and there is no text node any more. Rather than fake a check it can
 no longer make, the audit now enforces the thing that made it blind — the copy
-really is all in one place — which is stronger and is what DESIGN.md asks for.
+really is all in one place — which is stronger and is what docs/frontend-DESIGN.md asks for.
 
 Allowed: mark a deliberate line with  // voice-ok
 Run: python3 scripts/copy-audit.py   (exit 1 if violations)

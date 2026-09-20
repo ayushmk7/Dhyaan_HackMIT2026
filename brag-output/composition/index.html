@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Dhyaan</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: 'Fraunces'; font-weight: 400; src: url('assets/fonts/Fraunces-400.ttf') format('truetype'); }
+      @font-face { font-family: 'Fraunces'; font-weight: 600; src: url('assets/fonts/Fraunces-600.ttf') format('truetype'); }
+      @font-face { font-family: 'Fraunces'; font-weight: 700; src: url('assets/fonts/Fraunces-700.ttf') format('truetype'); }
+
+      :root {
+        --paper: #F3F5F9;
+        --raised: #FFFFFF;
+        --ink: #0B1220;
+        --muted: #596371;
+        --line: #E2E6EE;
+        --accent: #1F56C2;
+        --accent-deep: #173F91;
+        --wash: #EEF3FC;
+        --plate: #B9CDF3;
+        --alarm: #8AAEEA;
+        --navy: #0F2C66;
+        --night: #112C57;
+        --night-ink: #E8EEFA;
+        --night-muted: #C3D4F0;
+        --sans: -apple-system, 'SF Pro Text', Inter, system-ui, sans-serif;
+        --serif: 'Fraunces', Georgia, serif;
+        --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+        --shadow: 0 2px 10px rgba(11, 18, 32, 0.06), 0 12px 32px rgba(11, 18, 32, 0.08);
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #F3F5F9; }
+      #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; font-family: var(--sans); color: var(--ink); }
+      .clip { position: absolute; inset: 0; }
+      .bg { position: absolute; inset: 0; background: var(--paper); }
+      .bg-alarm { position: absolute; inset: 0; background: var(--alarm); }
+      .stage { position: absolute; inset: 0; padding: 96px 120px; display: flex; }
+
+      .mono-exact { text-transform: none !important; }
+      .mono { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.14em; font-size: 20px; color: var(--muted); }
+      .mono-sm { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.16em; font-size: 16px; color: var(--muted); }
+      .card { background: var(--raised); border-radius: 16px; box-shadow: var(--shadow); padding: 32px 36px; }
+      .rule { display: block; height: 3px; background: var(--ink); transform-origin: left center; }
+      .caption { font-size: 34px; line-height: 1.3; color: var(--ink); }
+      .sub { font-size: 26px; line-height: 1.4; color: var(--muted); }
+
+      /* ---- scene 1 / 7: wordmark ---- */
+      .center-col { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+      #s1-glow { position: absolute; width: 1500px; height: 1500px; left: 210px; top: -210px;
+        background: radial-gradient(circle, rgba(31, 86, 194, 0.20) 0%, rgba(31, 86, 194, 0.06) 42%, rgba(31, 86, 194, 0) 68%); }
+      .wordmark { font-family: var(--serif); font-weight: 700; font-size: 208px; line-height: 1; letter-spacing: -0.02em; color: var(--ink); display: block; }
+      .wordmark-sm { font-family: var(--serif); font-weight: 700; font-size: 104px; line-height: 1; letter-spacing: -0.02em; color: var(--ink); display: block; }
+
+      /* ---- scene 2: location ---- */
+      .cols3 { display: grid; grid-template-columns: 430px 1fr 520px; gap: 60px; align-items: center; width: 100%; }
+      .anchor { position: relative; display: flex; align-items: center; gap: 22px; }
+      .anchor + .anchor { margin-top: 56px; }
+      .anchor-dot { position: relative; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); flex: none; }
+      .ring { position: absolute; left: -47px; top: -47px; width: 120px; height: 120px; border-radius: 50%; border: 2px solid var(--accent); opacity: 0; }
+      .chip { display: flex; align-items: center; justify-content: space-between; gap: 20px; background: var(--raised);
+        border-radius: 14px; box-shadow: var(--shadow); padding: 22px 26px; opacity: 0; }
+      .chip + .chip { margin-top: 20px; }
+      .chip-name { font-size: 28px; font-weight: 600; letter-spacing: 0.02em; }
+      .chip-val { font-family: var(--mono); font-size: 26px; color: var(--muted); }
+      .chip-live { background: var(--plate); }
+      .chip-live .chip-val { color: var(--ink); }
+      .stamp { font-family: var(--mono); font-size: 15px; letter-spacing: 0.18em; color: var(--accent-deep); opacity: 0; }
+      .readout { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 26px; color: var(--ink); }
+      .readout + .readout { margin-top: 18px; }
+
+      /* ---- scene 3: camera console ---- */
+      .console { position: relative; width: 1000px; height: 700px; background: var(--night); border-radius: 20px; overflow: hidden; flex: none; }
+      .console-chrome { position: absolute; inset: 0; padding: 26px 30px; display: flex; justify-content: space-between; align-items: flex-start; }
+      .rec { display: flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 18px; letter-spacing: 0.2em; color: var(--night-ink); }
+      .rec-dot { width: 13px; height: 13px; border-radius: 50%; background: var(--alarm); display: block; }
+      .clock { font-family: var(--mono); font-size: 18px; letter-spacing: 0.14em; color: var(--night-muted); }
+      .floor-line { position: absolute; left: 0; right: 0; top: 540px; height: 2px; background: rgba(232, 238, 250, 0.16); }
+      .furniture { position: absolute; border-radius: 12px; background: rgba(232, 238, 250, 0.05); border: 1px solid rgba(232, 238, 250, 0.12); }
+      .food-box { position: absolute; left: 150px; top: 344px; width: 128px; height: 74px; border: 2px solid var(--night-muted); border-radius: 6px; }
+      .food-tag { position: absolute; left: 0; top: -30px; background: var(--night-muted); color: var(--navy); font-family: var(--mono); font-size: 14px; letter-spacing: 0.14em; padding: 4px 9px; border-radius: 4px; }
+      .person-box { position: absolute; left: 318px; top: 176px; width: 348px; height: 392px; border: 2px solid var(--alarm); background: rgba(138, 174, 234, 0.10); border-radius: 6px; }
+      .person-tag { position: absolute; left: 0; top: -34px; background: var(--alarm); color: var(--navy); font-family: var(--mono); font-size: 15px; letter-spacing: 0.16em; padding: 5px 10px; border-radius: 4px; }
+      .telemetry { position: absolute; left: 0; right: 0; bottom: 0; padding: 20px 30px; display: flex; gap: 44px;
+        background: rgba(10, 29, 68, 0.55); font-family: var(--mono); font-size: 18px; letter-spacing: 0.12em; color: var(--night-muted); }
+      .telemetry b { color: var(--night-ink); font-weight: 500; }
+      .sentence { font-size: 46px; line-height: 1.32; color: var(--ink); }
+      .tile { background: var(--raised); border-radius: 14px; box-shadow: var(--shadow); padding: 22px 26px; opacity: 0; }
+      .tile-val { font-size: 46px; font-weight: 600; letter-spacing: -0.01em; }
+      .tile-key { font-size: 22px; color: var(--muted); margin-top: 4px; }
+
+      /* ---- scene 4: fall ---- */
+      .flash { position: absolute; inset: 0; background: var(--ink); opacity: 0; }
+      .cd-wrap { display: flex; align-items: center; gap: 28px; }
+      .cd-num { font-family: var(--mono); font-size: 86px; font-weight: 500; color: var(--ink); letter-spacing: 0.04em; }
+
+      /* ---- scene 5: agreement ---- */
+      .plate { width: 660px; background: var(--raised); border-radius: 18px; box-shadow: var(--shadow); padding: 44px 44px; }
+      .row { display: flex; justify-content: space-between; align-items: baseline; padding: 22px 0; border-bottom: 1px solid var(--line); }
+      .row:last-child { border-bottom: 0; }
+      .row-k { font-size: 24px; color: var(--muted); }
+      .row-v { font-family: var(--mono); font-size: 25px; color: var(--ink); }
+      .agree { display: flex; flex-direction: column; align-items: center; gap: 14px; opacity: 0; }
+
+      /* ---- scene 6: takeover ---- */
+      .takeover { position: absolute; inset: 0; padding: 104px 150px; display: flex; flex-direction: column; justify-content: center; }
+      .kind { font-size: 30px; letter-spacing: 0.06em; color: var(--navy); opacity: 0.78; }
+      .headline { font-size: 116px; line-height: 1.06; letter-spacing: -0.02em; color: var(--ink); display: block; }
+      .heavy-rule { display: block; height: 5px; background: var(--ink); transform-origin: left center; }
+      .ladder-row { display: flex; align-items: baseline; gap: 26px; opacity: 0; }
+      .ladder-t { font-family: var(--mono); font-size: 22px; letter-spacing: 0.16em; color: var(--navy); opacity: 0.75; width: 120px; }
+      .ladder-s { font-size: 36px; color: var(--ink); }
+      .readout-slab { display: flex; gap: 64px; margin-top: 52px; font-family: var(--mono); font-size: 24px;
+        letter-spacing: 0.1em; color: var(--ink); }
+      .readout-slab i { display: block; font-style: normal; font-size: 16px; letter-spacing: 0.18em;
+        color: var(--navy); opacity: 0.72; margin-bottom: 8px; }
+      .btn { align-self: flex-start; background: var(--navy); color: #FFFFFF; font-size: 30px; font-weight: 600;
+        padding: 22px 42px; border-radius: 14px; opacity: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-width="1920" data-height="1080" data-duration="25" data-fps="30">
+
+      <!-- ============ scene 1 — wordmark ============ -->
+      <section id="s1" class="clip" data-start="0" data-duration="3.7" data-track-index="1">
+        <div class="bg"></div>
+        <div id="s1-glow"></div>
+        <div class="center-col">
+          <span id="s1-mark" class="wordmark">Dhyaan</span>
+          <span id="s1-rule" class="rule" style="width: 560px; margin-top: 40px;"></span>
+          <p id="s1-tag" class="caption" style="margin-top: 40px; font-size: 38px;">Phones the grandparent first. The family second.</p>
+        </div>
+      </section>
+
+      <!-- ============ scene 2 — where she is ============ -->
+      <section id="s2" class="clip" data-start="3.3" data-duration="5" data-track-index="2">
+        <div class="bg"></div>
+        <div class="stage" style="align-items: center; justify-content: center;">
+          <div style="width: 100%;">
+          <div class="cols3">
+            <div>
+              <div class="anchor">
+                <span class="anchor-dot"><span id="s2-r1" class="ring" data-layout-allow-overflow></span><span id="s2-r2" class="ring" data-layout-allow-overflow></span></span>
+                <span class="mono">Minor 1 · Kitchen</span>
+              </div>
+              <div class="anchor">
+                <span class="anchor-dot"><span id="s2-r3" class="ring" data-layout-allow-overflow></span><span id="s2-r4" class="ring" data-layout-allow-overflow></span></span>
+                <span class="mono">Minor 2 · Bathroom</span>
+              </div>
+              <p class="sub" style="margin-top: 54px;">ESP32-S3 anchors, one per room</p>
+            </div>
+
+            <div id="s2-band" class="card">
+              <p class="mono-sm" style="margin-bottom: 24px;">Band · scan</p>
+              <div class="readout"><span>Minor 1</span><span id="s2-rssi1">-74 dBm</span></div>
+              <div class="readout"><span>Minor 2</span><span id="s2-rssi2">-61 dBm</span></div>
+              <div class="readout" style="color: var(--muted);"><span>Median</span><span>3 s window</span></div>
+            </div>
+
+            <div>
+              <div id="s2-c1" class="chip"><span class="chip-name">Kitchen</span><span class="chip-val">0.31</span></div>
+              <div id="s2-c2" class="chip"><span class="chip-name">Hallway</span><span class="chip-val">0.44</span></div>
+              <div id="s2-c3" class="chip chip-live"><span class="chip-name">Bathroom</span><span class="chip-val">0.87</span></div>
+              <p id="s2-stamp" class="stamp" style="margin-top: 18px; text-align: right;">Committed</p>
+            </div>
+          </div>
+          <p id="s2-cap" class="caption" style="margin-top: 88px; text-align: center;">Room level. Never a dot on a map.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ scene 3 — the camera writes sentences ============ -->
+      <section id="s3" class="clip" data-start="7.9" data-duration="5" data-track-index="1">
+        <div class="bg"></div>
+        <div id="s3-wash" style="position: absolute; inset: 0; background: radial-gradient(circle at 26% 46%, rgba(31, 86, 194, 0.10), rgba(31, 86, 194, 0) 58%);"></div>
+        <div class="stage" style="align-items: center; gap: 64px;">
+          <div id="s3-console" class="console">
+            <div class="console-chrome">
+              <span class="rec"><span class="rec-dot"></span>REC</span>
+              <span class="clock">12:47:04</span>
+            </div>
+            <div class="floor-line"></div>
+            <div class="furniture" style="left: 96px; top: 396px; width: 340px; height: 144px;"></div>
+            <div class="furniture" style="left: 700px; top: 440px; width: 210px; height: 100px;"></div>
+            <div class="person-box"><span class="person-tag">PERSON 01</span></div>
+            <div class="food-box"><span class="food-tag">FOOD 0.42</span></div>
+            <div class="telemetry">
+              <span>FPS <b>14.8</b></span>
+              <span>MODEL <b>qwen2.5vl:3b</b></span>
+              <span>GATE <b>yolov8s-worldv2</b></span>
+            </div>
+          </div>
+          <div style="flex: 1;">
+            <div id="s3-card" class="card" style="padding: 40px 44px; opacity: 0;">
+              <p class="sentence">Eleanor ate lunch at the table, 12:31&#8211;12:48.</p>
+            </div>
+            <p id="s3-sub" class="sub" style="margin-top: 26px; opacity: 0;">The model runs on this laptop. No frame is ever written to disk.</p>
+            <div style="display: flex; gap: 20px; margin-top: 34px;">
+              <div id="s3-t1" class="tile" style="flex: 1;"><p class="tile-val">3</p><p class="tile-key">Meals</p></div>
+              <div id="s3-t2" class="tile" style="flex: 1;"><p class="tile-val">214</p><p class="tile-key">Minutes seen</p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ scene 4 — the fall ============ -->
+      <section id="s4" class="clip" data-start="12.5" data-duration="3.6" data-track-index="2">
+        <div class="bg"></div>
+        <div class="stage" style="flex-direction: column; justify-content: center;">
+          <p class="mono mono-exact" style="margin-bottom: 26px;">BAND · 208 Hz · &#177;16 g</p>
+          <svg id="s4-svg" width="1680" height="300" viewBox="0 0 1680 300" fill="none" style="display: block;">
+            <path id="s4-trace" d="M0 150 L120 148 L200 156 L280 144 L360 152 L440 146 L520 154 L600 150 L660 148 L700 60 L720 268 L742 96 L764 206 L790 152 L820 168 L860 158 L940 162 L1060 160 L1200 161 L1400 160 L1680 160"
+              stroke="#1F56C2" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" />
+            <circle id="s4-mark" data-layout-allow-overflow cx="720" cy="268" r="22" fill="none" stroke="#0B1220" stroke-width="4" opacity="0" />
+          </svg>
+          <p id="s4-impact" class="mono mono-exact" style="color: var(--ink); margin-top: 18px; opacity: 0;">IMPACT &#183; PEAK 3.4 g &#183; TILT 72&#176;</p>
+          <div class="cd-wrap" style="margin-top: 50px;">
+            <span id="s4-cd" class="cd-num">30</span>
+            <p id="s4-cd-label" class="caption" style="opacity: 0;">Thirty seconds to cancel. Then Dhyaan calls her.</p>
+          </div>
+        </div>
+        <div id="s4-flash" class="flash"></div>
+      </section>
+
+      <!-- ============ scene 5 — two sensors agree ============ -->
+      <section id="s5" class="clip" data-start="15.7" data-duration="4.2" data-track-index="1">
+        <div class="bg"></div>
+        <div class="stage" style="flex-direction: column; justify-content: center; align-items: center;">
+          <div style="display: flex; gap: 56px; align-items: stretch;">
+            <div id="s5-band" class="plate">
+              <p class="mono-sm" style="margin-bottom: 18px;">Band</p>
+              <div class="row"><span class="row-k">Event</span><span class="row-v">fall_suspected</span></div>
+              <div class="row"><span class="row-k">Peak</span><span class="row-v">3.4 g</span></div>
+              <div class="row"><span class="row-k">Tilt</span><span class="row-v">72&#176;</span></div>
+            </div>
+            <div id="s5-cam" class="plate">
+              <p class="mono-sm" style="margin-bottom: 18px;">Camera</p>
+              <div class="row"><span class="row-k">Posture</span><span id="s5-posture" class="row-v">seated</span></div>
+              <div class="row"><span class="row-k">Queue</span><span class="row-v">jumped</span></div>
+              <div class="row"><span class="row-k">VLM</span><span class="row-v">0.69 s</span></div>
+            </div>
+          </div>
+          <div id="s5-agree" class="agree" style="margin-top: 46px;">
+            <span id="s5-agree-rule" class="rule" style="width: 300px; height: 4px;"></span>
+            <span class="mono" style="color: var(--ink);">Agree</span>
+          </div>
+          <p id="s5-cap" class="caption" style="margin-top: 66px;">The band opens the alert. The camera is the second opinion.</p>
+        </div>
+      </section>
+
+      <!-- ============ scene 6 — she is called first ============ -->
+      <section id="s6" class="clip" data-start="19.5" data-duration="3.7" data-track-index="2">
+        <div class="bg-alarm"></div>
+        <div class="takeover">
+          <p id="s6-kind" class="kind">Possible fall</p>
+          <span id="s6-head" class="headline" data-layout-allow-overlap style="margin-top: 26px;">Eleanor may have fallen.</span>
+          <span id="s6-rule" class="heavy-rule" style="width: 1180px; margin-top: 50px;"></span>
+          <div id="s6-l1" class="ladder-row" style="margin-top: 46px;">
+            <span class="ladder-t">T+30 s</span><span class="ladder-s">Calling Eleanor now&#8230;</span>
+          </div>
+          <div id="s6-l2" class="ladder-row" style="margin-top: 22px;">
+            <span class="ladder-t">T+120 s</span><span class="ladder-s">Calling Priya</span>
+          </div>
+          <div id="s6-btn" class="btn" style="margin-top: 56px;">I&#8217;ve got her</div>
+          <div class="readout-slab">
+            <span><i>STATE</i>calling_resident</span>
+            <span><i>OPENED</i>12:47</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ scene 7 — outro ============ -->
+      <section id="s7" class="clip" data-start="22.6" data-duration="2.4" data-track-index="1">
+        <div class="bg"></div>
+        <div class="center-col">
+          <span id="s7-mark" class="wordmark-sm" data-layout-allow-overlap>Dhyaan</span>
+          <span id="s7-rule" class="rule" style="width: 300px; margin-top: 30px;"></span>
+          <p id="s7-line" class="caption" style="margin-top: 38px; font-size: 44px;">A fall always calls. Nothing else ever does.</p>
+        </div>
+      </section>
+
+      <!-- ============ audio ============ -->
+      <audio id="bgm" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"
+             data-start="0" data-duration="25" data-track-index="10" data-volume="1"></audio>
+      <audio id="sfx-chip1" src="assets/sfx/click2.ogg" data-start="4.39" data-duration="0.06" data-track-index="11" data-volume="0.34"></audio>
+      <audio id="sfx-chip2" src="assets/sfx/click2.ogg" data-start="5.34" data-duration="0.06" data-track-index="12" data-volume="0.34"></audio>
+      <audio id="sfx-chip3" src="assets/sfx/click2.ogg" data-start="6" data-duration="0.06" data-track-index="13" data-volume="0.42"></audio>
+      <audio id="sfx-card" src="assets/sfx/impactSoft_medium_001.ogg" data-start="8.74" data-duration="0.18" data-track-index="14" data-volume="0.3"></audio>
+      <audio id="sfx-impact" src="assets/sfx/impactSoft_heavy_002.ogg" data-start="13.8" data-duration="0.57" data-track-index="15" data-volume="0.55"></audio>
+      <audio id="sfx-tick1" src="assets/sfx/click_003.ogg" data-start="14.5" data-duration="0.01" data-track-index="16" data-volume="0.22"></audio>
+      <audio id="sfx-tick2" src="assets/sfx/click_003.ogg" data-start="15.1" data-duration="0.01" data-track-index="17" data-volume="0.22"></audio>
+      <audio id="sfx-agree" src="assets/sfx/impactSoft_medium_001.ogg" data-start="17.47" data-duration="0.18" data-track-index="18" data-volume="0.4"></audio>
+      <audio id="sfx-alert" src="assets/sfx/bong_001.ogg" data-start="20.19" data-duration="0.12" data-track-index="19" data-volume="0.34"></audio>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      var AUDIO = {"fps": 30, "totalFrames": 751, "rms": [0.359, 0.371, 0.3742, 0.3823, 0.3739, 0.3517, 0.3304, 0.2912, 0.2805, 0.2628, 0.238, 0.1987, 0.2217, 0.2278, 0.1992, 0.1655, 0.2227, 0.2444, 0.2487, 0.2388, 0.2173, 0.1791, 0.1402, 0.11, 0.1247, 0.1543, 0.149, 0.1401, 0.1477, 0.1969, 0.2102, 0.2128, 0.2066, 0.1797, 0.1477, 0.121, 0.1008, 0.1734, 0.1998, 0.2059, 0.2029, 0.1865, 0.1579, 0.1328, 0.118, 0.1721, 0.2043, 0.2213, 0.2358, 0.2735, 0.2843, 0.2749, 0.2681, 0.2618, 0.2524, 0.2423, 0.1957, 0.1964, 0.2201, 0.2282, 0.2256, 0.2149, 0.195, 0.1619, 0.1455, 0.1823, 0.2079, 0.2068, 0.2042, 0.1938, 0.236, 0.2399, 0.2334, 0.2359, 0.2467, 0.2457, 0.2227, 0.1912, 0.226, 0.2206, 0.2038, 0.1985, 0.2467, 0.265, 0.2622, 0.2435, 0.1985, 0.1659, 0.1366, 0.1115, 0.1808, 0.2439, 0.2737, 0.2792, 0.2895, 0.2798, 0.2631, 0.2479, 0.22, 0.1796, 0.1399, 0.1111, 0.1353, 0.1838, 0.2084, 0.2159, 0.209, 0.1865, 0.1586, 0.1331, 0.1303, 0.1974, 0.2199, 0.219, 0.2311, 0.2596, 0.2624, 0.2528, 0.2473, 0.2418, 0.243, 0.234, 0.1889, 0.2257, 0.2434, 0.2428, 0.2331, 0.2129, 0.1929, 0.1756, 0.1564, 0.211, 0.2635, 0.2995, 0.3169, 0.3397, 0.3342, 0.3187, 0.2926, 0.2708, 0.261, 0.2406, 0.205, 0.2042, 0.2198, 0.1958, 0.1632, 0.2129, 0.2495, 0.2653, 0.2795, 0.2664, 0.2191, 0.1719, 0.1325, 0.1042, 0.1492, 0.1474, 0.1397, 0.1321, 0.1923, 0.2076, 0.2132, 0.2087, 0.1863, 0.1536, 0.1263, 0.1038, 0.1653, 0.1937, 0.2016, 0.1979, 0.1828, 0.155, 0.1293, 0.1152, 0.163, 0.1993, 0.2196, 0.2346, 0.2694, 0.2792, 0.2757, 0.2653, 0.255, 0.2481, 0.2382, 0.2065, 0.1662, 0.2102, 0.222, 0.2243, 0.2185, 0.196, 0.1642, 0.1427, 0.1521, 0.2016, 0.2053, 0.201, 0.1897, 0.2315, 0.2405, 0.2401, 0.2276, 0.2494, 0.2518, 0.2363, 0.1905, 0.2231, 0.2246, 0.2098, 0.1809, 0.2329, 0.2569, 0.2635, 0.253, 0.2079, 0.1712, 0.1422, 0.1153, 0.1631, 0.2373, 0.2738, 0.2844, 0.2924, 0.2928, 0.2734, 0.2542, 0.2292, 0.1882, 0.1463, 0.1146, 0.0967, 0.1618, 0.1905, 0.2047, 0.2027, 0.1839, 0.1582, 0.1339, 0.1158, 0.1865, 0.2195, 0.2303, 0.2265, 0.2601, 0.2628, 0.2544, 0.2486, 0.2467, 0.2432, 0.239, 0.2041, 0.2275, 0.2465, 0.2481, 0.237, 0.2193, 0.2014, 0.1794, 0.1609, 0.2898, 0.4156, 0.4681, 0.4517, 0.4198, 0.4059, 0.4087, 0.3963, 0.3795, 0.3605, 0.338, 0.3212, 0.3105, 0.3254, 0.3219, 0.3119, 0.3388, 0.4445, 0.4942, 0.4949, 0.4351, 0.3826, 0.3412, 0.3126, 0.291, 0.3047, 0.2946, 0.2763, 0.2624, 0.2872, 0.2966, 0.302, 0.3034, 0.4078, 0.4929, 0.5076, 0.4449, 0.4121, 0.4131, 0.4096, 0.3932, 0.3651, 0.3378, 0.3203, 0.3012, 0.3042, 0.324, 0.3274, 0.3313, 0.3829, 0.45, 0.5059, 0.4885, 0.4353, 0.3938, 0.3659, 0.3291, 0.2892, 0.3241, 0.346, 0.3557, 0.3713, 0.3628, 0.3601, 0.3659, 0.3548, 0.4583, 0.5368, 0.525, 0.4686, 0.4368, 0.4165, 0.3964, 0.3793, 0.3658, 0.3562, 0.3479, 0.3205, 0.3279, 0.3261, 0.3187, 0.3073, 0.366, 0.4539, 0.4886, 0.4721, 0.4, 0.3505, 0.3154, 0.2848, 0.2575, 0.3237, 0.3601, 0.376, 0.3684, 0.3793, 0.3755, 0.3699, 0.3725, 0.4802, 0.5262, 0.5238, 0.444, 0.4216, 0.4088, 0.3907, 0.3685, 0.3468, 0.3303, 0.3183, 0.3081, 0.3192, 0.3402, 0.3331, 0.32, 0.4065, 0.4861, 0.5074, 0.4638, 0.4179, 0.3922, 0.3732, 0.3384, 0.3291, 0.3339, 0.3356, 0.3317, 0.3215, 0.3144, 0.3077, 0.2984, 0.3476, 0.4518, 0.5107, 0.4985, 0.4543, 0.4336, 0.4182, 0.4053, 0.383, 0.3717, 0.3454, 0.3284, 0.3171, 0.3266, 0.3221, 0.3125, 0.3055, 0.4142, 0.4926, 0.4953, 0.4504, 0.3959, 0.3496, 0.322, 0.2995, 0.2948, 0.292, 0.2788, 0.2691, 0.2813, 0.2975, 0.3024, 0.3031, 0.3795, 0.4908, 0.5044, 0.47, 0.413, 0.3924, 0.3656, 0.3453, 0.3225, 0.2999, 0.2827, 0.2675, 0.2603, 0.294, 0.3041, 0.3107, 0.3405, 0.4332, 0.4969, 0.5006, 0.4452, 0.4021, 0.3766, 0.3541, 0.3358, 0.3368, 0.3419, 0.3628, 0.3702, 0.3725, 0.379, 0.3985, 0.3972, 0.4687, 0.5436, 0.5622, 0.5015, 0.4573, 0.44, 0.4213, 0.4043, 0.394, 0.3815, 0.3651, 0.3444, 0.3345, 0.3379, 0.3278, 0.3142, 0.3472, 0.4486, 0.5071, 0.5003, 0.4456, 0.39, 0.3505, 0.3228, 0.3112, 0.3654, 0.4078, 0.4371, 0.441, 0.4392, 0.4263, 0.4142, 0.4015, 0.4922, 0.5516, 0.5312, 0.4752, 0.4467, 0.4307, 0.4237, 0.4202, 0.4231, 0.3986, 0.3745, 0.3496, 0.3677, 0.3879, 0.3883, 0.3469, 0.386, 0.4203, 0.4446, 0.462, 0.4673, 0.4248, 0.3776, 0.3447, 0.3226, 0.3243, 0.3198, 0.311, 0.2988, 0.2985, 0.283, 0.2739, 0.2606, 0.4253, 0.5258, 0.5404, 0.5553, 0.5748, 0.5812, 0.5524, 0.4525, 0.3733, 0.3119, 0.2728, 0.237, 0.2546, 0.245, 0.2195, 0.202, 0.3362, 0.4664, 0.5008, 0.47, 0.4055, 0.3595, 0.3127, 0.2417, 0.219, 0.2072, 0.1936, 0.1747, 0.1803, 0.2462, 0.2731, 0.2865, 0.296, 0.4486, 0.5271, 0.4918, 0.4097, 0.371, 0.3394, 0.3156, 0.2893, 0.3332, 0.368, 0.3888, 0.4091, 0.4169, 0.4265, 0.4293, 0.4292, 0.5449, 0.6041, 0.5751, 0.5019, 0.4268, 0.402, 0.3818, 0.3661, 0.403, 0.4363, 0.4715, 0.5021, 0.4787, 0.4892, 0.4988, 0.4998, 0.5259, 0.6005, 0.6201, 0.5663, 0.5188, 0.4936, 0.4794, 0.4791, 0.4756, 0.4471, 0.3968, 0.353, 0.3046, 0.2762, 0.2559, 0.2394, 0.2398, 0.4526, 0.547, 0.5268, 0.478, 0.4305, 0.3868, 0.294, 0.2264, 0.3004, 0.3792, 0.4051, 0.4405, 0.4537, 0.4893, 0.4909, 0.5117, 0.5692, 0.6317, 0.617, 0.5715, 0.5296, 0.4896, 0.4188, 0.3589, 0.3587, 0.4233, 0.4495, 0.4585, 0.4714, 0.4645, 0.482, 0.4726, 0.4842, 0.564, 0.5997, 0.5541, 0.495, 0.4914, 0.4759, 0.4817, 0.4656, 0.4737, 0.4919, 0.5055, 0.5055, 0.4987, 0.5074, 0.5016, 0.5115, 0.5757, 0.6181, 0.6067, 0.5707, 0.5362, 0.5282, 0.5122, 0.5047, 0.4818, 0.4139, 0.3379, 0.2685, 0.2628, 0.2546, 0.2336, 0.2124, 0.3062, 0.4574, 0.5032, 0.4715, 0.3961, 0.3384, 0.2979, 0.2507, 0.2169, 0.2122, 0.2, 0.1848, 0.1708, 0.2224, 0.2447, 0.2544, 0.2624, 0.4078, 0.5142, 0.4914, 0.4238, 0.3749, 0.3314, 0.2988, 0.2716, 0.3229, 0.3736, 0.4018, 0.4213, 0.4325, 0.4354, 0.4373, 0.428, 0.5018, 0.5666, 0.5681, 0.4999, 0.4137, 0.3899, 0.3738, 0.3545, 0.3761, 0.4236, 0.4637, 0.4765, 0.4899, 0.4847, 0.4792, 0.4753, 0.4747, 0.5712, 0.627, 0.5682, 0.5198, 0.4858, 0.4775, 0.4801, 0.4774, 0.4507, 0.4161, 0.3764, 0.3298, 0.2985, 0.2805, 0.2609, 0.2431, 0.4012, 0.5015, 0.502, 0.4565, 0.4028, 0.3632, 0.3318, 0.2835, 0.3039, 0.3741, 0.3964, 0.4239, 0.4335]};
+      var tl = gsap.timeline({ paused: true });
+
+      /* ---------- scene 1 — wordmark (0 - 3.7) ---------- */
+      tl.fromTo("#s1", { opacity: 1 }, { opacity: 1, duration: 0.01 }, 0);
+      tl.fromTo("#s1-mark", { opacity: 0, y: 46 }, { opacity: 1, y: 0, duration: 0.9, ease: "power3.out" }, 0.15);
+      tl.fromTo("#s1-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.6, ease: "power2.inOut" }, 0.75);
+      tl.fromTo("#s1-tag", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" }, 0.95);
+      tl.to("#s1", { opacity: 0, duration: 0.4, ease: "power1.inOut" }, 3.3);
+
+      /* ---------- scene 2 — location (3.3 - 8.3) ---------- */
+      tl.fromTo("#s2", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power1.inOut" }, 3.3);
+      tl.fromTo("#s2-band", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 3.7);
+      // the anchors advertise: two finite ring pulses per anchor, offset so they read as a rhythm
+      ["#s2-r1", "#s2-r2", "#s2-r3", "#s2-r4"].forEach(function (sel, i) {
+        var startAt = 3.6 + (i % 2) * 0.55 + Math.floor(i / 2) * 0.28;
+        tl.fromTo(sel, { scale: 0.25, opacity: 0.55 }, {
+          scale: 2.1, opacity: 0, duration: 1.1, ease: "power1.out",
+          repeat: Math.max(0, Math.floor(3.9 / 1.1) - 1)
+        }, startAt);
+      });
+      // RSSI ticks: the band's medians settle as she walks toward the bathroom anchor
+      tl.set("#s2-rssi1", { textContent: "-78 dBm" }, 4.2);
+      tl.set("#s2-rssi2", { textContent: "-57 dBm" }, 4.2);
+      tl.set("#s2-rssi1", { textContent: "-81 dBm" }, 5.1);
+      tl.set("#s2-rssi2", { textContent: "-54 dBm" }, 5.1);
+      tl.set("#s2-rssi1", { textContent: "-83 dBm" }, 6.1);
+      tl.set("#s2-rssi2", { textContent: "-52 dBm" }, 6.1);
+      // beat-grid: room chips at 4.39 / 5.34 / 6.00
+      tl.fromTo("#s2-c1", { opacity: 0, x: 26 }, { opacity: 1, x: 0, duration: 0.45, ease: "power2.out" }, 4.39);
+      tl.fromTo("#s2-c2", { opacity: 0, x: 26 }, { opacity: 1, x: 0, duration: 0.45, ease: "power2.out" }, 5.34);
+      tl.fromTo("#s2-c3", { opacity: 0, x: 26 }, { opacity: 1, x: 0, duration: 0.45, ease: "power2.out" }, 6.0);
+      tl.fromTo("#s2-stamp", { opacity: 0 }, { opacity: 1, duration: 0.35, ease: "power2.out" }, 6.45);
+      tl.fromTo("#s2-cap", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 5.9);
+      tl.to("#s2", { opacity: 0, duration: 0.4, ease: "power1.inOut" }, 7.9);
+
+      /* ---------- scene 3 — the camera writes sentences (7.9 - 12.9) ---------- */
+      tl.fromTo("#s3", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power1.inOut" }, 7.9);
+      tl.fromTo("#s3-console", { opacity: 0, scale: 0.97 }, { opacity: 1, scale: 1, duration: 0.55, ease: "power2.out" }, 7.95);
+      // beat-locked: 8.74s — the pane recedes and the sentence lands in its place
+      tl.to("#s3-console", { opacity: 0.5, scale: 0.965, duration: 0.7, ease: "power2.inOut" }, 8.74);
+      tl.fromTo("#s3-card", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out", immediateRender: false }, 8.74);
+      tl.fromTo("#s3-sub", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out", immediateRender: false }, 9.2);
+      // beat-grid: stat tiles at 10.93 / 11.46
+      tl.fromTo("#s3-t1", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 10.93);
+      tl.fromTo("#s3-t2", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 11.46);
+      tl.to("#s3", { opacity: 0, duration: 0.4, ease: "power1.inOut" }, 12.5);
+
+      /* ---------- scene 4 — the fall (12.5 - 16.1) ---------- */
+      tl.fromTo("#s4", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power1.inOut" }, 12.5);
+      tl.fromTo("#s4-trace", { strokeDasharray: 3600, strokeDashoffset: 3600 },
+        { strokeDashoffset: 0, duration: 1.5, ease: "none" }, 12.6);
+      // the impact: one restrained ink flash, no strobe
+      tl.fromTo("#s4-flash", { opacity: 0 }, { opacity: 0.1, duration: 0.07, ease: "power2.out" }, 13.8);
+      tl.to("#s4-flash", { opacity: 0, duration: 0.2, ease: "power2.in" }, 13.87);
+      tl.fromTo("#s4-mark", { opacity: 0, scale: 2.2 }, { opacity: 1, scale: 1, duration: 0.4, ease: "power3.out", transformOrigin: "center" }, 13.82);
+      tl.fromTo("#s4-impact", { opacity: 0 }, { opacity: 1, duration: 0.35, ease: "power2.out" }, 13.95);
+      tl.fromTo("#s4-cd-label", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 14.25);
+      tl.set("#s4-cd", { textContent: "27" }, 14.5);
+      tl.set("#s4-cd", { textContent: "24" }, 15.1);
+      tl.to("#s4", { opacity: 0, duration: 0.4, ease: "power1.inOut" }, 15.7);
+
+      /* ---------- scene 5 — two sensors agree (15.7 - 19.9) ---------- */
+      tl.fromTo("#s5", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power1.inOut" }, 15.7);
+      tl.fromTo("#s5-band", { opacity: 0, x: -34 }, { opacity: 1, x: -34, duration: 0.5, ease: "power2.out" }, 15.8);
+      tl.fromTo("#s5-cam", { opacity: 0, x: 34 }, { opacity: 1, x: 34, duration: 0.5, ease: "power2.out" }, 15.95);
+      tl.fromTo("#s5-cap", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 16.6);
+      // the camera changes its mind twice before it commits, which is what the code does
+      tl.set("#s5-posture", { textContent: "unclear" }, 16.5);
+      tl.set("#s5-posture", { textContent: "on_floor" }, 17.1);
+      tl.fromTo("#s5-posture", { color: "#596371" }, { color: "#1F56C2", duration: 0.4, ease: "power2.out" }, 17.1);
+      // beat-locked: 17.47s — the two plates close on each other and lock
+      tl.to("#s5-band", { x: 0, duration: 0.55, ease: "power3.out" }, 17.47);
+      tl.to("#s5-cam", { x: 0, duration: 0.55, ease: "power3.out" }, 17.47);
+      tl.fromTo("#s5-agree", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 17.62);
+      tl.fromTo("#s5-agree-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.45, ease: "power2.inOut", transformOrigin: "center" }, 17.62);
+      tl.to("#s5", { opacity: 0, duration: 0.4, ease: "power1.inOut" }, 19.5);
+
+      /* ---------- scene 6 — she is called first (19.5 - 23.2) ---------- */
+      tl.fromTo("#s6", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power1.inOut" }, 19.5);
+      tl.fromTo("#s6-kind", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 19.75);
+      // beat-locked: 20.19s — the headline lands
+      tl.fromTo("#s6-head", { opacity: 0, y: 26 }, { opacity: 1, y: 0, duration: 0.55, ease: "power3.out" }, 20.19);
+      tl.fromTo("#s6-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power2.inOut" }, 20.5);
+      tl.fromTo("#s6-l1", { opacity: 0, x: -18 }, { opacity: 1, x: 0, duration: 0.4, ease: "power2.out" }, 20.75);
+      tl.fromTo("#s6-l2", { opacity: 0, x: -18 }, { opacity: 1, x: 0, duration: 0.4, ease: "power2.out" }, 21.84);
+      tl.fromTo("#s6-btn", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, 22.2);
+      tl.to("#s6", { opacity: 0, duration: 0.4, ease: "power1.inOut" }, 22.8);
+
+      /* ---------- scene 7 — outro (22.6 - 25.0) ---------- */
+      tl.fromTo("#s7", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power1.inOut" }, 22.6);
+      tl.fromTo("#s7-mark", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 22.65);
+      tl.fromTo("#s7-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.4, ease: "power2.inOut" }, 22.8);
+      // beat-locked: 22.93s — the closing line settles as the music leaves
+      tl.fromTo("#s7-line", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 22.85);
+
+      /* ---------- audio: fade in, duck under the impact, leave before the last line ---------- */
+      tl.fromTo("#bgm", { volume: 0 }, { volume: 0.28, duration: 0.9, ease: "power1.out" }, 0);
+      tl.to("#bgm", { volume: 0.19, duration: 0.25, ease: "power2.out" }, 13.75);
+      tl.to("#bgm", { volume: 0.28, duration: 1.2, ease: "power1.inOut" }, 14.6);
+      tl.to("#bgm", { volume: 0, duration: 1.3, ease: "power1.in" }, 23.1);
+
+      /* ---------- audio-reactive: the accent light breathes with the bed ----------
+         Per-frame sampling of a pre-extracted RMS envelope (assets/music/audio-rms.json).
+         Non-text elements only: the glow behind the wordmark and the wash behind the
+         console. No waveforms, no pulsing type. */
+      var glow = document.getElementById("s1-glow");
+      var wash = document.getElementById("s3-wash");
+      for (var f = 0; f < AUDIO.totalFrames; f++) {
+        tl.call(
+          (function (v) {
+            return function () {
+              glow.style.opacity = (0.55 + v * 0.45).toFixed(3);
+              glow.style.transform = "scale(" + (0.94 + v * 0.1).toFixed(3) + ")";
+              wash.style.opacity = (0.5 + v * 0.5).toFixed(3);
+            };
+          })(AUDIO.rms[f]),
+          [],
+          f / AUDIO.fps
+        );
+      }
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

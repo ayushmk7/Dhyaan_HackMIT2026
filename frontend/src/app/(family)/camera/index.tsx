@@ -16,7 +16,7 @@
 //     only one of the two can be trusted at 3 am. Every "no tick" path below
 //     ends in words, not in zeros.
 //
-// Voice: machine, and only here. DESIGN.md bans ALL-CAPS over human prose; the
+// Voice: machine, and only here. docs/frontend-DESIGN.md bans ALL-CAPS over human prose; the
 // telemetry strip is not prose, it is instrumentation, and mono/uppercase is
 // the honest face for it. The one human line on the screen is the privacy line
 // under the pane, and it is a claim, not an apology.
@@ -197,7 +197,7 @@ function BoxFrame({
  * instead of flickering through the background.
  *
  * Not mono: this is the one string on the pane a person reads as language, and
- * DESIGN.md's machine face is for instrumentation only.
+ * docs/frontend-DESIGN.md's machine face is for instrumentation only.
  */
 function SentenceTrack({ text }: { text: string }) {
   const reduced = useReducedMotion();

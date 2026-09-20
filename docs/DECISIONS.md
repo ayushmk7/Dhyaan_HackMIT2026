@@ -18,12 +18,10 @@ bottom, with an owner.
 | [`PRODUCT_SPEC.md`](./PRODUCT_SPEC.md) | Product, personas, pricing, trust/consent, legal and regulatory posture, **the canonical demo script (§10)**, prize tracks | What we promise users and judges |
 | [`TECHNICAL_PRD.md`](./TECHNICAL_PRD.md) | Software design: event model, alert FSM, voice, vision, localization algorithms, baseline + walking-profile learners, RAG, app, API surface | The API surface (paths, roles, what each role may see) |
 | [`HARDWARE_SPEC.md`](./HARDWARE_SPEC.md) | The band, beacons, radios, power, the fall detector, calibration, test plan | Sensor configuration, detector thresholds, physical test procedure |
-| [`backend/fixtures/*.json`](./backend/fixtures/) | The exact wire payloads the band sends | Payload shapes — **fixtures beat prose** in any spec |
+| [`backend/fixtures/*.json`](../backend/fixtures/) | The exact wire payloads the band sends | Payload shapes — **fixtures beat prose** in any spec |
 | [`./backend-README.md`](././backend-README.md) | What the backend actually runs today | What is built (the PRD describes the original design; see its build-status block) |
 | [`./HARDWARE_INTEGRATION.md`](././HARDWARE_INTEGRATION.md) | Swapping the band simulator for the real band; per-endpoint requirements | Nothing on its own — `backend/app/routers/ingest.py` and the fixtures are the contract it describes |
-| `utsavtodo.md` · `ayushneedtodo.md` · `abhinavtodo.md` | Per-person task lists for the 24 h build | Who does what, and when |
-| [`frontend/DESIGN.md`](./frontend-DESIGN.md) | App design system and screen rules | Visual design |
-| `distinctive-frontend.md` | General (web) design guidance that `frontend/DESIGN.md` translates to React Native | Nothing directly — `frontend/DESIGN.md` is the applied version |
+| [`frontend-DESIGN.md`](./frontend-DESIGN.md) | App design system and screen rules | Visual design |
 | **`DECISIONS.md`** (this file) | Why the specs say what they say | — |
 
 ---
@@ -50,7 +48,7 @@ consent copy so the copy stays literally true.
 costs only a few family screens and an API role check.
 
 **Changed.** `TECHNICAL_PRD.md` §7.4, §7.6, §9.7, §10.1, §10.3–10.5, §12.4, §13 · `PRODUCT_SPEC.md`
-§3.1, §8.4 · `frontend/DESIGN.md` · todo files. **Follow-ups:** F-01 – F-04.
+§3.1, §8.4 · `docs/frontend-DESIGN.md` · todo files. **Follow-ups:** F-01 – F-04.
 
 ### D-002 · No person is contacted during the cancel window
 **Date:** 2026-09-19 · **Status:** Accepted
@@ -160,7 +158,7 @@ Plus: test case 8's expected signature now describes a dropped band (≈0 g for 
 forearm fall.
 
 **Changed.** `HARDWARE_SPEC.md` §5.1, §5.5, §5.7, §6.4, §6.8, §7.2, §9, §10.1, §10.2 ·
-`TECHNICAL_PRD.md` §4.1, §13 · `PRODUCT_SPEC.md` §10 · `utsavtodo.md`.
+`TECHNICAL_PRD.md` §4.1, §13 · `PRODUCT_SPEC.md` §10.
 
 ### D-009 · Per-wearer walking profile: learned on the hub, applied on the band
 **Date:** 2026-09-19 · **Status:** Accepted (stretch goal, ~3 h)
@@ -242,7 +240,7 @@ Jetson appliance throughput is marked unverified.
 - The MCU talks to Linux over Bridge (MessagePack RPC), never a GPIO line.
 
 **Changed.** `TECHNICAL_PRD.md` §2, §3.2, §4.1, §10.1, §10.5, §12.4 · `HARDWARE_SPEC.md` §1.1, §11,
-§12.3 · `PRODUCT_SPEC.md` §5.1, §8.3 · `utsavtodo.md`. **Follow-up:** F-09.
+§12.3 · `PRODUCT_SPEC.md` §5.1, §8.3. **Follow-up:** F-09.
 
 ### D-014 · Elopement latency is stated as measured, not as a target
 **Date:** 2026-09-19 · **Status:** Accepted
@@ -260,7 +258,7 @@ capture. A production band on the elopement roster would scan faster.
 **Decision.** Zero walks against λ = 3.1 gives p = e^−3.1 ≈ 0.045, surprise ≈ 1.35 — a **warn**, not
 urgent. Urgent at zero needs λ ≥ ln(100) ≈ 4.6. The seed script already uses λ ≈ 4.7.
 
-**Changed.** `TECHNICAL_PRD.md` §8.2 · `ayushneedtodo.md`.
+**Changed.** `TECHNICAL_PRD.md` §8.2.
 
 ### D-016 · Demo hallways surveyed as `hallway`, not `transit`
 **Date:** 2026-09-19 · **Status:** Accepted
@@ -280,7 +278,7 @@ bedroom ── hallway ── bathroom
               └── front_door ── OUTSIDE
 ```
 
-**Changed.** `ayushextra.md` · band survey docs. **Follow-up:** Ayush A3 (loadable zone graph).
+**Changed.** Band survey docs. **Follow-up:** Ayush A3 (loadable zone graph).
 
 ### D-017 · MCU grace window follows hub `cancel_window_s`
 **Date:** 2026-09-19 · **Status:** Accepted
@@ -310,7 +308,7 @@ independent timer. Defaults stay 30 s if the hub omits the field.
 in Mongo (`HARDWARE_INTEGRATION.md`). Seed / pair that id to `res_eleanor`. Until F-09/A4, firmware
 sends `battery_pct: 100` as a documented placeholder (`config.json → compat.battery_pct_placeholder`).
 
-**Changed.** `band/fallband/config.json` · `ayushextra.md` A8.
+**Changed.** `band/fallband/config.json`.
 
 ### D-020 · Fall FSM is header-only and laptop-testable
 **Date:** 2026-09-19 · **Status:** Accepted

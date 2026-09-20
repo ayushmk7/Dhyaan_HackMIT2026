@@ -1,4 +1,4 @@
-"""Outbound call placement — TECHNICAL_PRD §5.3, abhinavtodo B0.8/B2.
+"""Outbound call placement — TECHNICAL_PRD §5.3.
 
 Env is read lazily so imports (and tests) work without credentials; anything that
 actually dials raises a clear error if the env is missing.

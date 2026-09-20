@@ -1430,8 +1430,8 @@ Log every run as a row: `case, peak_g, ff_min_g, ff_dur_ms, orient_deg, std_g, g
 ## 11. Build Plan — 24 Hours, Hour by Hour
 
 > **Superseded for staffing (`DECISIONS.md` D-011).** The team is three people. Utsav owns everything
-> in this spec (A, B and the beacon half of D); `utsavtodo.md` is the live plan. The hour gates below
-> still apply.
+> in this spec (A, B and the beacon half of D); the hour-by-hour plan below is the original 24 h
+> build plan, kept for history. The hour gates below still apply.
 
 Team of 4 (original plan): **A** = firmware (sketch) · **B** = band Linux, BLE scan + uplink · **C** = hub, Deepgram/Twilio/Claude · **D** = beacons, VLM/CCTV, demo/deck. A and B pair on the board until it enumerates; nobody else touches it.
 

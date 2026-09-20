@@ -16,5 +16,4 @@ make -C band test          # detector + payload shapes
 ```
 
 Venue steps: [`scripts/bringup.md`](scripts/bringup.md).
-Backend contract: [`../backend/HARDWARE_INTEGRATION.md`](../backend/HARDWARE_INTEGRATION.md).
-What Ayush still owes for room tracking: [`../ayushextra.md`](../ayushextra.md) A1–A3.
+Backend contract: [`../docs/HARDWARE_INTEGRATION.md`](../docs/HARDWARE_INTEGRATION.md).

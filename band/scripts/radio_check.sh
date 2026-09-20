@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# radio_check.sh — HARDWARE_SPEC §8.2 / utsavtodo E2.3
+# radio_check.sh — HARDWARE_SPEC §8.2
 # Run on the UNO Q Debian side (SSH or App Lab terminal) at hour 1, not hour 12.
 set -euo pipefail
 
