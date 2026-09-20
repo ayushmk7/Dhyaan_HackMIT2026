@@ -45,7 +45,7 @@ const FILTERS: { label: string; match: (t: string) => boolean }[] = [
   { label: copy.filters.meals, match: (t) => t.startsWith('meal') },
   { label: copy.filters.visitors, match: (t) => t.startsWith('visitor') },
   {
-    label: copy.filters.outAndAbout,
+    label: copy.filters.out,
     match: (t) => t === 'room_exit' || t === 'room_entry' || t.startsWith('walk')
       || t === 'left_home' || t === 'returned_home',
   },
@@ -340,9 +340,9 @@ export default function HerDay() {
       {pager}
 
       <Entrance index={1}>
-        <Row style={{ marginTop: sp(6), flexWrap: 'wrap' }} gap={2}>
+        <Row style={{ marginTop: sp(6) }} gap={1.5}>
           {FILTERS.map((f, i) => (
-            <Chip key={f.label} label={f.label} selected={i === filterIdx} onPress={() => setFilterIdx(i)} />
+            <Chip key={f.label} compact label={f.label} selected={i === filterIdx} onPress={() => setFilterIdx(i)} />
           ))}
         </Row>
       </Entrance>

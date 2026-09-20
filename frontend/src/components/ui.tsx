@@ -717,8 +717,8 @@ export function StateChip({ state, label }: { state: ResidentState; label?: stri
 }
 
 export function Chip({
-  label, onPress, selected = false, night,
-}: { label: string; onPress?: () => void; selected?: boolean; night?: boolean }) {
+  label, onPress, selected = false, night, compact = false,
+}: { label: string; onPress?: () => void; selected?: boolean; night?: boolean; compact?: boolean }) {
   const press = usePressSpring();
   const c = useColors(night);
   const bg = selected ? c.accent : press.held ? c.pressed : c.wash;
@@ -730,9 +730,9 @@ export function Chip({
       onPressOut={press.onPressOut}
       accessibilityRole="button"
       accessibilityState={{ selected }}
-      style={[styles.chip, { backgroundColor: bg }, press.style]}
+      style={[styles.chip, compact ? styles.chipCompact : null, { backgroundColor: bg }, press.style]}
     >
-      <Txt kind="tag" style={{ color: fg }}>{label}</Txt>
+      <Txt kind="tag" numberOfLines={compact ? 1 : undefined} style={{ color: fg }}>{label}</Txt>
     </AnimatedPressable>
   );
 }
@@ -786,6 +786,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignSelf: 'flex-start',
   },
+  // A row of chips that must read as ONE line: tighter sides, and each chip
+  // gives up width in proportion rather than pushing the last one off the
+  // screen. The 44pt height stays, so the target is still a thumb's.
+  chipCompact: { paddingHorizontal: sp(2.5), flexShrink: 1, alignSelf: 'auto' },
   tile: {
     flex: 1,
     borderRadius: radius.tile,

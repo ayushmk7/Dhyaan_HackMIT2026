@@ -98,11 +98,15 @@ export const family = {
 
   // ---- Her day --------------------------------------------------------------
   timeline: {
+    // One word each, because the five sit on one line and the screen is a
+    // phone's. "Out" was "Out and about", which alone pushed the row onto a
+    // second line; the sentence under an empty filter still reads
+    // ("Nothing filed under “Out” today").
     filters: {
       all: 'All',
       meals: 'Meals',
       visitors: 'Visitors',
-      outAndAbout: 'Out and about',
+      out: 'Out',
       nights: 'Nights',
     },
 
