@@ -439,9 +439,12 @@ export const family = {
   // the screen; this is only what a person reads.
   camera: {
     paneLabel: (people: number, sentence: string) =>
-      `Derived camera view. ${people === 1 ? 'One person' : `${people} people`} in frame. ${sentence || 'No sentence yet.'} No video is shown.`,
+      `Live camera view from her home. ${people === 1 ? 'One person' : `${people} people`} in frame. ${sentence || 'No sentence yet.'}`,
+    // The pane has no picture to show. Said in the caption track, where the
+    // sentence would be, so the screen never leaves a stale frame up instead.
+    noPicture: 'No picture just now. The camera is running, but nothing has reached this phone.',
     noSentence: 'No sentence yet. The model has not been asked.',
-    privacy: 'No picture is kept, and none ever leaves her computer. What you are watching is the shape the camera found and the sentence it wrote about it. That is the whole of what Dhyaan ever has.',
+    privacy: 'This is her camera, live. Nothing is recorded and nothing is kept: each picture is replaced by the next one and the last one is gone. The sentence under it is what Dhyaan understood, and that sentence is the only part it remembers.',
 
     loading: 'Looking for her camera…',
     camerasError: 'Couldn’t reach the hub to ask what cameras exist.',
@@ -467,21 +470,9 @@ export const family = {
     // The section heading names her, not the process. "The worker" is what
     // the engineer calls it; a family reads it as jargon about a stranger.
     watching: (name: string) => `Watching ${name}`,
-    // Telemetry keys: names of things, not data. The values next to them are
-    // the worker's own numbers and words, straight off the monitor tick.
-    keys: {
-      gate: 'GATE',
-      people: 'PEOPLE',
-      activity: 'ACTIVITY',
-      conf: 'CONF',
-      age: 'TICK AGE',
-      model: 'MODEL',
-    },
     // The REC light's two words. Which one shows is the tick's `simulated`.
     rec: 'REC',
     simulated: 'SIMULATED',
-    // The glyph for a field the worker did not fill. Typography, not a reading.
-    none: '—',
 
     resume: 'Resume the camera',
     pauseTwoHours: 'Pause for 2 hours',

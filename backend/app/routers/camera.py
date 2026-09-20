@@ -24,7 +24,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
 from .. import memory, presence, rag
@@ -244,6 +244,70 @@ class MonitorIn(BaseModel):
             if len(b) != 4 or not all(0.0 <= c <= 1.0 for c in b):
                 raise ValueError("each box is four normalised 0..1 numbers, x0,y0,x1,y1")
         return v
+
+
+# The preview channel: the annotated frame the hub draws, in RAM, for the app.
+#
+# This is a DEMO-ONLY relaxation of the camera lane's oldest rule, and it is
+# worth being blunt about in the place someone will read it. Until now nothing
+# but the hub's own window ever saw a pixel; the app got geometry and a
+# sentence. The app now shows the same picture the hub window shows, which
+# means a frame crosses the network. On this build there is no auth on any
+# route, so anything on the same LAN can pull it.
+#
+# What has NOT changed: no frame is written to disk anywhere (the AST test in
+# test_vision_gate.py still forbids imwrite/VideoWriter, and this path encodes
+# to memory), nothing is stored in Mongo, and the buffer holds exactly one
+# frame per camera, overwritten several times a second. Consent off, paused or
+# unknown camera and the worker cannot post at all — `_live_camera` again.
+#
+# ponytail: one dict, one frame, same shortcut as `_MONITOR` above. Ceiling:
+# per-worker and RAM-only. Upgrade before this is ever more than a demo: put
+# the route behind auth and behind the resident's consent record, and make the
+# family screen ask for the stream rather than receive it by default.
+
+_FRAME: dict[str, tuple[datetime, bytes]] = {}
+
+# A frame older than this is not a live picture. Shorter than MONITOR_STALE_S:
+# a stale sentence is merely old, a stale PICTURE is actively misleading about
+# what is happening in the room right now.
+FRAME_STALE_S = 5
+
+# Generous for a 448-wide JPEG (~25 KB) and small enough that a wrong body
+# cannot sit in the API's memory.
+FRAME_MAX_BYTES = 512 * 1024
+
+
+@device.post("/ingest/camera/frame", status_code=204)
+async def ingest_camera_frame(request: Request, camera_id: str = Query(min_length=1)):
+    """The hub's annotated frame, as a JPEG body. Fails closed like every other
+    device route: a paused or unconsented camera cannot post a picture."""
+    await _live_camera(camera_id)
+    body = await request.body()
+    if not body:
+        raise HTTPException(400, "empty frame body")
+    if len(body) > FRAME_MAX_BYTES:
+        raise HTTPException(413, f"frame larger than {FRAME_MAX_BYTES} bytes")
+    _FRAME[camera_id] = (datetime.now(timezone.utc), body)
+    return Response(status_code=204)
+
+
+@family.get("/cameras/{camera_id}/frame")
+async def get_camera_frame(camera_id: str):
+    """The latest frame, or 404. Never the last one it had: a picture that is
+    quietly thirty seconds old is the one failure this screen must not have."""
+    stamped = _FRAME.get(camera_id)
+    if not stamped:
+        raise HTTPException(404, "no frame")
+    ts, jpg = stamped
+    if (datetime.now(timezone.utc) - ts).total_seconds() > FRAME_STALE_S:
+        _FRAME.pop(camera_id, None)
+        raise HTTPException(404, "frame is stale")
+    return Response(
+        content=jpg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 @device.post("/ingest/camera/monitor", status_code=204)
@@ -622,6 +686,7 @@ async def pause_camera(camera_id: str, body: PauseIn):
                embedding_text="The camera is paused.",
                payload={"state": "paused", "paused_by": "family"}, source_id=camera_id)
     _MONITOR.pop(camera_id, None)      # a paused camera has no live console
+    _FRAME.pop(camera_id, None)        # ...and shows no picture
     p = await _push_presence(camera["resident_id"])
     return {"paused_until": until, "paused_by": "family", "presence": p}
 

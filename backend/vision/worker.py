@@ -5,6 +5,7 @@ is in gate.py / keyframe.py / vlm.py, which is where the tests point.
 """
 
 import json
+import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -90,10 +91,16 @@ class Worker:
         # posted after she left, and the hub reports eating in an empty room.
         self._absent_ts = None
         self._last_quick = 0.0    # see tuning["quick_min_s"]
+        self._drawn, self._draw_mark, self.draw_fps = 0, (time.monotonic(), 0), 0.0
         self._stalled = False     # see tuning["stall_s"]
         self.cam = None
         self.detector = "none"    # the model behind `self.scene`, named in every post
         self._last_monitor = 0.0
+        # The preview relay: on by default, so the app shows the same picture
+        # this window shows. VISION_STREAM=0 turns it off and the app goes back
+        # to saying it has no picture. Never in --dry-run, which posts nothing.
+        self.stream = os.getenv("VISION_STREAM", "1") != "0" and not dry_run
+        self._last_stream = 0.0
         self.frames_seen = 0
         self.last_fps_mark = (time.monotonic(), 0)
         self.fps = 0.0
@@ -359,6 +366,7 @@ class Worker:
         if self._http.is_closed:
             self._http = self._new_http()
         self._stalled, last_new = False, time.monotonic()
+        last_box, last_score = None, 0.0
         self._install_signals()
         self.heartbeat("watching")
 
@@ -399,6 +407,7 @@ class Worker:
                         cam.close()
                         cam = self.cam = None
                     self.monitor("idle")
+                    self._stream(None, None, None)
                     if self.preview and not self._show(None, None, None, 0.0, status):
                         break
                     time.sleep(0.2)
@@ -455,6 +464,18 @@ class Worker:
                 n_new += 1
                 self._mark_fps(now)
                 if n_new % self.tuning["sample_every_n"]:      # stage 0
+                    # Display is not analysis. The cascade runs on every 2nd
+                    # frame on purpose, but the window has no reason to, and
+                    # drawing only sampled frames showed a 30 fps camera at
+                    # 14.4-15.0 fps — measured, and exactly what "slightly
+                    # laggy" was. The overlay carries over from the last
+                    # detector pass; `self.boxes` already persists between
+                    # passes for precisely this reason, so nothing here is
+                    # claiming to have looked at this frame.
+                    if self.preview and not self._show(
+                            apply_mask(frame, self.mask), motion.fg,
+                            last_box, last_score, status):
+                        break
                     continue
 
                 t = t0_wall + timedelta(seconds=now - t0_mono)
@@ -472,6 +493,7 @@ class Worker:
                 if run_detector:
                     last_person_check = now
                 box, seen = self._detect(person_gate, masked, run_detector, moved, motion)
+                last_box, last_score = box, score      # for the unsampled frames' overlay
 
                 # The keyframe selector rations VLM calls: min_gap_s holds two
                 # keyframes 6-20 s apart. That was right when every observation
@@ -582,6 +604,7 @@ class Worker:
 
                 self.monitor("person" if seen else ("motion" if moved else "idle"))
 
+                self._stream(masked, motion.fg, box)
                 if self.preview and not self._show(masked, motion.fg, box, score, status):
                     break
         except KeyboardInterrupt:
@@ -845,9 +868,13 @@ class Worker:
 
     # --- preview: the only screen a frame ever reaches ------------------------
 
-    def _show(self, frame, fg, box, score, status):
-        """Returns False to quit. `p` pauses the camera for 2 h — her control, on
-        her hub (PRODUCT_SPEC §8.3). Nothing here writes a file."""
+    def _annotate(self, frame, fg, box):
+        """The frame with the motion inset and every person boxed.
+
+        This is what the hub window draws, and since the app started showing the
+        same picture, what it sends there too. Returns a copy; the caller's
+        frame is never touched, and nothing here writes a file.
+        """
         import cv2
         import numpy as np
 
@@ -874,6 +901,78 @@ class Worker:
                 cv2.putText(view, "subject", (x0, max(y0 - 6, 12)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.4, (60, 200, 60), 1, cv2.LINE_AA)
 
+        return view
+
+    def _stream(self, frame, fg, box):
+        """Push the annotated frame to the API so the app can show it.
+
+        Encoded in memory and posted on a thread that DROPS rather than queues:
+        a slow network costs the app a frame, never the cascade a millisecond.
+        The API keeps exactly one frame per camera, in RAM (routers/camera.py
+        ::_FRAME). Nothing is written to disk on either side.
+
+        Off with VISION_STREAM=0, and never in --dry-run.
+        """
+        if not self.stream:
+            return
+        now = time.monotonic()
+        if now - self._last_stream < 0.2:        # ~5 fps, plenty for a phone
+            return
+        self._last_stream = now
+        import cv2
+
+        ok, buf = cv2.imencode(".jpg", self._annotate(frame, fg, box),
+                               [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+        if not ok:
+            return
+        q = getattr(self, "_streamq", None)
+        if q is None:
+            import queue
+            import threading
+
+            q = self._streamq = queue.Queue(maxsize=1)
+
+            def drain():
+                while not getattr(self, "_stopping", False):
+                    jpg = q.get()
+                    if jpg is None:
+                        return
+                    try:
+                        self._http.post(
+                            f"{self.api}/v1/ingest/camera/frame",
+                            params={"camera_id": self.camera_id},
+                            content=jpg,
+                            headers={"Content-Type": "image/jpeg"},
+                        )
+                    except Exception:            # noqa: BLE001
+                        pass   # a console nobody is watching is not an incident
+
+            threading.Thread(target=drain, daemon=True, name="dhyaan-frame").start()
+        try:
+            q.put_nowait(buf.tobytes())
+        except Exception:                        # noqa: BLE001
+            pass   # newest frame wins; the dropped one was a fifth of a second old
+
+    def _show(self, frame, fg, box, score, status):
+        """Returns False to quit. `p` pauses the camera for 2 h — her control, on
+        her hub (PRODUCT_SPEC §8.3). Nothing here writes a file."""
+        import cv2
+
+        # Draw rate, which is NOT self.fps: that counts frames read, and a
+        # window can be redrawn far less often than the camera is read. The
+        # gap between the two is what a person sees as lag, so both are on the
+        # overlay and both are worth watching when re-tuning a slow machine.
+        self._drawn += 1
+        t0, n0 = self._draw_mark
+        if (mono := time.monotonic()) - t0 >= 2.0:
+            self.draw_fps = (self._drawn - n0) / (mono - t0)
+            self._draw_mark = (mono, self._drawn)
+            if os.getenv("DRAW_DEBUG"):
+                log(f"draw {self.draw_fps:.1f} fps (camera reads {self.fps:.1f})")
+
+        view = self._annotate(frame, fg, box)
+        h, w = view.shape[:2]
+
         win = "dhyaan hub - the only screen a frame reaches"
         if not getattr(self, "_win_made", False):
             cv2.namedWindow(win, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
@@ -896,6 +995,9 @@ class Worker:
         lines.append(f"DRINK/DISH {', '.join(sc.get('dishes') or []) or '-'}"
                      f"    seating {', '.join((sc.get('seating') or [])[:2]) or '-'}")
         lines.append(f"{self.state()} | {status}")
+        # Read rate vs draw rate. They are different numbers and the gap
+        # between them is what looks like lag.
+        lines.append(f"camera {self.fps:.0f} fps    window {self.draw_fps:.0f} fps")
         pad, lh = 14, 30
         cv2.rectangle(shown, (0, sh - pad - lh * len(lines)), (sw, sh), (0, 0, 0), -1)
         for i, line in enumerate(lines):

@@ -685,3 +685,44 @@ async def test_her_hub_can_lift_her_own_pause_by_looking_again(client, camera, d
     cam = await db.cameras.find_one({"_id": camera})
     assert cam["paused_until"] is None and cam["paused_by"] is None
     await post(client, obs())
+
+
+# ---- the preview frame ------------------------------------------------------
+# A frame now crosses the network (routers/camera.py::_FRAME says why, and what
+# is still true). These pin the two properties that make that survivable: it
+# fails closed like every other device route, and it is never served stale.
+
+JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64 + b"\xff\xd9"      # enough to be a body
+
+
+async def test_the_app_gets_back_exactly_the_frame_the_hub_posted(client, camera):
+    assert (await client.post(f"/v1/ingest/camera/frame?camera_id={camera}",
+                              content=JPEG,
+                              headers={"Content-Type": "image/jpeg"})).status_code == 204
+    r = await client.get(f"/v1/cameras/{camera}/frame")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+    assert r.content == JPEG
+
+
+async def test_a_stale_frame_is_a_404_not_an_old_picture(client, camera, monkeypatch):
+    """A sentence that is a minute old is merely old. A PICTURE that is a minute
+    old actively lies about the room, so the buffer is dropped rather than served."""
+    from app.routers import camera as mod
+
+    await client.post(f"/v1/ingest/camera/frame?camera_id={camera}", content=JPEG,
+                      headers={"Content-Type": "image/jpeg"})
+    monkeypatch.setattr(mod, "FRAME_STALE_S", -1)
+    assert (await client.get(f"/v1/cameras/{camera}/frame")).status_code == 404
+
+
+async def test_a_paused_camera_can_neither_post_a_frame_nor_show_one(client, camera):
+    await client.post(f"/v1/ingest/camera/frame?camera_id={camera}", content=JPEG,
+                      headers={"Content-Type": "image/jpeg"})
+    assert (await client.post(f"/v1/cameras/{camera}/pause", json={"hours": 2})).status_code == 200
+
+    # The one it already had is gone...
+    assert (await client.get(f"/v1/cameras/{camera}/frame")).status_code == 404
+    # ...and the worker cannot put another one there.
+    assert (await client.post(f"/v1/ingest/camera/frame?camera_id={camera}", content=JPEG,
+                              headers={"Content-Type": "image/jpeg"})).status_code == 403
