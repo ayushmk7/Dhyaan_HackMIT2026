@@ -319,6 +319,87 @@ implementation.
 
 **Changed.** `band/fallband/sketch/detector.h` · `band/tests/detector_test.cpp` · `band/Makefile`.
 
+### D-021 · No authentication anywhere
+**Date:** 2026-09-20 · **Status:** Accepted · Supersedes the "two static shared keys" in D-011
+
+**Decision.** The API has no login, no API key, no band key and no token on the websocket
+(`backend/app/main.py`, first line). The app's sign-in screen is deleted; `useSession` holds the
+resident id, the lane and the onboarding state, and nothing that is a credential.
+
+**Why.** The keys protected nothing (they were committed defaults) and cost a screen, a header on every
+band and camera request, and a demo failure mode (a phone with a stale key). A LAN demo does not need
+them; real auth goes back before this leaves the LAN. The client still sends a vestigial
+`Authorization: Bearer` and `?token=` for a backend process that predates the change (F-14).
+
+**Changed.** `backend/app/main.py`, routers · `frontend/src/lib/{config,http}.ts`, `store/session.ts`,
+the deleted sign-in route · `docs/HARDWARE_INTEGRATION.md`, `docs/HARDWARE_SPEC.md` §5.4, `docs/README.md`,
+`docs/frontend-DESIGN.md`. **Follow-up:** F-14.
+
+### D-022 · The app is blue, white and black, and light only
+**Date:** 2026-09-20 · **Status:** Accepted
+
+**Decision.** One accent (a blue ramp, `blue[50]` to `blue[900]`) plus the greys between white and
+black. The hue taxonomy (`moss` OK, `rust` alarm, `ochre` attention, `amber` camera, the per-category
+`hue.*`) is gone; the keys survive as `@deprecated` aliases onto what their meaning now is. The app is
+pinned light: `app.json` `userInterfaceStyle: "light"` and `<ThemeProvider scheme="light">` at the
+root. `themes.dark` still exists and still passes its contrast table, and nothing can reach it.
+
+**Why.** A single accent cannot say six things, so meaning moved to depth, the navy plate, form,
+weight and words, which read the same to everyone. The user asked for no dark backgrounds; pinning the
+scheme in code rather than only in `app.json` is what stopped Android and web from rendering a black
+ground anyway.
+
+**Changed.** `frontend/src/theme/tokens.ts`, `theme.tsx`, `app/_layout.tsx`, `app.json`, every component ·
+`docs/frontend-DESIGN.md`.
+
+### D-023 · Alarm is a ground, not an inversion
+**Date:** 2026-09-20 · **Status:** Accepted
+
+**Decision.** The takeover used to be white on black. It is now a fully blue ground (`palette.alarm`,
+`blue[300]`), a 4px ink rule pinned under the status bar, the app's only navy button
+(`Btn kind="inverse"`, `blue[800]`), and the only unprompted motion (the cancel ring breathes, the
+ladder step pulses). On a normal screen the alerting state is the only navy element.
+
+**Why.** D-022 removed black as a surface, and inversion needs black. Depth on the ramp keeps the
+takeover the only blue screen, the only heavy rule and the only navy plate. Said plainly: this is
+quieter than inversion was. If it proves too quiet in use, the lever is `palette.alarm` (and
+`washTone.alarm` beside it), not a new hue and not black.
+
+**Changed.** `frontend/src/components/ui.tsx` (`Screen`, `Slab`, `Btn`), `alert-extras.tsx`,
+`app/alert/[id].tsx` · `docs/frontend-DESIGN.md`.
+
+### D-024 · The camera gate is an open-vocabulary detector
+**Date:** 2026-09-20 · **Status:** Accepted
+
+**Decision.** Stage 3 of the vision cascade is `yolov8s-worldv2` (YOLO-World, Ultralytics), which takes
+its class list as free text at runtime, with `gate.VOCAB` as that list and floors calibrated to it.
+`YOLO_MODEL=yolo11s.pt` is the one-line revert to the COCO detector; the COCO file is a fallback only
+if the open-vocabulary model cannot load and it is already on disk.
+
+**Why.** COCO's food vocabulary is ten words. A crisp packet, a mug of soup, a bowl of cereal or a slice
+of toast has no output neuron, so no threshold and no bigger COCO model could ever report a meal; the
+bench (commit `56e2237`) saw the COCO detector report food once in five photographs of real food, and
+that once was wrong. YOLO-World named the cereal and the soup at ~7 ms a frame. Ceiling: its scores
+are cosines against the prompt list and live an order of magnitude below a closed-set logit, so every
+floor had to be re-measured, and every word added to the vocabulary dilutes the rest.
+
+**Changed.** `backend/vision/gate.py`, `openvocab.py`, `__init__.py` · `README.md` (root) · `docs/README.md`.
+
+### D-025 · All app copy is centralised and the build enforces it
+**Date:** 2026-09-20 · **Status:** Accepted
+
+**Decision.** Every user-facing string lives in `frontend/src/lib/copy/` (`family.ts`, `staff.ts`),
+one file per area, imported directly by the screen that renders it. Interpolation is a function
+returning a whole sentence. `scripts/copy-audit.py` fails the build on a string literal in a screen,
+an em dash inside a string, or ", never" rhetoric.
+
+**Why.** Copy in a screen cannot be reviewed as writing and is where the voice drifts. The old audit
+rule (grey prose longer than six words) went blind once screens rendered `{copy.x}`; enforcing the
+thing that blinded it, that the copy really is all in one place, is stronger and cheaper.
+
+**Changed.** `frontend/src/lib/copy/*`, every screen, `frontend/scripts/copy-audit.py` ·
+`docs/frontend-DESIGN.md`.
+
 ---
 
 ## Code follow-ups these decisions create
@@ -340,3 +421,6 @@ Docs were changed in the same commit as this file. **Code was not.** Each owner 
 | F-10 | Utsav | Band: step detector + walking summary on each heartbeat; calibration mode; apply pushed thresholds via `set_thresholds`; demo-only chirp on `impact_only` | sketch + `python/main.py` |
 | F-11 | Ayush | Hub: walking-profile learner; heartbeat response returns `{profile_rev, profile}`; `gait_profile_updated` / `gait_profile_shift` events | backend |
 | F-12 | Abhinav | Staff resident screen (or demo page): live walking-profile readout and impact ticker for the Arduino expo demo | app |
+| F-14 | Abhinav | Drop the vestigial `Authorization: Bearer` header and the websocket `?token=` once the deployed backend process is rebuilt on the no-auth HEAD (D-021); delete `API_KEY` from `lib/config.ts` | `frontend/src/lib/config.ts`, `frontend/src/lib/http.ts` |
+| F-15 | Abhinav | Remove the deprecated `headerLargeTitle: false` still passed by four child-stack layouts; `TabStack` already sets `headerLargeTitleEnabled: false` | `frontend/src/app/(family)/{settings,chat,timeline}/_layout.tsx`, `(staff)/triage/_layout.tsx` |
+| F-16 | Abhinav | Move `FloatingTabBar` / `TabBarInsets` out of `app/(family)/_layout.tsx` into `src/components/tab-bar.tsx`; the staff layout imports them across route groups today | `frontend/src/app/(family)/_layout.tsx`, `(staff)/_layout.tsx` |

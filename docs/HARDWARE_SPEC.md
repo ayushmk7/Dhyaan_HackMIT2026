@@ -493,8 +493,9 @@ For one to three bands on a hotspot with a judge watching, debuggability beats s
 
 > **Superseded — the band posts to the backend's contract, not the paths below** (`DECISIONS.md`
 > D-011; resolved at the H1 standup in the todo files). Endpoints are `POST /v1/ingest/band`,
-> `/v1/ingest/band/cancel`, `/v1/ingest/heartbeat` and `/v1/ingest/rf`, each with an `X-Band-Key`
-> header. **The exact JSON is `backend/fixtures/*.json`** — fixtures beat the prose payloads in
+> `/v1/ingest/band/cancel`, `/v1/ingest/heartbeat` and `/v1/ingest/rf`. No auth header: the API checks
+> no `X-Band-Key` and no key of any kind (`backend/app/main.py`, `DECISIONS.md` D-021); firmware
+> that still sends one is ignored, not rejected. **The exact JSON is `backend/fixtures/*.json`** — fixtures beat the prose payloads in
 > §5.5–5.7, which remain here as the full field list to draw from. The heartbeat carries the walking
 > summary and its reply carries the walking profile (§6.9, `TECHNICAL_PRD.md` §8.7).
 

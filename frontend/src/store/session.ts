@@ -59,7 +59,13 @@ const blank = {
   residentId: 'res_eleanor',
   role: null as Role,
   onboarded: false,
-  residentName: 'Asha',
+  // No name until the server says one. `useHydrateResident` asks
+  // `GET /profile` as soon as the resident id is known, and onboarding's
+  // consent step sets it directly. This used to ship a specific person's name,
+  // which meant that whenever the seed was renamed the app greeted the wrong
+  // person for as long as the first request took. The two lines rendered
+  // before hydration fall back to "her".
+  residentName: '',
   consentGivenBy: '',
   consentRelationship: '',
   grants: emptyGrants,

@@ -10,16 +10,31 @@ notice at the top of `backend/app/main.py` says so). The `Auth` column below
 names the caller lane, device or app, and nothing checks it. Everything is
 under the `/v1` prefix. Ids come back as `id`, timestamps ISO-8601.
 
+**Consent gates are not auth, and every one of them survives.** Read this
+before assuming "no auth" means "no checks". Nothing asks who the caller is;
+these still ask whether the resident said yes, and they fail closed:
+
+| Gate | Where | What it does |
+|---|---|---|
+| Camera ingest | `_live_camera` in `routers/camera.py`, on `/ingest/camera` and `/ingest/camera/monitor` | `404` unknown `camera_id` or camera not registered to that `resident_id`; `403` `consent_camera` off; `403` `paused_until` in the future. Nothing is written on any of those |
+| Her pause wins | `POST /cameras/{id}/resume` | `403` when `paused_by == "resident"`. The app can only lift a pause the app set |
+| Memory needs consent | `POST /residents/{id}/profile/facts` | `403` when `consent_memory` is off; `/camera/config` withholds `appearance` and `spots_line` for the same reason |
+| Deleting is deliberate | `DELETE /residents/{id}/memory` | `422` unless `confirm` equals `display_name` exactly. A confirmation, not a credential |
+| The family never sees a room | `_family_item`, `rag.search(family=True)`, `rag.FAMILY_EXCLUDED_TYPES`, `rag.scrub_rooms`, `MonitorIn` | Applied server-side on `/activity`, `/presence`, `/chat` citations and the monitor tick, unconditionally, because there is no role to condition on |
+
+These protect the resident from the system. They do not protect the server
+from the network; that is what the deleted auth did, and nothing does now.
+
 | Method | Path | Auth | Body | Returns |
 |---|---|---|---|---|
-| POST | `/ingest/camera` | device | `{camera_id, resident_id, ts, span_s, n_frames, person_count, activity, posture, movement, spot, assistive_device, plate_or_cup_present, hand_to_mouth_observed, confidence, evidence, model, latency_ms, simulated}` (all enums as in §3.5 plus `"absent"`) | `201 {observation_id, presence, event_ids: []}`; `403` when consent off/paused; `404` unknown camera; `422` bad enum |
+| POST | `/ingest/camera` | device | `{camera_id, resident_id, ts, span_s, n_frames, person_count, activity, posture, movement, spot, assistive_device, plate_or_cup_present, food_visible, hand_to_mouth_observed, confidence, evidence, model, latency_ms, simulated}` (all enums as in §3.5 plus `"absent"`; `food_visible` is broader than `plate_or_cup_present`: food in a hand, a wrapper, a snack) | `201 {observation_id, presence, event_ids: []}`; `403` when consent off/paused; `404` unknown camera; `422` bad enum |
 | POST | `/ingest/camera/heartbeat` | device | `{camera_id, state: "watching"\|"paused"\|"offline"\|"no_consent", paused_until?, fps, dropped_batches}` | `204` |
 | GET | `/camera/config?camera_id=` | device | — | `{resident_id, name, consent_camera, paused_until, zone, zone_label, zone_hint, appearance, spots_line, demo_fast}` |
 | GET | `/residents/{id}/presence` | app | — | `{status: "in_view"\|"out_of_view"\|"paused"\|"camera_off"\|"no_camera", activity, spot_is_usual, since, last_observation_at, sentence, camera: {online, consent, paused_until, paused_by}}` — **no zone, no evidence** |
 | GET | `/residents/{id}/activity?date=YYYY-MM-DD` | app | — | `{date, tiles: {meals, walks, out_of_house, night_ups, in_view_minutes}, items: [{id, ts, ts_end, type, sentence, kind: "observed"\|"pattern", confidence}]}` — family filter applied, `zone` stripped |
 | GET | `/residents/{id}/profile` | app | — | `{name, appearance, consent: {falls, camera, memory, signed_by, relationship, signed_at}, camera: {camera_id, zone, zone_hint, state, paused_until}, usual_spots: [string], facts: [Fact]}` |
 | PUT | `/residents/{id}/profile` | app | `{name?, appearance?, consent?: {...}, camera?: {zone, zone_hint}}` | the profile; `422` for bedroom/bathroom zone, appearance > 200 chars |
-| POST | `/residents/{id}/profile/facts` | app | `[{key, text}]` (1–40 items, text ≤ 300) | `{facts: [Fact]}` — embedded synchronously |
+| POST | `/residents/{id}/profile/facts?author=` | app | `[{key, text}]` (1–40 items, key ≤ 40, text ≤ 300); `author` query param defaults to `"the family"` and is overridden by `consent_signed_by` when set | `{facts: [Fact]}` — embedded synchronously; `403` when `consent_memory` is off |
 | PUT | `/residents/{id}/profile/facts/{fact_id}` | app | `{text}` | `{fact: Fact}` (the new row; old row deactivated) |
 | DELETE | `/residents/{id}/profile/facts/{fact_id}` | app | — | `{ok}` (deactivates) |
 | DELETE | `/residents/{id}/memory` | app | `{scope, confirm}` | `{deleted: {profile_facts, observations, camera_events, usual_spots: bool}}`; `422` if `confirm != display_name` |
@@ -30,7 +45,9 @@ under the `/v1` prefix. Ids come back as `id`, timestamps ISO-8601.
 
 Websocket additions on `/v1/live`:
 `{"t": "presence.update", "resident_id", "presence": <same as GET>}` after every
-observation and heartbeat state change. `event.new` already fires.
+observation, every heartbeat state change, `POST /cameras/{id}/pause`,
+`POST /cameras/{id}/resume` and `DELETE /memory`. `event.new` already fires.
+The full message census for the socket is in V3.1 below.
 
 ---
 
@@ -195,6 +212,7 @@ takeover screen needs are now on **both** paths:
 {
   "id": "alt_...", "state": "MANUALLY_RESOLVED", ...,
   "closed_at": "2026-09-20T02:40:11+00:00",   // null unless the state is terminal
+  "cancel_window_s": 30,                      // config.CANCEL_WINDOW_S; the takeover's countdown ring
   "ladder": [
     {"step": "suspected",       "at": "...", "detail": "A fall was suspected.",
      "outcome": null, "from_state": null, "state": null},
@@ -218,8 +236,36 @@ stored for this: it is projected on read from the transition events
 `resolved_at ?? updated_at` when the state is terminal, else `null` — the app
 must stop computing it client-side.
 
-`GET /alerts` list rows carry `closed_at` too (no `ladder`; the list does not
-render one).
+`cancel_window_s` is on the shape because the app used to hardcode 30 while the
+server read `CANCEL_WINDOW_S` from the environment; a stage run with a shortened
+window had the ring counting down to a call that had already been placed.
+
+`GET /alerts` list rows carry `closed_at`, `resident_name` and `room` (no
+`ladder`, no `calls`, no `cancel_window_s`; the list does not render them).
+`GET /residents` rows carry `phone_e164` (her own line, so "Call Eleanor" is not a
+hardcoded number) and `open_alert` as the raw alert doc, without the projection.
+
+## Every message on `WS /v1/live`
+
+`/v1/live?resident_id=` scopes the socket to one resident; without it the socket
+gets everything for everyone. No token. Server to client only; the server sends
+`{"t": "ping"}` after 25 s of client silence, and whatever the client sends is
+read and discarded.
+
+| `t` | Fired by | Shape |
+|---|---|---|
+| `event.new` | every `events.emit()` | `{t, event: {id, ...}}`, the raw event doc with `_id` renamed; **not** family-filtered |
+| `alert.update` | every FSM transition, ack, resolve | `{t, alert: <alert_response>}`, identical to `GET /alerts/{id}` |
+| `presence.update` | observation, heartbeat state change, pause, resume, memory delete | `{t, resident_id, presence: <GET /presence>}` |
+| `camera.monitor` | every monitor tick | the tick, **flat**: fields spread into the envelope next to `t`, plus `resident_id` |
+| `ping` | 25 s idle | `{t}` |
+
+`event.new` is the one message that is not family-safe: it carries `zone` and
+the raw `embedding_text` for every type, including `zone_entered` and
+`bathroom_prolonged`. (The `evidence` sentence never reaches an event; it stays
+on the `observations` row.) A family surface should treat `event.new` as a
+signal to refetch `/activity` and `/presence`, not as something to render. A
+family-scoped socket is specified in `TECHNICAL_PRD.md` §10.5 and not built.
 
 ## `--source synthetic`: the lane with no webcam
 

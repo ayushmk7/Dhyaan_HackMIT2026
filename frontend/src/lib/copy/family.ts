@@ -37,8 +37,12 @@ export const family = {
 
   // ---- Today ---------------------------------------------------------------
   home: {
-    loading: (name: string) => `Checking on ${name}…`,
-    loadError: (name: string) => `Couldn’t reach Dhyaan to check on ${name}.`,
+    // These two render before `useHydrateResident` has asked the server who she
+    // is, so they must read correctly with no name. Falling back to "her"
+    // rather than a placeholder name: showing the wrong person's name, even
+    // for 200ms, is not a thing a care app gets to do.
+    loading: (name: string) => `Checking on ${name || 'her'}…`,
+    loadError: (name: string) => `Couldn’t reach Dhyaan to check on ${name || 'her'}.`,
 
     // What the camera is doing, under her name. Never where she is.
     subline: {

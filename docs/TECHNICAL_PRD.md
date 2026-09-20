@@ -17,14 +17,14 @@ HackMIT 2026 · team of 3 · 24 hours · local-first on a MacBook Pro M5 Pro (48
 > |---|---|---|
 > | Team | 4 people, roles A–D (§13) | **3 people** — Utsav (band, beacons), Ayush (backend, localization, learner, RAG), Abhinav (voice, app). The todo files supersede §13's split |
 > | Data store | One SQLite file + `sqlite-vec` (§2, §3.3, §9.4) | **MongoDB 7 in Docker**; brute-force cosine in numpy; `nomic-embed-text` via Ollama |
-> | Auth | JWT with resident IDs taken from the token (§9.7, §10.5) | Two static shared keys; the band sends `X-Band-Key`; websocket is `/v1/live?token=…&resident_id=…` |
+> | Auth | JWT with resident IDs taken from the token (§9.7, §10.5) | **None.** The two static shared keys, `X-Band-Key`, `POST /auth/login`, the `users` collection and the `token` query param on `/v1/live` were all removed (`app/deps.py` and `app/auth.py` deleted, `API_KEY`/`BAND_KEY` gone from `config.py`). Every route answers with no headers. The consent gates are not auth and all survive; see §10.5 |
 > | Band payloads | §10.5 examples | `backend/fixtures/band_fall.json`, `heartbeat.json`, `rf_scan.json` |
 > | Alert FSM + ladder (§4) | — | Built and tested |
 > | Voice (§5) | — | Bridge built and tested offline; wired to the real FSM via `backend/app/voice_adapter.py` |
 > | Room localization (§7) | k-NN + HMM | k-NN + hysteresis; HMM state is process-local |
 > | Baseline learner (§8), RAG (§9) | — | Built |
-> | App (§10) | — | Expo app on an in-memory mock backend (ladder runs 6× faster than real) |
-> | Camera + VLM (§6) | — | **Not built** — stretch goal, second on the team's cut list (D-012) |
+> | App (§10) | — | Expo app against the live backend by default (`EXPO_PUBLIC_USE_MOCKS=true` opts back into the in-memory mock, whose ladder runs 6× faster than real) |
+> | Camera + VLM (§6) | — | **Built**, on a different shape than §6: one webcam, `vision/` worker, Ollama VLM, `backend/app/routers/camera.py`, `app/presence.py` dedup. Contract is [`API_CONTRACT_V3.md`](./API_CONTRACT_V3.md); design is [`VLM_PLAN.md`](./VLM_PLAN.md). §6 below is the original design |
 > | Walking profile (§8.7) | — | **Not built** — stretch goal (D-009) |
 
 ---
@@ -85,7 +85,7 @@ Write these on the whiteboard. Say them out loud to the judges.
 | Real 911 / PSAP integration | Requires carrier + jurisdiction routing; we output *guidance* only |
 | HIPAA compliance, BAAs, audit logging | Architecture is designed for it (§12); not certified in 24h |
 | Android build, tablet layouts | iOS-only demo build |
-| Multi-tenant auth, RBAC, orgs | Single hardcoded facility, JWT with a static secret, 4 seeded users |
+| Multi-tenant auth, RBAC, orgs | Single hardcoded facility. Planned as a JWT with a static secret and 4 seeded users; **built with no auth at all** (§10.5) |
 | Band firmware OTA, battery optimisation, charging UX | Band runs tethered/on a power bank for the demo |
 | Camera calibration, multi-camera re-identification across rooms | Per-camera tracking only; a resident is bound to a camera zone |
 | Cloud deployment, autoscaling, Postgres | Everything runs on one Mac; SQLite; Cloudflare Tunnel for phone access |
@@ -601,6 +601,12 @@ def emit(db: sqlite3.Connection, *, resident_id: str, source: str, type: str,
 `BUS` is an `asyncio.Queue` fan-out inside the single FastAPI process. Not Kafka. Not Redis. We have
 24 hours and one machine.
 
+**As built** (`backend/app/events.py`): same keyword signature minus the `db` argument, `async`, `ts`
+optional (defaults to now), returns the whole event doc rather than the id, writes to the Mongo
+`events` collection, and the bus is a module-level list of subscriber coroutines called after the
+insert (`events.subscribe`). Unknown `type` or `source` raises `ValueError`. A subscriber that throws
+is logged and skipped; the write already landed. The websocket's `event.new` is one such subscriber.
+
 ---
 
 ## 4. Fall-alert state machine and escalation ladder
@@ -667,6 +673,12 @@ Two timing decisions worth defending to a judge:
 - **60 s per contact, parallel not serial.** Priya's phone is in another room. We do not wait for her
   voicemail to time out before trying her brother.
 
+**As built, every timing is an environment variable** (`backend/app/config.py`): `CANCEL_WINDOW_S` (30),
+`CONTACT_WAIT_S` (60), `EXHAUSTED_AFTER_S` (300), `RETRY_WAIT_S` (15), `RESIDENT_RESPONSE_TIMEOUT_S` (90).
+The stage config in §13 is set by env, not by editing code, and the live `cancel_window_s` is echoed on
+`POST /ingest/band` and on every alert response so the app's countdown ring never disagrees with the
+server.
+
 ### 4.3 State diagram
 
 ```mermaid
@@ -708,10 +720,19 @@ stateDiagram-v2
     EXHAUSTED --> [*]
 ```
 
-Implemented as an explicit table-driven FSM in `dhyaan/alerts/fsm.py` — a dict of
-`{(state, trigger): (next_state, action_fn)}` plus an `asyncio` timer wheel. **Not** a pile of `if`
+Implemented as an explicit table-driven FSM in `backend/app/alerts.py` (`TABLE`) — a dict of
+`{(state, trigger): (next_state, action_fn)}` plus one `asyncio` task per pending timer. **Not** a pile of `if`
 statements across three files, because at hour 19 someone will need to change one timing constant.
-Every transition writes an event; the state machine is replayable from `events`.
+Every transition writes an event; the state machine is replayable from `events`, and
+`routers/residents.py::alert_response` does exactly that to build the `ladder` the app renders.
+
+Deviations from the diagram, as built: `SCHEDULED_CALLBACK` is in `STATES` but no `TABLE` row enters or
+leaves it (`request_callback` is specified, not built); `ack` is wired from every non-terminal state by
+a loop over `STATES`, not drawn per arrow; `FELL_BUT_FINE` is not terminal and chains on to
+`CALLING_CONTACT_1` as drawn; and `POST /alerts/{id}/resolve` writes a `MANUALLY_RESOLVED` state that
+the table does not know about, straight to the document. A timer still pending for such an alert fires
+once, finds no transition, logs and drops. Upgrade: a real `resolve()` in `alerts.py` that also cancels
+the timer.
 
 ### 4.4 The five classifications
 
@@ -2631,7 +2652,7 @@ Sample output, with the citations the UI turns into tappable chips that deep-lin
 |---|---|---|
 | Never answer medical questions | Planner sets `refuses: true` → short-circuit **before retrieval**; answer prompt rule 5 is the second line of defence | Belt and braces. Both must be in place; neither alone is trustworthy |
 | Always cite with timestamps | Answer prompt rules 1–2 + a **post-hoc regex** over the response: if a sentence contains a digit or a day name and no `[chunk_…]`, we append *"(I can't source that — ask me again)"* and log it | Crude. It is 15 lines and it catches the demo-killing case |
-| Never leak another resident | `resident_id` is a **partition key** on the vector table and is bound server-side from the JWT, never from the request body | The one query that forgets it returns nothing, not someone else's data — partition keys fail closed. **Build status:** the built backend uses a shared key and takes `resident_id` as a query parameter, so this guarantee is not in the code yet |
+| Never leak another resident | `resident_id` is a **partition key** on the vector table and is bound server-side from the JWT, never from the request body | The one query that forgets it returns nothing, not someone else's data — partition keys fail closed. **Build status:** there is no JWT and no auth of any kind (§10.5). `resident_id` is the path parameter of `POST /residents/{id}/chat` and `rag.search` filters on it, so one resident's chunks never rank against another's; but any caller can name any resident. The partition holds; the binding does not exist |
 | Never tell the family which room she is in (D-001) | Family-scoped retrieval excludes `zone_*`, `bathroom_prolonged`, `location_unknown` and `rf_scan` chunks; daily narratives are written without room names ("she was up twice in the night", not "she went to the bathroom twice"); the answer prompt forbids room names for the family role | A narrative that slips a room name through. The prompt rule is the backstop; the exclusion list is the real control |
 | Never surface video/images | No image or frame path is ever in a chunk; frames are not in the DB at all (§12) | Structural, not prompt-based |
 | Never fabricate absence of data | Answer prompt rule 3 + we pass the retrieval window explicitly so the model can see what it was given | Weakest link. Watch for it in eval |
@@ -2698,7 +2719,9 @@ lie to the user.
 | 11 | `/chat` | **Ask about Eleanor** | RAG chat. Suggested chips: *"Has she been out this week?"*, *"How were her nights?"*, *"Anything unusual this week?"* — questions the band and beacons can actually answer (D-010). Answers never name a room (§9.7). Citations render as tappable chips → deep-link to `/timeline/[eventId]` | Send |
 | 12 | `/settings` | Settings | Contacts, quiet hours, **which alert types are on**, consent review + revoke, export, delete | — |
 
-**Staff app (B2B) — same binary, `role: staff` in the JWT flips the root layout.**
+**Staff app (B2B) — same binary, `role: staff` in the JWT flips the root layout.** (Specified, not
+built: there is no JWT, so nothing server-side tells the app which role it is. `POST /push/register`
+and `POST /residents/{id}/notes` take a `role` field on trust.)
 
 | # | Route | Screen | Key content |
 |---|---|---|---|
@@ -2816,105 +2839,184 @@ const token = (await Notifications.getExpoPushTokenAsync({ projectId: EXPO_PROJE
 
 ### 10.5 API contract
 
-Base `https://<tunnel>/v1`. Auth: `Authorization: Bearer <JWT>`, claims `{sub, role: family|staff|admin,
-resident_ids: [...]}`. **`resident_id` is always taken from the JWT, never trusted from the body** (§9.7).
-Errors: `{"error": {"code": "...", "message": "...", "detail": {...}}}`.
+**This section is the route census of the API as built** (`backend/app/routers/*.py`, 274 tests in
+`backend/tests/`, `cd backend && .venv/bin/python -m pytest -q`). The original design for this
+section, with its JWT, its `/events` and `/summary` names and its role-scoped websocket, is kept
+below it under *Specified, not built*, because knowing what was planned and dropped is worth more
+than a clean page. Where the two disagree, this table and the code win.
 
-**Ingest (band → backend, `X-Band-Key` HMAC, not JWT)** — the exact built payloads are
-`backend/fixtures/*.json`; they win over the examples below (D-011). No payload carries `battery_pct`
-(D-013).
+Base `http://<host>:8000/v1` (the tunnel is a deployment detail the code does not know about).
+Errors are FastAPI's default `{"detail": "..."}` (a string for `HTTPException`, a list for `422`),
+not the `{"error": {code, message, detail}}` envelope specified below. Ids come back as `id`, never
+`_id`; every id is a string ULID with a type prefix (`evt_`, `alt_`, `con_`, `srv_`). Timestamps are
+ISO-8601 strings with an offset.
+
+#### There is no authentication and no authorization
+
+Quoted from the top of `backend/app/main.py`, which is the authority on this:
+
+> THIS API HAS NO AUTHENTICATION AND NO AUTHORIZATION.
+>
+> There is no login, no API key, no band key, no token on the websocket. Any process that can reach
+> the port can read every resident's history, write observations as any camera or band, pause and
+> resume cameras, open and resolve alerts, and delete a resident's memory (the DELETE still asks for
+> her name in the body, which is a confirmation, not a credential). CORS is wide open too.
+>
+> This is a demo build for one laptop on one LAN. It must not be exposed to the internet, and it must
+> not be mistaken for a service that protects anyone's data. The consent gates (camera consent, pause,
+> the family response filter) are still enforced: they protect the resident from the system, not the
+> server from the network. Put real auth back before this leaves the LAN.
+
+What was removed: `POST /v1/auth/login`, the `users` collection, the `Authorization: Bearer <API_KEY>`
+guard on app routes, the `X-Band-Key` guard on device routes, the `token` query param on `WS /v1/live`,
+`backend/app/deps.py`, `backend/app/auth.py`, and `API_KEY` / `BAND_KEY` in `config.py`. There is no
+`401` anywhere in the test suite. The JWT design below was never built; the shared keys were built and
+then deleted.
+
+**Consent gates are not auth. All of them survive, and the next reader must not confuse the two.**
+
+| Gate | Route | Behaviour |
+|---|---|---|
+| Camera ingest fails closed | `POST /ingest/camera`, `POST /ingest/camera/monitor` | `404` unknown `camera_id`, `404` camera not registered to that `resident_id`, `403` `consent_camera` off, `403` camera paused. Nothing is written on any of these (`routers/camera.py::_live_camera`) |
+| Her pause wins | `POST /cameras/{id}/resume` | `403` when `paused_by == "resident"` (`PRODUCT_SPEC.md` §8.3 rule 1 as a status code) |
+| Memory needs consent | `POST /residents/{id}/profile/facts`, `GET /camera/config` | `403` when `consent_memory` is off; config withholds `appearance` and `spots_line` |
+| Deleting is deliberate | `DELETE /residents/{id}/memory` | `422` unless `confirm` equals `display_name` exactly |
+| The family never sees a room | `/activity`, `/presence`, `/chat`, `camera.monitor` | `routers/camera.py::_family_item`, `rag.search(family=True)`, `rag.FAMILY_EXCLUDED_TYPES`, `rag.scrub_rooms`, `MonitorIn`. Unconditional, server-side, because there is no role to condition on |
+| Unknown devices are rejected, never auto-created | every `/ingest/*` route | `404` unknown `band_id` / `camera_id`. A stray band cannot create data for a resident |
+
+These are per-resident consent, enforced on the data. They are not a substitute for knowing who the
+caller is, and nothing knows that.
+
+#### Ingest (band and camera to backend)
+
+The band's wire contract is the docstring at the top of `backend/app/routers/ingest.py` and
+`backend/fixtures/*.json`; they win over any example elsewhere in this document (D-011). The body is
+flat (`type`, `beacons`, `wifi`), not nested under `payload` as the original example had it.
+`battery_pct` is a **required** field on `/ingest/band` and `/ingest/heartbeat` in the code and the
+fixtures, which contradicts D-013 ("no payload carries `battery_pct`"); the hardware docs own that
+conflict, this document only reports it. Every ingest model accepts `simulated: bool` (default false)
+and persists it onto the event, so a seeded fall is never mistaken for a wrist.
 
 | Method | Path | Request | Response |
 |---|---|---|---|
-| POST | `/ingest/band` | `{"band_id":"band_a3f2","kind":"fall_suspected","ts":"…","payload":{"peak_g":3.4,"free_fall_ms":95,"post_impact_tilt_deg":72,"stillness_ms":1800}}` | `201 {"event_id":"evt_…","alert_id":"alr_…","cancel_window_s":30}` |
-| POST | `/ingest/band/cancel` | `{"band_id":"…","alert_id":"alr_…","by":"button"}` | `200 {"cancelled":true,"latency_ms":8100}` |
-| POST | `/ingest/rf` | `{"band_id":"…","ts":"…","wifi":{"a4:2b:8c:11:02:9f":-47},"ble":{"bcn_kitchen":{"rssi":-58,"n":31}},"scan_ms":3040}` | `200 {"zone":"kitchen","confidence":0.88,"method":"ble","committed":true}` |
-| POST | `/ingest/heartbeat` | `{"band_id":"…","uptime_s":38210,"profile_rev":3,"activity":{…walking summary, §8.7…}}` | `200 {"profile_rev":4,"profile":{…}}` when the walking profile changed, else `204` |
+| POST | `/ingest/band` | `{band_id, type, ts, peak_g?, free_fall_ms?, post_impact_tilt_deg?, stillness_ms?, battery_pct, simulated?}`; `type` in `fall_suspected fall_confirmed fall_cancelled button_pressed band_motion_high band_still prolonged_inactivity` | `201 {event_id}`, plus `alert_id` and `cancel_window_s` when `type == fall_suspected` (opens a `fall`/`critical` alert) |
+| POST | `/ingest/band/cancel` | `{band_id, alert_id, by: "button"\|"voice"\|"staff"}` | `200` the raw alert doc (`_id`, `state: "CANCELLED"`, ...); only valid from `LOCAL_CANCEL`, any other state raises inside `alerts.cancel` and surfaces as a `500`, not a `409`. Demo-grade; upgrade: catch `ValueError` and return `409` |
+| POST | `/ingest/heartbeat` | `{band_id, battery_pct, uptime_s?, simulated?}` | `204`; under 15% emits `band_low_battery`. Never returns a walking profile (§8.7 is not built) |
+| POST | `/ingest/rf` | `{band_id, ts, beacons: [{uuid?, major?, minor?, rssi}], wifi: [{bssid, rssi}], simulated?}`, `rssi` in -100..0 | `200 {zone, confidence, posterior, committed}` from `location.observe` |
+| POST | `/ingest/camera` | see `API_CONTRACT_V3.md` | `201 {observation_id, presence, event_ids}` |
+| POST | `/ingest/camera/monitor` | the 1 Hz console tick, V3.1 | `204`; kept in RAM only |
+| POST | `/ingest/camera/heartbeat` | `{camera_id, state, paused_until?, fps, dropped_batches}` | `204`; a state change emits `camera_online` / `camera_paused` / `camera_offline` and `state: "paused"` records `paused_by: "resident"` |
+| GET | `/camera/config?camera_id=` | — | what the worker polls every 10 s, V3 |
 
-**Residents, location, timeline** — **role rule (D-001):** for `role: family`, no response contains a
-room identifier or label. `location` becomes `{"presence":"home"|"out"|"unknown","since":…}`; the two
-`/location` routes are **staff-only** (403 for family); `/events` omits `zone_*`, `bathroom_prolonged`
-and `location_unknown` rows and blanks the `zone` field. Staff see everything, and staff access to
-location is logged.
-
-| Method | Path | Request → Response |
-|---|---|---|
-| GET | `/residents` | → `[{"id","display_name","room","state":"ok","last_seen","band_last_seen","location":{...},"open_alerts":0,"baseline_ready":true}]` — `location` is room-level for staff, `presence` only for family |
-| GET | `/residents/{id}` | → resident + today's tiles + baseline readiness (`n_obs` per feature) |
-| GET | `/residents/{id}/location` | **staff only** → `{"zone":"kitchen","label":"Kitchen","since":"2026-09-19T14:31:02-04:00","dwell_s":740,"confidence":0.88,"method":"ble","posterior":{"kitchen":0.88,"hallway":0.09,"living_room":0.03},"expected_p95_s":2400,"stale":false}` |
-| GET | `/residents/{id}/location/history?date=2026-09-19` | **staff only** → `{"segments":[{"zone":"bedroom","start":"…","end":"…","s":28800},…],"unknown_s":1200}` — the staff resident screen's room-time bar |
-| GET | `/residents/{id}/events?from=&to=&types=&limit=100&cursor=` | → `{"events":[Event],"next_cursor":"evt_…"}` |
-| GET | `/residents/{id}/summary?date=2026-09-19` | → `{"date_local","narrative","tiles":{"walked":{"state":"ok","detail":"3,900 steps"},"night":…,"out":…,"active":…},"deviations":[…],"source_event_ids":[…]}` — facility residents also get an `ate` tile (D-010) |
-| POST | `/residents/{id}/contacts` | `{"contacts":[{"name":"Priya","phone_e164":"+1617…","relationship":"daughter","ladder_order":1}]}` → `201` |
-| POST | `/residents/{id}/fingerprint/start` | `{"zone_id":"kitchen","label":"Kitchen"}` → `200 {"survey_id":"srv_…","expect_s":30}` |
-| POST | `/residents/{id}/fingerprint/stop` | `{"survey_id":"srv_…"}` → `200 {"n_scans":10,"n_anchors":7,"separability_db":9.2,"warning":null}` |
-| GET | `/residents/{id}/zones` | → zones + adjacency + beacon health |
-
-**Alerts**
+#### Residents, location, timeline (`routers/residents.py`, `routers/camera.py`)
 
 | Method | Path | Request → Response |
 |---|---|---|
-| GET | `/alerts?state=open` | → `[Alert]` — **called on every app foreground**, because the socket was dead |
-| GET | `/alerts/{id}` | → `{...alert, "ladder":[{"step":"calling_resident","at":"…","outcome":"no_answer"},…], "calls":[{"role":"resident","classification":"no_answer","transcript":[…],"duration_s":27}]}` |
-| POST | `/alerts/{id}/ack` | `{"by":"contact_1","channel":"app","note":"I've got her - calling now"}` → `200 {"state":"acknowledged","ladder_halted":true}` |
-| POST | `/alerts/{id}/resolve` | `{"resolution":"ok"\|"fell_ok"\|"ems"\|"false_positive","note":"…"}` → `200` |
-| POST | `/alerts/{id}/feedback` | `{"verdict":"expected"\|"false_positive","reason":"visiting her sister","scope":"day"\|"feature"}` → `200 {"downweighted":["walk_count","time_outside_home_s"],"suppress_until":"2026-09-26"}` (§8.6) |
-| POST | `/alerts/{id}/escalate_now` | `{}` → `200` — the staff "skip the timer" button |
+| GET | `/residents` | → `[{id, display_name, phone_e164, room, state: "ok"\|"alerting", battery_pct, last_seen, location: {zone, since, confidence, method} \| null, open_alert: <raw alert> \| null}]`. Bulk queries, not N+1. **Names a room** and carries her own phone number: a staff/operator shape, not a family one |
+| GET | `/residents/{id}` | → the resident doc plus `consent: {camera, voice}` and `contacts` sorted by `ladder_order` |
+| GET | `/residents/{id}/timeline?since=&limit=50&types=` | → `[Event]` newest first, `since` is epoch seconds, `types` comma-separated and validated against `EVENT_TYPES` (`422` otherwise), `limit` 1..200. **Unfiltered**: carries `zone` and every type in `FAMILY_EXCLUDED_TYPES` (`evidence` is never on an event; it stays on `observations`) |
+| GET | `/residents/{id}/location` | → `{zone, since, confidence, method}` from the newest zone-bearing event, or all-null. **Open to any caller**; the "staff only" below is not enforced |
+| GET | `/residents/{id}/location/history?date=` | → `[{zone, from, to, seconds, method, confidence}]` from `zone_entered`/`zone_exited` boundaries only; a day that starts mid-visit drops that first stretch |
+| GET | `/residents/{id}/day?date=` | → `{date, meal_count, walk_count, night_bed_exits, room_time_s: {zone: s}}` in her timezone; `room_time_s` is "time until the next zone-bearing event", a one-pass approximation |
+| GET | `/residents/{id}/baselines` | → `[{feature, mu, mad, lam, n_obs, cold_start, last_value, updated_at, unit, direction}]` (`API_CONTRACT_V2.md`) |
+| GET | `/residents/{id}/summaries?days=7` | → `[{date, narrative, deviations: [{feature, severity, text}]}]`, one story per day, sorted by the day described (`payload.date_local`), newest per day when the rollup ran twice |
+| GET | `/residents/{id}/presence` | → family-safe presence, V3 |
+| GET | `/residents/{id}/activity?date=` | → `{date, tiles, items}`, V3. `daily_summary` / `baseline_deviation` are selected by `payload.date_local`, not timestamp, and collapsed to the newest per subject |
+| GET / PUT | `/residents/{id}/profile` | V3 |
+| POST / PUT / DELETE | `/residents/{id}/profile/facts[/{fact_id}]` | V3 |
+| DELETE | `/residents/{id}/memory` | `{scope, confirm}`, V3 |
+| POST | `/residents/{id}/notes` | `{text, author, role}` → the new `family_note` / `staff_note` event |
+| PUT | `/residents/{id}/contacts` | replaces the ladder, V2 |
+| POST | `/residents/{id}/survey/start\|sample\|stop` | RF site survey, V2 (the `/fingerprint/*` names below were renamed) |
+| GET | `/events/{event_id}` | → the event, or 404 |
 
-**Chat / RAG** — the example below is a **facility** resident with a dining-room camera; a home-product
-resident has no meal observations, so the same question returns the "I don't have observations for
-that" answer (§9.1, D-010).
+**The family/staff split is by route, not by role.** `/timeline`, `/location`, `/location/history`,
+`/day` and `GET /residents` name rooms; `/activity`, `/presence` and `/chat` never do. Nothing stops a
+family client calling the first group. D-001 is enforced by which routes the app chooses to call, which
+is exactly the client-side filter §12.4 says is not a privacy control. Upgrade path: put a role back on
+the caller and 403 the room-bearing routes for `family`.
+
+#### Alerts
 
 | Method | Path | Request → Response |
 |---|---|---|
-| POST | `/chat` | `{"resident_id":"res_eleanor","question":"has mum been eating this week?","session_id":"ses_…"}` → below |
-| GET | `/chat/{session_id}` | → message history |
+| GET | `/alerts?state=open` | → `[{...alert, resident_name, room, closed_at}]` sorted critical first then oldest first. `open` means "not terminal"; any other value is matched against `state` exactly |
+| GET | `/alerts/{id}` | → `{...alert, closed_at, cancel_window_s, trigger_event, calls, ladder: [{step, at, detail, outcome, from_state, state}]}`; `ladder` is projected on read from the `source: "derived"` transition events, never stored (§4.3). Shape in `API_CONTRACT_V3.md` V3.1 |
+| POST | `/alerts/{id}/ack` | `{by, channel}` → the same shape. Idempotent: acking a terminal alert is a no-op, not an error. No `note` field |
+| POST | `/alerts/{id}/resolve` | `{resolution: "ok"\|"fell_ok"\|"ems"\|"false_positive"\|"timeout"}` → the same shape; writes `MANUALLY_RESOLVED` directly (§4.3). No `note` field |
+| POST | `/alerts/{id}/feedback` | `{verdict: "expected"\|"false_positive"\|"confirmed", reason?, scope: "day"\|"feature"}` → `{ok, feedback_event_id}`. The path id may be an alert id, a trigger event id, or a bare event id (a baseline deviation has no alert); writes `feedback_given` and stamps `review_state` on the event. **Does not return `downweighted` / `suppress_until`**; whether the learner consumes the event is `baseline.py`'s business (§8.6) |
 
-```json
-{
-  "answer": "Eleanor ate 14 recorded meals over the last 7 days, down from her usual 21 [counts]. She ate breakfast and lunch every day, but dinner was only recorded on Monday and Tuesday [chunk_d_0915, chunk_d_0916]. I don't have observations for Sunday — the dining-room camera was offline [chunk_sys_0914].",
-  "citations": [
-    {"id": "chunk_d_0915", "kind": "daily_summary", "ts": "2026-09-15T23:59:00-04:00",
-     "label": "Monday 15 Sept", "event_ids": ["evt_…", "evt_…"]}
-  ],
-  "counts": [{"label": "meals/day", "series": [{"d": "2026-09-13", "n": 3}, {"d": "2026-09-14", "n": 2}]}],
-  "refused": false,
-  "window": {"from": "2026-09-13T00:00:00-04:00", "to": "2026-09-19T23:59:59-04:00"},
-  "latency_ms": 2140
-}
-```
+#### Chat / RAG (`routers/chat.py`)
 
-**Devices / admin**
+| Method | Path | Request → Response |
+|---|---|---|
+| POST | `/residents/{id}/chat` | `{question}` → `{answer, citations: [{id, kind: "observed"\|"told"\|"pattern", ts, text}], retrieved_count, refused, refusal_kind}` via `rag.answer_family` (the guard runs before any retrieval) |
+| POST | `/admin/rollup` | `{resident_id, date}`, both required → `{resident_id, date, features, deviations, narrative}`. Runs the learner and the daily narrative now |
+
+No `session_id`, no `GET /chat/{session_id}`, no `counts` series, no `window`, no `latency_ms`, no
+rate limit. `resident_id` is the path, not the body.
+
+#### Devices / admin (`routers/setup.py`, `routers/camera.py`)
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/bands/pair` | `{"pair_code":"418203","resident_id":"res_eleanor"}` → `{"band_id","band_key"}` |
-| POST | `/devices/push-token` | `{"expo_push_token":"ExponentPushToken[…]","platform":"ios"}` → `204` |
-| POST | `/admin/rollup` | `{"resident_id":"…","date":"…"}` — the demo button that runs the learner + daily summary now |
-| POST | `/admin/simulate` | `{"kind":"fall"\|"bathroom"\|"deviation","resident_id":"…"}` — **the demo trigger. Named `simulate`, not `test`, because we tell the judges it exists** |
-| GET | `/admin/health` | Per-service: camera fps, VLM queue depth + drop count, beacon last-seen, Ollama, tunnel, Twilio balance |
+| POST | `/bands/pair` | `{band_id, resident_id, force?}` → `{ok, band}`; `409` if paired elsewhere without `force`. There is no `pair_code` and no `band_key` |
+| POST | `/push/register` | `{token, resident_id?, role}` → `{ok}`; upserts into `push_tokens`. Nothing sends a push |
+| POST | `/admin/simulate` | `{resident_id, kind: fall\|bathroom\|walk\|meal\|visitor\|out_of_view, script?}`, V2. **The demo trigger. Named `simulate`, not `test`, because we tell the judges it exists.** `deviation` was specified and is not a kind; use `/admin/rollup` on a seeded day |
+| GET | `/cameras?resident_id=` | → `[{id, resident_id, state, consent, paused_until, last_heartbeat_at, online}]`, V3.1 |
+| GET | `/cameras/{id}/monitor` | → `{camera, online, tick}`, V3.1 |
+| POST | `/cameras/{id}/pause` | `{hours}` → `{paused_until, paused_by: "family", presence}` |
+| POST | `/cameras/{id}/resume` | → `{paused_until: null, presence}`; `403` if she paused it |
+| GET | `/health` | (no `/v1` prefix) → `{ok: true}` after a Mongo ping. That is the whole health check; the per-service `/admin/health` below is not built |
 
-**Websocket** `wss://<tunnel>/v1/ws?token=<jwt>`. Server→client only; the client sends `{"t":"ping"}`
-every 25 s.
+Only when `TWILIO_ACCOUNT_SID` and `DEEPGRAM_API_KEY` are both set, `main.py` also mounts the voice
+bridge from `dhyaan/voice/bridge.py`: `WS /twilio/stream`, `POST /twilio/status`, `POST /twilio/amd`,
+`POST /demo/force_ack`. Without them the FSM's calls go through the scripted stub in `app/voice.py`.
+
+#### Websocket
+
+`ws://<host>:8000/v1/live?resident_id=` (optional; without it the socket receives every resident).
+No token. Server to client only; the server sends `{"t":"ping"}` after 25 s of client silence and
+discards anything the client sends. One process, one dict of sockets; Redis pub/sub the day there is
+a second worker.
 
 ```jsonc
-{"t":"alert.opened","alert":{...},"resident_id":"res_eleanor"}
-{"t":"alert.ladder","alert_id":"alr_…","step":"calling_contact_1","at":"…","detail":"Calling Priya"}
-{"t":"alert.voice","alert_id":"alr_…","speaker":"agent"|"resident","text":"Are you okay?"}  // live transcript
-{"t":"alert.closed","alert_id":"alr_…","resolution":"ok","acked_by":"contact_1"}
-{"t":"location.changed","resident_id":"res_eleanor","zone":"bathroom","label":"Bathroom",
- "since":"…","confidence":0.84,"method":"ble","from_zone":"hallway"}          // STAFF ONLY
-{"t":"location.dwell","resident_id":"…","zone":"bathroom","dwell_s":2400,"expected_p95_s":360,"escalating":true}  // STAFF ONLY
-{"t":"presence.changed","resident_id":"res_eleanor","presence":"out","since":"…"}  // family + staff
-{"t":"profile.updated","resident_id":"…","profile_rev":4,"impact_g_soft":2.9}     // staff: walking-profile readout (§8.7)
-{"t":"event.new","event":{...}}                        // filtered: only β + alertable types; family never gets room-level types
-{"t":"resident.state","resident_id":"…","state":"attention","reason":"steps_day low"}
+{"t":"event.new","event":{...}}                 // every emit(), every type, NOT family-filtered
+{"t":"alert.update","alert":{...}}              // every FSM transition, ack, resolve; same shape as GET /alerts/{id}
+{"t":"presence.update","resident_id":"…","presence":{...}}   // observation, heartbeat change, pause, resume, memory delete
+{"t":"camera.monitor","camera_id":"…","resident_id":"…", ...tick}   // flat: the tick's fields spread into the envelope
+{"t":"ping"}
 ```
 
-`location.changed` is pushed to **staff sockets only** the moment the HMM commits (§7.3), which is what
-makes the staff floor view feel alive rather than polled. Family sockets get `presence.changed`
-(home/out) instead (D-001). It is also the highest-volume message on the socket, so it is the first thing
-we throttle if the demo machine struggles: coalesce to one per resident per 10 s.
+`alert.update` is skipped entirely when no socket is connected, so the ladder never pays for shaping a
+message nobody reads. There is no coalescing; the PRD's "throttle `location.changed` to one per resident
+per 10 s" has nothing to throttle because that message does not exist.
+
+#### Specified, not built
+
+Kept so the gap is visible. None of the following is in the code:
+
+- **Auth of any kind.** `Authorization: Bearer <JWT>` with `{sub, role, resident_ids}`; "`resident_id`
+  is always taken from the JWT, never trusted from the body"; `X-Band-Key` HMAC on ingest; a `token`
+  on the websocket. The path parameter is the only binding.
+- **Role-scoped responses.** "For `role: family`, no response contains a room identifier"; `/location`
+  routes "staff-only (403 for family)"; `/events` blanking `zone` for family; staff access to location
+  "is logged". The split is by route (above); nothing is logged.
+- **Family sockets get `presence.changed` (home/out), staff get `location.changed`.** One socket, one
+  message set, no role. `presence.update` is the camera lane's in-view/out-of-view, not home/out.
+- **`alert.opened`, `alert.ladder`, `alert.voice`, `alert.closed`, `location.dwell`, `profile.updated`,
+  `resident.state`** as websocket messages. Everything alert-shaped is one `alert.update` carrying the
+  full document; there is no live transcript push.
+- `GET /residents/{id}/events` with `cursor` pagination (`/timeline` with `since`+`limit` instead);
+  `GET /residents/{id}/summary` with tiles and `source_event_ids` (`/day` + `/summaries` + `/activity`
+  instead); `GET /residents/{id}/zones`; `POST /residents/{id}/fingerprint/start|stop` (renamed
+  `/survey/start|sample|stop`); `POST /residents/{id}/contacts` (`PUT`, replaces).
+- `POST /alerts/{id}/escalate_now`; `note` on ack/resolve; `downweighted` / `suppress_until` on feedback.
+- `POST /chat` with `session_id`, `GET /chat/{session_id}`, `counts`, `window`, the 20/hour rate limit.
+- `pair_code` on `/bands/pair`; `POST /devices/push-token` (`/push/register` instead);
+  `GET /admin/health` with per-service status; `/ingest/heartbeat` returning a walking profile (§8.7).
+- The `{"error": {code, message, detail}}` error envelope.
+- `DELETE /residents/{id}` cascading everything (§12.3); only `/memory` exists.
 
 ---
 
@@ -2992,7 +3094,7 @@ if not resident.consent_camera:
 | Principle | Implementation |
 |---|---|
 | The resident consents, not the family | The consent screen types **her** name and relationship. B2B: a signed form referenced by `consent_signed_by` / `consent_signed_at` |
-| Consent is per-modality | Cameras, voice calls, and RF location are three separate flags (the §3.3 DDL shows only the first two; `consent_location` is the third). **A resident can accept the band and refuse cameras** — that is the entire B2C product and it works |
+| Consent is per-modality | Cameras, voice calls, and RF location are three separate flags (the §3.3 DDL shows only the first two; `consent_location` is the third). **A resident can accept the band and refuse cameras** — that is the entire B2C product and it works. As built the resident doc carries `consent_camera`, `consent_voice` and `consent_memory` (plus `consent_signed_by`, `consent_relationship`, `consent_signed_at`); `consent_location` does not exist and RF ingest is not gated on consent. `consent_camera` gates every camera write, `consent_memory` gates facts and what the VLM is told about her; `consent_voice` is stored and not read by the FSM |
 | Consent is revocable in one tap | `/settings` → Revoke. Takes effect on the next frame, not the next deploy |
 | Cameras are never in bedrooms or bathrooms | Enforced in `zones`: `kind ∈ {bedroom, bathroom}` may only hold a **doorway** polygon (§6.6). The staff dashboard shows every camera's zone kind so a resident's family can audit it |
 | Capability, not surveillance | The `/onboard/consent` screen lists **what Dhyaan can tell you** ("that she went out this morning", "that her nights changed") and **what it cannot** ("which room she is in, who she talked to, what she looks like") |
@@ -3025,6 +3127,10 @@ What is retained:
 | Call audio | **Never recorded.** We relay it; we do not store it. The disclosure's "recording" means the transcript (D-004) | — |
 
 `DELETE /v1/residents/{id}` cascades everything and is a real endpoint, not a roadmap item.
+**Specified, not built.** What exists is `DELETE /v1/residents/{id}/memory` (`API_CONTRACT_V3.md`),
+which really deletes `profile_facts`, `observations`, every `source: "camera"` event, `appearance` and
+`usual_spots`, scoped by `profile` / `camera` / `all`, and refuses unless the body's `confirm` is her
+display name. Band events, RF history, alerts, calls and the resident row itself have no delete route.
 
 ### 12.4 What the family can and cannot see
 
@@ -3034,7 +3140,7 @@ Margaret her son can never see.
 
 | Family (Priya) sees | Family never sees |
 |---|---|
-| Whether she is **home or out**, and when she left and came back | **Which room she is in** — not live, not historical, not as a dwell chart. Enforced in the API by role (§10.5), not just the UI |
+| Whether she is **home or out**, and when she left and came back | **Which room she is in** — not live, not historical, not as a dwell chart. Enforced in the API by route shape, not by role (there are no roles, §10.5): the family routes (`/activity`, `/presence`, `/chat`, the monitor tick) strip rooms unconditionally, and the room-bearing routes (`/timeline`, `/location`, `/location/history`, `/day`, `event.new` on the socket) are open to any caller. The app decides which it calls |
 | Activity from the band: steps walked, up at night (a count), active or still | A map, a dot, a floor plan, a per-room timeline |
 | Deviations from Eleanor's own baseline — next morning, as one sentence, and night changes only after **two** unusual nights | `unsteady_gait`, `gait_profile_shift` — **staff-only**, and never worded medically |
 | The voice-call transcript of any alert call that reached her | Any audio recording (none is stored) |

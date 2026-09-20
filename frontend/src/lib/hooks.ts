@@ -98,10 +98,9 @@ export const useCameraMonitor = (cameraId: string | undefined) =>
 /**
  * Teach the session what the server calls her.
  *
- * The store opens on a placeholder ("Eleanor", the seed's one resident) and
- * every screen that greets her by name would keep showing it for a different
- * resident. This asks the profile once the id is known and writes the real
- * name back.
+ * The store opens with no name at all, because shipping one meant the app
+ * greeted whoever the seed happened to be called. This asks the profile as
+ * soon as the resident id is known and writes the real name back.
  *
  * Mounted once, high in the tree. It renders nothing and returns nothing: a
  * screen should read `residentName` from the session, not from here.
