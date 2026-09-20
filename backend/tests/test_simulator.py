@@ -94,7 +94,7 @@ async def test_rf_simulation_produces_zone_event(client, resident, db):
     await db.fingerprints.insert_one({
         "resident_id": resident,
         "zone": "kitchen",
-        "vectors": [{"bcn-kitchen": sim.CAL["zone_rssi"]["kitchen"]}],
+        "vectors": [{"bcn-kitchen:1:1": sim.CAL["zone_rssi"]["kitchen"]}],
     })
 
     # dwell hysteresis (app/location.py COMMIT_TICKS=2) needs 2 consecutive

@@ -181,13 +181,13 @@ async def test_rf_scan_produces_zone_event(client, resident, db):
     await db.fingerprints.insert_one({
         "resident_id": resident,
         "zone": "kitchen",
-        "vectors": [{"bcn_kitchen": -50}, {"bcn_kitchen": -52}],
+        "vectors": [{"bcn_kitchen:1:1": -50}, {"bcn_kitchen:1:1": -52}],
     })
 
     scan = {
         "band_id": "band_a3f2",
         "ts": "2026-09-19T14:31:02-04:00",
-        "beacons": [{"uuid": "bcn_kitchen", "rssi": -51}],
+        "beacons": [{"uuid": "bcn_kitchen", "major": 1, "minor": 1, "rssi": -51}],
         "wifi": [],
     }
 
@@ -235,13 +235,13 @@ async def test_the_scan_is_timed_by_the_band_not_by_our_clock(client, resident, 
 
     await db.fingerprints.insert_one({
         "resident_id": resident, "zone": "bathroom",
-        "vectors": [{"bcn_bath": -50}, {"bcn_bath": -52}],
+        "vectors": [{"bcn_bath:1:1": -50}, {"bcn_bath:1:1": -52}],
     })
 
     async def scan_at(ts):
         r = await client.post("/v1/ingest/rf", json={
             "band_id": "band_a3f2", "ts": ts.isoformat(),
-            "beacons": [{"uuid": "bcn_bath", "rssi": -51}], "wifi": [],
+            "beacons": [{"uuid": "bcn_bath", "major": 1, "minor": 1, "rssi": -51}], "wifi": [],
         })
         assert r.status_code == 200, r.text
         return r.json()

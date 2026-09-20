@@ -197,7 +197,10 @@ async def _seed_fingerprint(zone: str, band_id: str) -> None:
     await d.fingerprints.update_one(
         {"resident_id": band["resident_id"], "zone": zone},
         {"$set": {"resident_id": band["resident_id"], "zone": zone,
-                   "vectors": [{f"bcn-{zone}": CAL["zone_rssi"].get(zone, -70)}]}},
+                   # Key must match what _scan_vector builds from the beacon we post
+                   # below (uuid:major:minor) or the fingerprint never matches
+                   # its own scan and the room never commits.
+                   "vectors": [{f"bcn-{zone}:1:1": CAL["zone_rssi"].get(zone, -70)}]}},
         upsert=True,
     )
 
