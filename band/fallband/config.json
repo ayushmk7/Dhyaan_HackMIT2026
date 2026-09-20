@@ -8,7 +8,7 @@
   "compat": {
     "battery_pct_placeholder": true,
     "peak_g_clamp": 20,
-    "impact_only_local_only": true
+    "impact_only_local_only": false
   },
   "heartbeat_period_s": 30,
   "imu": {

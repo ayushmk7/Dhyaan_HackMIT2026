@@ -154,6 +154,9 @@ class FallbandAgent:
             battery_pct=self.battery_pct,
         )
         log.info("FALL seq=%s peak_g=%.2f ff_ms=%s orient=%.1f → POST /band", seq, peak_g, ff_ms, orient_deg)
+        self._post_fall(seq, body)
+
+    def _post_fall(self, seq: int, body: dict) -> None:
         resp = self.uplink.post("/v1/ingest/band", body, critical=True)
         with self.lock:
             if resp and resp.get("alert_id"):
@@ -169,11 +172,33 @@ class FallbandAgent:
         self._signal_uplink()
 
     def on_impact_only(self, seq, path, peak_g, orient_deg, still_std_g, reason):
-        # A5: hub rejects impact_only today — log locally for expo ticker.
-        log.info(
-            "impact_only seq=%s path=%s peak_g=%.2f orient=%.1f reason=%s (local only until A5)",
-            seq, path, float(peak_g), float(orient_deg), reason,
+        # [claude] 2026-09-20: this used to be log-only "until A5", but the hub
+        # accepts free_fall_ms=0 fine (BandEventIn ge=0) and real falls — a slump
+        # against a wall, a pendant-worn collapse — often have no clean free-fall
+        # window at all. Detected-but-discarded was the worst option: the cancel
+        # window and Button A exist exactly to absorb the false positives this
+        # gate was afraid of. compat.impact_only_local_only=true restores the
+        # old behavior.
+        compat = (self.cfg.get("compat") or {})
+        if compat.get("impact_only_local_only"):
+            log.info(
+                "impact_only seq=%s path=%s peak_g=%.2f orient=%.1f reason=%s (local only, compat flag)",
+                seq, path, float(peak_g), float(orient_deg), reason,
+            )
+            return
+        still_ms = int((self.cfg.get("imu") or {}).get("still_window_ms", 1000))
+        body = fall_payload(
+            band_id=self.band_id,
+            peak_g=float(peak_g),
+            free_fall_ms=0,
+            post_impact_tilt_deg=float(orient_deg),
+            stillness_ms=still_ms,
+            path=int(path),
+            battery_pct=self.battery_pct,
         )
+        log.info("IMPACT->FALL seq=%s peak_g=%.2f orient=%.1f reason=%s → POST /band",
+                 seq, float(peak_g), float(orient_deg), reason)
+        self._post_fall(int(seq), body)
 
     def on_cancel(self, seq, age_ms):
         seq = int(seq)
