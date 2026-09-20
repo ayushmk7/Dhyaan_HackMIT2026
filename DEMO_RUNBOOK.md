@@ -84,6 +84,28 @@ Set in the environment before `./dev.sh`.
    `make -C backend vision-demo`; needs `ollama` + `qwen2.5vl:3b` pulled.
 4. Phone that will be "Asha's" charged and on ring.
 
+## Hard lessons from the all-nighter (read before rehearsing)
+
+- **After ANY power change to the UNO Q, wait ~2 minutes** before demoing a
+  fall: the Linux agent boots long after the chip chirps. Ready = a heartbeat
+  in the API log. Drops during the boot window are silently lost.
+- **The band is a silent sensor** — only a Movement Modulino is chained. No
+  buzzer, no cancel button on the band. The BOX, app, and phone carry all
+  alerting sound; cancel = box tap or app. (Chaining Buttons+Buzzer Modulinos
+  from the kit adds both with zero code changes, auto-detected at boot.)
+- **Demo phone: Focus/DND OFF, ringer ON.** A 5 AM rehearsal call was
+  silently swallowed by iPhone Sleep Focus.
+- **Box WiFi can drop on hotspot churn** — if its polls vanish from the API
+  log, power-cycle the box; it rejoins on boot.
+- **iOS hotspot names use a typographic apostrophe (U+2019)** — copy-paste
+  the SSID, never retype it. Hotspot needs Maximize Compatibility ON (2.4GHz).
+- **Drop physics**: free-fall + hard landing + LYING STILL afterwards. The
+  power bank must fall WITH the pendant (pocket-worn = automatic). Handling
+  bumps under ~5g no longer trigger; real drops measure 5.7-10g.
+- **Never push repo config.json to the board without re-setting hub_url**
+  (repo copy now carries the ngrok URL, but verify after any push:
+  `adb shell grep hub_url /home/arduino/ArduinoApps/fallband-app/config.json`).
+
 ## Recovery moves (fastest first)
 
 - **Call never comes**: check ngrok is up and printing the SAME domain; check
