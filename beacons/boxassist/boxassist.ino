@@ -16,6 +16,12 @@
 //    "OK - glad you're safe" screen, then back to IDLE.
 //  * WiFi down / unconfigured: stays a plain beacon, IDLE screen shows a
 //    small red dot bottom-left. Never crashes, never stops advertising.
+//  * [claude] AUDIO (added 2026-09-20): on entering ALERT the speaker plays an
+//    embedded voice prompt ("Asha, are you okay? ..."), then a soft chime every
+//    ~10 s while the alert stays open; on ack, a short pleasant confirm tone.
+//    ES8311 codec + I2S per esp-bsp pinout (see box_audio.h). If the codec or
+//    I2S init fails the sketch logs once and runs silently — audio can never
+//    take down the beacon/screen.
 
 // ---------------- VENUE CONFIG: set these before flashing ----------------
 #define WIFI_SSID   "SET_ME_AT_VENUE"      // leave as-is => beacon-only mode
@@ -37,6 +43,7 @@
 #include <vector>
 
 #include "boxassist_types.h"
+#include "box_audio.h"   // [claude] ES8311 + I2S voice/chime (see header notes)
 
 // ======================= iBeacon (copied VERBATIM from beacons/beacon.ino;
 // do NOT touch — localization dies if the frame changes) =====================
@@ -99,6 +106,9 @@ static bool     btnWasDown    = false;
 #define BTN_BOOT_PIN 0            // top "Boot" button on the S3-BOX, active-low
 #define POLL_MS      2000
 #define THANKS_MS    5000
+#define CHIME_MS     10000        // [claude] soft chime period while ALERT is open
+
+static uint32_t nextChimeAt = 0;  // [claude] next chime while in ST_ALERT
 
 static WiFiClientSecure tls;
 
@@ -155,9 +165,22 @@ static void setState(ScreenState s) {
   if (s == state) return;
   state = s;
   switch (s) {
-    case ST_IDLE:   drawIdle();  break;
-    case ST_ALERT:  drawAlert(); break;
-    case ST_THANKS: drawThanks(); thanksUntil = millis() + THANKS_MS; break;
+    case ST_IDLE:
+      drawIdle();
+      boxAudioStop();                       // [claude] alert cleared elsewhere -> hush
+      break;
+    case ST_ALERT:
+      drawAlert();
+      boxAudioPlayVoice();                  // [claude] spoken prompt once...
+      nextChimeAt = millis() + CHIME_MS;    // [claude] ...then chimes every ~10 s
+      break;
+    case ST_THANKS:
+      drawThanks();
+      thanksUntil = millis() + THANKS_MS;
+      boxAudioStop();
+      boxAudioPlayConfirm();                // [claude] pleasant ack tone, played out
+      while (boxAudioBusy()) boxAudioPump(); //          fully (~0.45 s) before the
+      break;                                 //          blocking ack POST starts
   }
   Serial.printf("state -> %d\n", (int)s);
 }
@@ -240,6 +263,15 @@ void setup() {
   // 1) Beacon first — it must run no matter what else fails.
   startBeacon();
 
+  // [claude] 1.5) ES8311 codec config over I2C. Must run BEFORE lcd.init():
+  // the codec shares the I2C bus (GPIO8/18) with the touch controller and
+  // LovyanGFX drives that bus with its own driver — box_audio.h uses Wire and
+  // releases the peripheral (Wire.end) before LGFX claims it. On failure we
+  // log once and stay silent; nothing else is affected.
+  if (!boxAudioCodecInit()) {
+    Serial.println("ES8311 init failed - running without audio");
+  }
+
   // 2) Display (autodetect; a failure leaves us headless but alive).
   //    NOTE: on the original S3-BOX GPIO0 is also the panel's SPI MISO and the
   //    autodetect reads the panel ID over it, so claim the BOOT button pin
@@ -252,6 +284,19 @@ void setup() {
     drawIdle();
   } else {
     Serial.println("display init failed — running headless (button-only)");
+  }
+
+  // [claude] 2.5) I2S out + power amp. The only audio pin that differs between
+  // the original S3-BOX and the BOX-3 is WS/LRCK (47 vs 45, per esp-bsp), so
+  // pick it from LovyanGFX's board autodetect; headless fallback = original.
+  if (boxCodecOk) {
+    int ws = AUDIO_I2S_WS_BOX;
+    if (haveDisplay && lcd.getBoard() == lgfx::board_t::board_ESP32_S3_BOX_V3) {
+      ws = AUDIO_I2S_WS_BOX3;
+    }
+    if (!boxAudioI2SInit(ws)) {
+      Serial.println("I2S init failed - running without audio");
+    }
   }
 
   // 3) WiFi, non-blocking. Placeholder SSID => beacon-only mode.
@@ -272,8 +317,21 @@ void setup() {
 void loop() {
   uint32_t now = millis();
 
+  // [claude] Keep the speaker fed (no-op when idle/audio-less). While a clip
+  // or tone is playing we also defer the blocking HTTP poll below so a slow
+  // request can't put a gap in the middle of the spoken prompt — the voice
+  // clip is 3.4 s, so at worst one poll cycle slips.
+  boxAudioPump();
+
+  // [claude] Soft reminder chime every ~10 s while the alert stays open.
+  if (state == ST_ALERT && !boxAudioBusy() && (int32_t)(now - nextChimeAt) >= 0) {
+    boxAudioPlayChime();
+    nextChimeAt = now + CHIME_MS;
+  }
+
   // Poll backend every 2 s (in IDLE and ALERT; not during the THANKS splash).
-  if (wifiConfigured && state != ST_THANKS && (int32_t)(now - nextPollAt) >= 0) {
+  if (wifiConfigured && state != ST_THANKS && !boxAudioBusy() /*[claude]*/ &&
+      (int32_t)(now - nextPollAt) >= 0) {
     nextPollAt = now + POLL_MS;
     bool wasOnline = online;
     int r = pollAlerts();

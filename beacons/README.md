@@ -82,3 +82,49 @@ arduino-cli upload -p /dev/cu.usbmodemXXXX --fqbn esp32:esp32:esp32s3box beacons
 Status dot (bottom-left, IDLE only): green = polling OK, red = offline.
 Backend URL and the `dev-key-change-me` bearer are `#define`s near the top if
 the ngrok tunnel name changes.
+
+### boxassist audio (voice prompt + chime)
+
+<!-- [claude] agent-added (2026-09-20) -->
+
+The kitchen box now speaks: entering ALERT plays an embedded voice prompt
+("Asha, are you okay? Tap the screen if you're okay."), a soft chime repeats
+every ~10 s while the alert stays open, and acking plays a short confirm tone.
+No new libraries; audio lives in `boxassist/box_audio.h` (ES8311 + I2S, pins
+verified against espressif/esp-bsp), `es8311_min.h` (trimmed codec driver) and
+`voice_prompt.h` (16 kHz mono PCM, ~106 KB, generated with macOS `say -v
+Samantha` + `afconvert`). If the codec/I2S init fails the box logs once and
+runs silently — audio can never take down the beacon or screen. Volume is the
+`AUDIO_VOLUME_PCT` define in `box_audio.h` (70 = moderate).
+
+Unverified-on-hardware assumptions (compile-only so far): ES8311 register
+sequence at MCLK=256*fs, WS pin picked by LovyanGFX board autodetect
+(original=47, BOX-3=45), and the Wire-then-LGFX I2C bus handoff.
+
+## bathhelp — DevKitC bathroom beacon + HELP button
+
+<!-- [claude] agent-added (2026-09-20) -->
+
+`bathhelp/bathhelp.ino` REPLACES `beacon.ino` on the bathroom DevKitC: identical
+iBeacon frame (minor=2, byte-identical copy), plus when Wi-Fi is configured:
+
+* polls `GET /v1/alerts?state=open` every 2 s — the onboard WS2812 pulses red
+  while an alert is open, soft dim green otherwise (goes green on the poll
+  after an ack). Beacon-only mode (placeholder SSID) = dim white breathing.
+* holding **BOOT** >= 1.5 s = HELP: POSTs `/v1/ingest/band` with
+  `{"band_id":"band_unoq01","type":"button_pressed","ts":"<ISO8601 UTC>","battery_pct":100}`
+  (matches the backend `BandEventIn` schema exactly). Blue triple-flash = POST
+  went out; red/blue alternating = HTTP failure. The backend currently only
+  LOGS `button_pressed`; the pending backend hook will open the alert ladder —
+  no firmware change needed then. `band_unoq01` must be registered in the
+  backend `bands` collection or the POST 404s (`scripts/seed.py` only seeds
+  `band_a3f2`).
+
+Venue config: same `WIFI_SSID` / `WIFI_PASS` defines at the top of the sketch.
+`LED_PIN` is 48 (some DevKitC v1.1 boards route the WS2812 to 38 instead).
+
+Flash (replaces the `flash.sh ... 2` step for the bathroom board):
+```sh
+arduino-cli compile --fqbn esp32:esp32:esp32s3 beacons/bathhelp
+arduino-cli upload -p /dev/cu.usbmodemXXXX --fqbn esp32:esp32:esp32s3 beacons/bathhelp
+```
