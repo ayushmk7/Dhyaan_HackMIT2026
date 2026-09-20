@@ -107,6 +107,12 @@ static uint32_t lastBtnMs     = 0;
 static bool     btnWasDown    = false;
 
 #define BTN_BOOT_PIN 0            // top "Boot" button on the S3-BOX, active-low
+// [claude] 2026-09-20: DISABLED by default. On the original S3-BOX GPIO0 is
+// ALSO the panel's SPI MISO — the display drives the line and it reads LOW,
+// i.e. "pressed", forever. Live result: the box silently acked every alert
+// ~10s after it opened (by=box_kitchen, nobody touching it). Touch is the
+// confirm input; enable this only on hardware where GPIO0 is actually free.
+#define USE_BOOT_BUTTON 0
 #define POLL_MS      2000
 #define THANKS_MS    5000
 #define CHIME_MS     10000        // [claude] soft chime period while ALERT is open
@@ -242,7 +248,11 @@ static bool postAck(const String& alertId) {
 // ------------------------------- inputs ------------------------------------
 static bool confirmPressed() {
   // Physical top BOOT button (active-low), edge-triggered + debounced.
+#if !USE_BOOT_BUTTON
+  bool down = false;  // [claude] GPIO0 conflicts with panel MISO — see define above
+#else
   bool down = (digitalRead(BTN_BOOT_PIN) == LOW);
+#endif
   bool fired = false;
   if (down && !btnWasDown && millis() - lastBtnMs > 300) {
     fired = true;

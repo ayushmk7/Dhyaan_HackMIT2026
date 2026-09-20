@@ -101,7 +101,11 @@ export default function Ask() {
       scrollRef={scrollRef}
       scrollProps={{
         keyboardShouldPersistTaps: 'handled',
-        onContentSizeChange: () => scrollRef.current?.scrollToEnd({ animated: true }),
+        // Follow the conversation, but never the empty state: scrolling the
+        // openers to the end shoves the hero under the header on first open.
+        onContentSizeChange: () => {
+          if (messages.length) scrollRef.current?.scrollToEnd({ animated: true });
+        },
       }}
       floatingBar={composer}
     >
