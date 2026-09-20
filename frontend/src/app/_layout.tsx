@@ -14,6 +14,7 @@ import { api } from '@/lib/api';
 import { useHydrateResident } from '@/lib/hooks';
 import { queryClient } from '@/lib/queryClient';
 import { useLive } from '@/store/live';
+import { useSession } from '@/store/session';
 import { ThemeProvider, themes } from '@/theme';
 
 SplashScreen.preventAutoHideAsync();
@@ -81,16 +82,18 @@ export default function RootLayout() {
 
   useEffect(() => { connect(); }, [connect]);
 
-  // ponytail: the real backend only ever broadcasts `alert.update` on
-  // ack/resolve (backend/app/routers/residents.py) — a brand-new alert firing
-  // (e.g. a fall) is never pushed over the socket at all today. Without this
-  // poll, a live alert would only ever surface by background/foreground
-  // cycling the app. Upgrade: have the backend broadcast on alert creation too.
+  // ponytail: a belt under the socket. Without this poll a missed push would
+  // leave a live alert unseen until the next foreground.
   const checkForOpenAlert = () => {
     api.listOpenAlerts().then((open) => {
       const live = useLive.getState();
-      if (open[0] && live.activeAlert?.id !== open[0].id) {
-        live.applyEvent({ t: 'alert.opened', alert: open[0], resident_id: open[0].resident_id });
+      // `listOpenAlerts` is facility-wide. Only the staff lane may act on
+      // that; a family phone takes its own resident's alert or nothing —
+      // otherwise it rings the alarm and offers Call 911 for a stranger.
+      const { role, residentId } = useSession.getState();
+      const mine = role === 'staff' ? open : open.filter((a) => a.resident_id === residentId);
+      if (mine[0] && live.activeAlert?.id !== mine[0].id) {
+        live.applyEvent({ t: 'alert.opened', alert: mine[0], resident_id: mine[0].resident_id });
       }
     }).catch(() => { /* next poll or the next foreground tries again */ });
   };

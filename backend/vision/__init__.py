@@ -101,6 +101,12 @@ TUNING = dict(
     # reports itself offline instead, which is the difference between the app
     # showing a frozen sentence and it saying nobody is watching.
     stall_s=float(os.getenv("STALL_S", "5")),
+    # Consecutive pose reads that must say "on the floor" before the band does.
+    # See the comment in gate.posture_band: a single frame's answer ran at a 5%
+    # false rate against a morning of someone sitting at a desk, and `wide` is
+    # the band that opens an alert. Three reads is ~0.2 s at this frame rate —
+    # nothing against a real fall, everything against a bad hip estimate.
+    pose_wide_run=int(os.getenv("POSE_WIDE_RUN", "3")),
     # Floor between two detector-change posts. posture_band flips at the
     # landmark visibility boundary (a desk, a table edge, a blanket) and
     # without this the flap posts every frame - ~15 writes a second, forever.
@@ -115,9 +121,15 @@ TUNING = dict(
 # view, and with vlm_every_n=1 that is also how often the VLM writes a
 # sentence. At 15 s the model spoke about once a minute and its output was
 # drowned 45:1 by the detector's templates - measured across a whole run.
+# `on_person_appear_gap_s` has to come down with `absent_after_s`: they are the
+# two halves of one question. At 12/30 a demo re-entry is declared absent after
+# 12 s and then, 15 s later, is not far enough away to count as an appear - so
+# she walks back in and nothing says so, and the arrival is spent for good.
+# Keeping them equal makes every absence the demo can show a reportable return.
 DEMO = dict(min_gap_s=int(os.getenv("MIN_GAP_S", "4")),
             on_dwell_s=int(os.getenv("ON_DWELL_S", "8")),
-            max_batch_wait_s=15, absent_after_s=12)
+            max_batch_wait_s=15, absent_after_s=12,
+            on_person_appear_gap_s=12)
 
 # A VLM's vision encoder cost scales with pixels, and this is the single
 # biggest latency lever left. 448x252 is still ample to see a person, a table

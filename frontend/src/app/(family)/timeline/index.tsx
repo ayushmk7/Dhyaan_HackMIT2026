@@ -24,7 +24,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { Pressable, RefreshControl, Share } from 'react-native';
+import { Pressable, RefreshControl, Share, View } from 'react-native';
 import {
   Btn, Card, Chip, EmptyState, Entrance, ErrorState, Glass, IconBtn, KindTag, LoadingState, Marquee,
   Row, RowGroup, Screen, Txt,
@@ -76,6 +76,44 @@ const familySentence = (item: ActivityItem): string => {
   return displaySentence(item.sentence);
 };
 
+/**
+ * Which part of the day a moment falls in. These are the landmarks the list
+ * is grouped under: consecutive rows from the same part share one heading,
+ * so a scroll always says where in the day it is. The small hours are
+ * "overnight" and not "night", because a day that runs past midnight would
+ * otherwise carry the same heading at both ends.
+ */
+type Part = keyof typeof copy.parts;
+const partOf = (ts: string): Part => {
+  const h = new Date(ts).getHours();
+  if (h < 5) return 'overnight';
+  if (h < 12) return 'morning';
+  if (h < 17) return 'afternoon';
+  if (h < 21) return 'evening';
+  return 'night';
+};
+
+/** The list in runs: newest first, each run one part of the day. */
+const groupByPart = (list: ActivityItem[]): { part: Part; items: ActivityItem[] }[] => {
+  const groups: { part: Part; items: ActivityItem[] }[] = [];
+  for (const item of list) {
+    const part = partOf(item.ts);
+    const last = groups[groups.length - 1];
+    if (last && last.part === part) last.items.push(item);
+    else groups.push({ part, items: [item] });
+  }
+  return groups;
+};
+
+/** The time gutter: wide enough for "12:42 PM" in the mono, and the same on every row. */
+const TIME_COL = sp(18);
+
+/**
+ * One row: the time in a fixed gutter on the left, the sentence beside it,
+ * the kind under the sentence. The gutter is what makes the list scannable:
+ * the eye runs down one column of times and stops where it wants to, and
+ * every sentence starts on the same vertical line.
+ */
 function ItemRow({ item, onPress }: { item: ActivityItem; onPress?: () => void }) {
   return (
     <Pressable
@@ -87,17 +125,24 @@ function ItemRow({ item, onPress }: { item: ActivityItem; onPress?: () => void }
       }
       onPress={onPress}
       disabled={!onPress}
-      style={({ pressed }) => ({ paddingVertical: sp(4), opacity: pressed ? 0.6 : 1 })}
+      style={({ pressed }) => ({ paddingVertical: sp(3.5), opacity: pressed ? 0.6 : 1 })}
     >
-      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={3}>
-        <Txt kind="body" style={{ flex: 1 }}>{familySentence(item)}</Txt>
-        {/* Tabular, so a column of times reads as a column and not as ragged prose. */}
-        <Txt kind="stamp" tone="muted">{timeOf(item.ts)}</Txt>
-      </Row>
-      {/* The kind is the one mark a row keeps: it is the category in a dense
-          list, and it is the only thing that tells a sighting from a pattern. */}
-      <Row style={{ marginTop: sp(2) }}>
-        <KindTag kind={item.kind} />
+      <Row style={{ alignItems: 'flex-start' }} gap={3}>
+        {/* Tabular, so a column of times reads as a column and not as ragged
+            prose. The half-step of top padding sets it on the sentence's
+            first line rather than above it. */}
+        <Txt kind="stamp" tone="muted" style={{ width: TIME_COL, paddingTop: sp(0.5) }}>
+          {timeOf(item.ts)}
+        </Txt>
+        <View style={{ flex: 1 }}>
+          <Txt kind="body">{familySentence(item)}</Txt>
+          {/* The kind is the one mark a row keeps: it is the category in a
+              dense list, and it is the only thing that tells a sighting from
+              a pattern. */}
+          <Row style={{ marginTop: sp(2) }}>
+            <KindTag kind={item.kind} />
+          </Row>
+        </View>
       </Row>
     </Pressable>
   );
@@ -193,7 +238,9 @@ export default function HerDay() {
     setWriting(true);
     setWriteError(null);
     try {
-      await api.rollup();
+      // The day on screen, not today: paging back and tapping this used to
+      // run the rollup over today and then label the result as that past day's.
+      await api.rollup(residentId, date);
       setWroteFor(date);
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['summaries', residentId] }),
@@ -281,7 +328,11 @@ export default function HerDay() {
   }
 
   const filter = FILTERS[filterIdx];
-  const shown = rows.filter((i) => filter.match(i.type));
+  // Newest first, then in runs by part of the day. The feed already arrives
+  // newest first; the sort is here so the runs cannot interleave if it ever
+  // doesn't.
+  const shown = rows.filter((i) => filter.match(i.type)).sort((a, b) => (a.ts < b.ts ? 1 : -1));
+  const groups = groupByPart(shown);
 
   return (
     <Screen native wash refreshControl={refreshControl}>
@@ -350,25 +401,40 @@ export default function HerDay() {
             {total === 0 ? copy.noActivity(isToday) : copy.nothingUnder(filter.label, isToday)}
           </EmptyState>
         ) : (
-          <RowGroup>
-            {shown.map((item) => (
-              <ItemRow
-                key={item.id}
-                item={item}
-                // Only an observation has an event behind it to open. A pattern
-                // line and a told fact have no timeline entry, so they get no
-                // tap target rather than one that leads nowhere.
-                onPress={
-                  item.kind === 'observed'
-                    ? () => router.push({
-                      pathname: '/(family)/timeline/[eventId]',
-                      params: { eventId: item.id },
-                    })
-                    : undefined
-                }
-              />
-            ))}
-          </RowGroup>
+          // One plate per part of the day, under a quiet heading, with air
+          // between them. The heading is the landmark you scroll by; the
+          // gap between plates is what stops the day reading as one wall.
+          groups.map((g, gi) => (
+            <View key={`${g.part}-${g.items[0].id}`} style={{ marginTop: gi === 0 ? 0 : sp(6) }}>
+              <Txt
+                kind="tag"
+                tone="muted"
+                accessibilityRole="header"
+                style={{ marginBottom: sp(2), marginLeft: sp(4) }}
+              >
+                {copy.parts[g.part]}
+              </Txt>
+              <RowGroup>
+                {g.items.map((item) => (
+                  <ItemRow
+                    key={item.id}
+                    item={item}
+                    // Only an observation has an event behind it to open. A
+                    // pattern line and a told fact have no timeline entry, so
+                    // they get no tap target rather than one that leads nowhere.
+                    onPress={
+                      item.kind === 'observed'
+                        ? () => router.push({
+                          pathname: '/(family)/timeline/[eventId]',
+                          params: { eventId: item.id },
+                        })
+                        : undefined
+                    }
+                  />
+                ))}
+              </RowGroup>
+            </View>
+          ))
         )}
       </Entrance>
     </Screen>

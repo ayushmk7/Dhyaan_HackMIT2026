@@ -168,9 +168,11 @@ export default function Ask() {
                 <View style={{ marginTop: sp(4), gap: sp(2) }}>
                   <Txt kind="tag" tone="muted">{copy.sources}</Txt>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: sp(2) }}>
-                    {m.citations.map((c) => (
+                    {/* Two `told` or `pattern` citations in one answer both
+                        carry `id: ''`, so kind+id is not unique. Position is. */}
+                    {m.citations.map((c, ci) => (
                       <CitationChip
-                        key={`${c.kind}_${c.id}`}
+                        key={`${c.kind}_${c.id}_${ci}`}
                         citation={c}
                         onPress={
                           c.event_ids[0]

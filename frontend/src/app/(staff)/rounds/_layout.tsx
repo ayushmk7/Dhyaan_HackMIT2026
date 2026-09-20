@@ -23,10 +23,11 @@ export default function RoundsStack() {
         headerTintColor: t.accent,
         // Off the scale, not a literal: a native header is drawn by UIKit and
         // must be handed a number, but the number still comes from the type
-        // system so it moves when the scale does.
+        // system so it moves when the scale does. The same pair as TabStack
+        // (title size, label weight) so the app has one title size.
         headerTitleStyle: {
           color: t.ink,
-          fontSize: typeScale.label.fontSize,
+          fontSize: typeScale.title.fontSize,
           fontWeight: typeScale.label.fontWeight,
         },
         contentStyle: { backgroundColor: t.paper },

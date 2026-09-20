@@ -234,6 +234,24 @@ class _TwilioVoice:
 
         await asyncio.to_thread(outbound.hangup, call_sid)
 
+    async def speak_final_escalation(self, call_sid: str, resident_name: str,
+                                     address: str) -> None:
+        # alerts.py::_final_escalation calls this on every contact leg of the
+        # last rung. The stub in app/voice.py has it; this class did not, so with
+        # TWILIO_ACCOUNT_SID + DEEPGRAM_API_KEY set the real ladder died with an
+        # AttributeError the moment it reached ESCALATED_FINAL — on contact 1,
+        # before anyone else was dialled.
+        #
+        # ponytail: a log line, not speech. The leg is already a live
+        # <Connect><Stream> to the agent, and the only way to say something over
+        # it is to update the call with new TwiML, which ends the stream and cuts
+        # the agent off mid-sentence. The §5.5 `contact_final` prompt already
+        # greets by name. Ceiling: the contact hears the agent but never hears
+        # the address. Lift it by passing `address` through place_call's
+        # customParameters once dhyaan/voice/settings.py reads one.
+        log.info("final escalation on %s: %s at %s", call_sid, resident_name,
+                 address or "(no address on file)")
+
 
 def install() -> None:
     """Point the FSM's outbound calls at real Twilio. Call once at startup."""

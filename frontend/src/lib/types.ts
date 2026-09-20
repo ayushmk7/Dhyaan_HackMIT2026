@@ -63,6 +63,13 @@ export interface KEvent {
   derived_from?: string[];
   supersedes?: string | null;
   created_at?: string;
+  // GET /timeline is family-scrubbed server-side (`_family_item`), so a row
+  // from it carries a ready `sentence` and NO `embedding_text`, `zone` or
+  // `payload`. The mocks still send the full shape, which is why both are
+  // optional and why anything rendering a row reads `sentence` first.
+  sentence?: string;
+  kind?: 'observed' | 'pattern' | 'told';
+  message?: string;   // family_note only: her own words, to quote
 }
 
 export type AlertKind = 'fall' | 'baseline_deviation' | 'inactivity' | 'sos' | 'bathroom';

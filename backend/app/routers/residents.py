@@ -20,10 +20,12 @@ from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 
 from . import live
+from .camera import _family_item
 from ..baseline import COUNT, FEATURE_META
 from .. import config as cfg
 from ..db import db
 from ..events import EVENT_TYPES, emit, recent
+from ..rag import FAMILY_EXCLUDED_TYPES
 
 router = APIRouter(prefix="/v1", tags=["app"])
 
@@ -159,7 +161,15 @@ async def timeline(
         if bad:
             raise HTTPException(422, f"unknown event type(s): {bad}")
     events = await recent(resident_id, limit=limit, types=type_list, since_epoch=since)
-    return [_ser(e) for e in events]  # `recent()` already sorts newest-first
+    # D-001: this is a family surface and it was shipping whereabouts — `zone` on
+    # the row, and raw `embedding_text` prose like "Asha moved into the
+    # bathroom". `/activity` and chat both scrub; this did not, and 183 of 200
+    # seeded rows carried a room. Same scrubber, not a second one: `_family_item`
+    # drops zone/evidence/posture/movement and runs the sentence through
+    # `rag.scrub_rooms`, and FAMILY_EXCLUDED_TYPES keeps whole categories
+    # (zone_entered, ladder chatter) out of the feed entirely.
+    return [_family_item(e) for e in events  # `recent()` already sorts newest-first
+            if e["type"] not in FAMILY_EXCLUDED_TYPES]
 
 
 @router.get("/residents/{resident_id}/location")

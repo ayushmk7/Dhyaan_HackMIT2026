@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException
 from ulid import ULID
 
-from . import presence
+from . import presence, rag
 from .db import db
 from .events import emit
 
@@ -232,8 +232,15 @@ async def delete_memory(resident_id: str, scope: str, confirm: str,
     if scope in ("camera", "all"):
         out["observations"] = (await d.observations.delete_many(
             {"resident_id": resident_id})).deleted_count
+        # Not just source=="camera": the rollups derived FROM the camera carry
+        # the same narrative and its embedding, so deleting only the raw rows
+        # left `daily_summary` telling chat about a day the family had just
+        # asked us to forget. Alert/ladder rows are also source=="derived" and
+        # are deliberately kept — they are the call record, not the memory.
         out["camera_events"] = (await d.events.delete_many(
-            {"resident_id": resident_id, "source": "camera"})).deleted_count
+            {"resident_id": resident_id,
+             "$or": [{"source": "camera"},
+                     {"type": {"$in": sorted(rag.PATTERN_TYPES)}}]})).deleted_count
         await d.cameras.update_many({"resident_id": resident_id},
                                     {"$set": {"presence": {}}})
         presence.reset()

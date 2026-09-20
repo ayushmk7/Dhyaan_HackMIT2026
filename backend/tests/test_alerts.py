@@ -176,3 +176,79 @@ async def test_restart_leaves_closed_alerts_alone(db, resident, monkeypatch):
     fresh = await db.alerts.find_one({"_id": alert["_id"]})
     assert fresh["state"] == "CANCELLED"
     assert await _call_events(db, resident) == []
+
+
+async def test_a_failing_action_does_not_strand_the_ladder(db, resident, monkeypatch):
+    """The action is where the real world is, and the clock must not live inside it.
+
+    `_schedule()` used to be the last statement of `_call_resident` /
+    `_call_contact`, so anything that raised first — Twilio down, a contact row
+    with no `phone_e164` — aborted the action before it armed the next rung. The
+    state was already written and the timer task's `except Exception: print(...)`
+    ate the error, so the alert sat in CALLING_RESIDENT forever: the app said
+    "Calling her now." indefinitely and contact 2 was never dialled.
+    """
+    monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 0.05)
+    monkeypatch.setattr(alerts, "RESIDENT_RESPONSE_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(cfg, "CONTACT_WAIT_S", 0.05)
+
+    async def _twilio_is_down(*a, **kw):
+        raise RuntimeError("twilio is down")
+
+    monkeypatch.setattr(alerts.voice, "place_call", _twilio_is_down)
+
+    alert = await alerts.open_alert(resident, "evt_boom", kind="fall", severity="critical")
+    await _wait_for_state(db, alert["_id"], "CALLING_RESIDENT")
+    # Every rung below this one is reached only if the clock survived the raise.
+    await _wait_for_state(db, alert["_id"], "CALLING_CONTACT_1")
+    await _wait_for_state(db, alert["_id"], "CALLING_CONTACT_2")
+
+
+async def test_ack_beats_a_firing_timer_to_one_transition(db, resident, monkeypatch):
+    """Two triggers, one alert, one transition.
+
+    The firing timer pops itself from `_timers` before it applies, so an ack
+    landing in that gap cancels nothing and both sides read the same state. Ack
+    wrote ACKNOWLEDGED and the timer then wrote CALLING_CONTACT_1 on top of it —
+    the family got dialled for an alert a human had already taken.
+    """
+    monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 5)  # long: we fire it by hand
+    alert = await alerts.open_alert(resident, "evt_race", kind="fall", severity="critical")
+
+    stale = await alerts._get(alert["_id"])   # what the timer read before ack landed
+    acked = await alerts.ack(alert["_id"], by="priya", channel="app")
+    assert acked["state"] == "ACKNOWLEDGED"
+
+    async def stale_get(alert_id):
+        return dict(stale)
+
+    monkeypatch.setattr(alerts, "_get", stale_get)
+    await alerts._apply(alert["_id"], "cancel_timeout")
+
+    fresh = await db.alerts.find_one({"_id": alert["_id"]})
+    assert fresh["state"] == "ACKNOWLEDGED"
+    assert await _call_events(db, resident) == []
+
+
+async def test_restart_rearms_an_alert_waiting_on_a_classification(db, resident, monkeypatch):
+    """CLASSIFYING had no clock and no entry in `_pending_timer`.
+
+    She picked up, the process restarted — which under `uvicorn --reload` is
+    every file save — and `_rearm_pending` skipped the alert because the map had
+    no row for the state it was in. A live fall stopped escalating in silence and
+    never reached a terminal state.
+    """
+    monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 0.05)
+    monkeypatch.setattr(alerts, "RESIDENT_RESPONSE_TIMEOUT_S", 30)
+    monkeypatch.setattr(cfg, "CONTACT_WAIT_S", 30)
+    alert = await alerts.open_alert(resident, "evt_classify", kind="fall", severity="critical")
+    await _wait_for_state(db, alert["_id"], "CALLING_RESIDENT")
+
+    await alerts._apply(alert["_id"], "connected")  # she answered; nobody classifies
+    assert (await db.alerts.find_one({"_id": alert["_id"]}))["state"] == "CLASSIFYING"
+
+    alerts.stop_timers()
+    monkeypatch.setattr(alerts, "RESIDENT_RESPONSE_TIMEOUT_S", 0.05)
+    alerts.start_timers()
+
+    await _wait_for_state(db, alert["_id"], "CALLING_CONTACT_1")

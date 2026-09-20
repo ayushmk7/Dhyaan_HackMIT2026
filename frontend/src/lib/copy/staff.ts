@@ -111,6 +111,7 @@ export const triage = {
     familyApp: 'Family app',
     nothingCrossed: 'The event went in, but nothing crossed an alert threshold.',
     backendError: 'Couldn’t reach the backend.',
+    ackFailed: 'That didn’t go through. Nobody has been marked as on it.',
   },
 } as const;
 
@@ -536,5 +537,10 @@ export const onboard = {
     saveError: 'Couldn’t save that to her home hub.',
     nothingSaved: 'Nothing was saved. Your answers are still on this phone.',
     skipWithoutSaving: 'Open the app without saving',
+    // The profile PUT landed and the facts POST didn’t. Saying "nothing was
+    // saved" here would be a plain untruth about a resident who already exists
+    // on the hub, with her consent on file.
+    notesNotSaved: 'Her details and consent are saved. Her notes are not, and are still on this phone.',
+    skipWithoutNotes: 'Open the app without her notes',
   },
 } as const;

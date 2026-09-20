@@ -12,16 +12,32 @@ type Listener = (msg: WsEnvelope) => void;
 const BASE_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 15_000;
 
+// backend/app/routers/live.py sends a keepalive every 25 s, so a socket that
+// has said nothing for this long is not quiet, it is gone. A half-open socket
+// (wifi dropped, NAT forgot the flow, phone slept) never fires onclose at all,
+// and the status this class reports is the only thing standing between the
+// family and a screen that looks live over a connection that has not carried a
+// byte in minutes.
+// ponytail: a server that stays up but stops pinging gets reconnected every
+// 45 s. Harmless, and cheaper than a client ping the server must parse.
+const SILENCE_MS = 45_000; // two missed keepalives, with room for one slow LAN
+
 export class LiveClient {
   private ws: WebSocket | null = null;
   private readonly listeners = new Set<Listener>();
   private attempt = 0;
   private closedByUser = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private silenceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // `residentId` mirrors the query param live.py accepts to scope the feed;
   // omit it to get every resident's events, same as store/live.ts does today.
-  constructor(private readonly residentId?: string) {}
+  // `onStatus` is how the socket's state leaves this class at all: the store
+  // writes it straight through, and a screen says so.
+  constructor(
+    private readonly residentId?: string,
+    private readonly onStatus?: (open: boolean) => void,
+  ) {}
 
   connect(): void {
     this.closedByUser = false;
@@ -29,7 +45,16 @@ export class LiveClient {
   }
 
   private url(): string {
-    return this.residentId ? `${WS_URL}&resident_id=${encodeURIComponent(this.residentId)}` : WS_URL;
+    // WS_URL carries no query string of its own (config.ts: no token, no
+    // params), so the first param is a `?`. This was an `&`, which would have
+    // handed live.py a param named `&resident_id` the day anything passed one.
+    return this.residentId ? `${WS_URL}?resident_id=${encodeURIComponent(this.residentId)}` : WS_URL;
+  }
+
+  /** Any frame is proof of life; the deadline moves out. */
+  private heard(): void {
+    if (this.silenceTimer) clearTimeout(this.silenceTimer);
+    this.silenceTimer = setTimeout(() => this.ws?.close(), SILENCE_MS);
   }
 
   private scheduleReconnect(): void {
@@ -46,8 +71,9 @@ export class LiveClient {
     try {
       const ws = new WebSocket(this.url());
       this.ws = ws;
-      ws.onopen = () => { this.attempt = 0; };
+      ws.onopen = () => { this.attempt = 0; this.heard(); this.onStatus?.(true); };
       ws.onmessage = (e) => {
+        this.heard();
         let msg: WsEnvelope;
         try {
           msg = JSON.parse(String(e.data));
@@ -59,9 +85,12 @@ export class LiveClient {
       ws.onerror = () => { /* onclose always follows; reconnect happens there */ };
       ws.onclose = () => {
         this.ws = null;
+        if (this.silenceTimer) clearTimeout(this.silenceTimer);
+        this.onStatus?.(false);
         this.scheduleReconnect();
       };
     } catch {
+      this.onStatus?.(false);
       this.scheduleReconnect();
     }
   }
@@ -75,6 +104,8 @@ export class LiveClient {
     this.closedByUser = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+    if (this.silenceTimer) clearTimeout(this.silenceTimer);
+    this.silenceTimer = null;
     this.ws?.close();
     this.ws = null;
   }

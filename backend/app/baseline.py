@@ -358,11 +358,13 @@ async def _emit_deviation(resident_id, feature, value, result, date_local, resid
     name = (resident_doc or {}).get("display_name", "Resident")
     text = _embedding_text(name, feature, value, result, date_local)
     payload = {
+        # First, not last: `result` carries its own undamped "severity", and
+        # spreading it over the top put the rate limiter back where it started.
+        **result,
         "feature": feature, "value": value, "date_local": date_local,
         "severity": severity, "raw_severity": result["severity"],
         # What the family reads. `_family_item` prefers this over embedding_text.
         "narrative": _family_text(name, feature, value, result, date_local),
-        **result,
     }
     return await emit(
         resident_id=resident_id, source="derived", type="baseline_deviation",
@@ -413,7 +415,10 @@ def _derive_features(docs, tz) -> dict:
         if t in MOTION_TYPES and 8 <= dt_local.hour < 22:
             motion_epochs.append(d["ts_epoch"])
         if t == "zone_dwell":
-            secs = float((d.get("payload") or {}).get("duration_s", 0) or 0)
+            # location.py writes `dwell_s`; reading `duration_s` alone published
+            # three hard-zero features that could never deviate.
+            p = d.get("payload") or {}
+            secs = float(p.get("dwell_s", p.get("duration_s", 0)) or 0)
             zone = d.get("zone") or "unknown"
             zone_seconds[zone] = zone_seconds.get(zone, 0.0) + secs
 
@@ -445,6 +450,12 @@ async def rollup(resident_id: str, date_local: str) -> dict:
     docs = await db().events.find({
         "resident_id": resident_id, "ts_epoch": {"$gte": start_epoch, "$lt": end_epoch},
     }).to_list(length=5000)
+
+    if not docs:
+        # A day we saw nothing is an outage, not a day she did not eat.
+        # meal_count=0 against lambda=3 scores warn and then sits in the 60-day
+        # window as if it were a real observation.
+        return {}
 
     features = _derive_features(docs, tz)
     results = {}

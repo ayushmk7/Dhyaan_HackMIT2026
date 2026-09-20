@@ -5,6 +5,7 @@ Run: .venv/bin/python -m pytest tests/test_api.py -x -q  (needs mongo on
 localhost:27017 — `make mongo`).
 """
 
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -70,8 +71,10 @@ async def test_timeline_newest_first_limit_and_types(client, resident):
     assert r.status_code == 200
     events = r.json()
     assert len(events) == 3
-    epochs = [e["ts_epoch"] for e in events]
-    assert epochs == sorted(epochs, reverse=True)  # newest first
+    # `/timeline` returns the family row shape (routers/camera.py::_family_item),
+    # which has no `ts_epoch` — order on `ts`, which it does carry.
+    stamps = [e["ts"] for e in events]
+    assert stamps == sorted(stamps, reverse=True)  # newest first
     assert all("id" in e and "_id" not in e for e in events)
 
     r = await client.get(f"/v1/residents/{resident}/timeline?limit=1")
@@ -84,6 +87,22 @@ async def test_timeline_newest_first_limit_and_types(client, resident):
 
     r = await client.get(f"/v1/residents/{resident}/timeline?types=not_a_real_type")
     assert r.status_code == 422
+
+
+async def test_timeline_never_ships_a_room_name(client, db, resident):
+    """D-001: `/timeline` is a family surface. It used to return the raw Mongo
+    doc, so `zone` rode along and `embedding_text` said "moved into the
+    bathroom" in as many words — 183 of 200 seeded rows carried a room."""
+    await emit(resident_id=resident, source="band", type="zone_entered",
+               zone="bathroom", embedding_text="Eleanor moved into the bathroom.")
+    await emit(resident_id=resident, source="camera", type="meal_observed",
+               zone="kitchen", embedding_text="Eleanor ate lunch in the kitchen.")
+
+    rows = (await client.get(f"/v1/residents/{resident}/timeline")).json()
+    assert [r["type"] for r in rows] == ["meal_observed"]  # zone_entered is excluded
+    assert all("zone" not in r for r in rows)
+    blob = json.dumps(rows).lower()
+    assert "bathroom" not in blob and "kitchen" not in blob
 
 
 # ---------------------------------------------------------------------------

@@ -62,8 +62,18 @@ export default function Survey() {
     Object.fromEntries(ZONES.map((z) => [z, { kind: 'idle' }])),
   );
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // The 2 s POST /survey/sample loop does not live on this screen — it lives
+  // in a module Map in lib/http.ts and only surveyStop clears it. Walking out
+  // of this screen mid-survey stopped the countdown and left that loop posting
+  // for the rest of the session.
+  const walking = useRef<string | null>(null);
 
-  useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
+  useEffect(() => () => {
+    if (timer.current) clearInterval(timer.current);
+    // Fire and forget: nothing is left to render the answer to, and the server
+    // gets a proper stop rather than a survey that never ended.
+    if (walking.current) api.surveyStop(walking.current).catch(() => {});
+  }, []);
 
   const set = (zoneId: string, s: RoomState) => setRooms((r) => ({ ...r, [zoneId]: s }));
 
@@ -72,6 +82,7 @@ export default function Survey() {
   const remaining = ROOMS_NEEDED - doneCount;
 
   const stop = async (zoneId: string) => {
+    walking.current = null;
     try {
       const { n_scans, warning } = await api.surveyStop(zoneId);
       set(zoneId, { kind: 'done', scans: n_scans, warning });
@@ -97,6 +108,7 @@ export default function Survey() {
     // surveyStop from inside a setState callback fires it twice under React's
     // double-invoked updaters.
     let left = SURVEY_S;
+    walking.current = zoneId;
     set(zoneId, { kind: 'surveying', left });
     timer.current = setInterval(() => {
       left -= 1;

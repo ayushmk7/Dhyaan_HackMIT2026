@@ -179,18 +179,32 @@ def step(state: dict, scan: dict[str, float], fingerprints: list[dict], zones: d
 
 async def _fingerprints_for(resident_id: str) -> list[dict]:
     docs = await db().fingerprints.find({"resident_id": resident_id}).to_list(length=1000)
-    return [{"zone": d["zone"], "vector": v} for d in docs for v in d.get("vectors", [])]
+    # A fingerprint for a zone the graph above does not know (a seed or a direct
+    # write can plant one) would win `classify` and never be committable by
+    # `step`, which only sums over ZONES — the resident sticks at
+    # location_unknown forever. Drop it here instead.
+    return [{"zone": d["zone"], "vector": v}
+            for d in docs if d["zone"] in ZONES for v in d.get("vectors", [])]
 
 
-async def observe(resident_id: str, scan: dict) -> dict:
+async def observe(resident_id: str, scan: dict, ts: datetime | None = None) -> dict:
     """Full path for one RF scan: classify, smooth, emit on change. Returns the
-    current best-guess location for the /rf response body."""
+    current best-guess location for the /rf response body.
+
+    `ts` is the scan's own time. A band replaying a buffered hour of scans with
+    `now` for each one collapses the whole gap into a single zone, so every
+    dwell we measure comes out near zero; pass the payload's `ts` through.
+    """
     fingerprints = await _fingerprints_for(resident_id)
     vec = _scan_vector(scan)
     state = _STATE.get(resident_id) or _new_state()
-    now = datetime.now(timezone.utc)
+    now = ts or datetime.now(timezone.utc)
 
     new_state = step(state, vec, fingerprints)
+    # Commit before the first await: two scans in flight would both read the
+    # pre-commit state and both emit the same zone_exited/zone_entered pair.
+    # Later lines mutate this same dict object, so they still land.
+    _STATE[resident_id] = new_state
     from_zone, to_zone = new_state.pop("_transition") or (None, None)
     went_unknown = new_state.pop("_unknown")
 
@@ -239,7 +253,6 @@ async def observe(resident_id: str, scan: dict) -> dict:
                 payload={"dwell_s": dwell_s, "expected_p95_s": ZONE_DWELL_THRESHOLD_S},
             )
 
-    _STATE[resident_id] = new_state
     return {
         "zone": zone_id or "location_unknown",
         "confidence": new_state["posterior"].get(zone_id, 0.0) if zone_id else 0.0,

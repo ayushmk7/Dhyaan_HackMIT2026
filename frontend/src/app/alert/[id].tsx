@@ -31,7 +31,7 @@ import { CancelCountdownRing, ElapsedStat, RingingPulse } from '@/components/ale
 import { api } from '@/lib/api';
 import { family } from '@/lib/copy/family';
 import { residentNumber } from '@/lib/format';
-import { useAlert, useContacts, useResident } from '@/lib/hooks';
+import { useAlert, useContacts, useNow, useResident } from '@/lib/hooks';
 import { emergencyLine, useCareFile } from '@/store/carefile';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
@@ -78,6 +78,9 @@ const inCancelWindow = (state: string) => state === 'suspected' || state === 'lo
 // The emergency number is a value the button dials, not a sentence.
 const EMERGENCY_NUMBER = '911';
 
+/** Five missed 3 s polls. Past this the alert on screen is a memory. */
+const ALERT_STALE_MS = 15_000;
+
 const firstName = (full: string) => full.split(' ')[0];
 
 /** One voice line. The agent in quiet italics, every human voice in weight. */
@@ -111,7 +114,7 @@ const stopRingtone = (p: RingtonePlayer) => { try { p.pause(); } catch { /* noop
 
 export default function AlertTakeover() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data: alert, isLoading, isError, refetch } = useAlert(id ?? '');
+  const { data: alert, isLoading, isError, refetch, dataUpdatedAt } = useAlert(id ?? '');
   const { data: contacts } = useContacts();
   const live = useLive();
   const { role, residentId, residentName } = useSession();
@@ -121,6 +124,9 @@ export default function AlertTakeover() {
   const { data: resident } = useResident(alert?.resident_id ?? '');
   const [closedNote, setClosedNote] = useState<string | null>(null);
   const player = useAudioPlayer(require('../../../assets/audio/dhyaan-urgent.wav'));
+  // The clock the staleness check below is read against. A poll that stops
+  // answering changes nothing on its own; something has to ask the question.
+  const now = useNow(5000);
 
   const isActive = live.activeAlert?.id === id;
   const ladder = isActive ? live.ladder : alert?.ladder ?? [];
@@ -130,6 +136,14 @@ export default function AlertTakeover() {
     ? live.transcript
     : (alert?.calls ?? []).flatMap((c) => ('transcript' in c ? c.transcript : []));
   const closed = !!alert?.closed_at || !!closedNote || (!isActive && !isLoading && !isError && !alert);
+  // react-query keeps the last good answer through every failed poll, so a hub
+  // that went away left "Calling her" pulsing over a screen that knew nothing
+  // — the worst sentence on this product to be wrong about. Five missed 3 s
+  // polls and this screen stops speaking for the present.
+  // The socket is the other source of truth: while it is open and pushing THIS
+  // alert, a failing REST poll is not evidence of anything.
+  const unreachable = !(live.status === 'open' && isActive)
+    && (isError || !dataUpdatedAt || now - dataUpdatedAt > ALERT_STALE_MS);
 
   const state = (alert?.state ?? '').toLowerCase();
   const statePhase: Phase = closed ? 'closed' : PHASE_BY_STATE[state] ?? 'suspected';
@@ -201,7 +215,9 @@ export default function AlertTakeover() {
   if (!id) return <Redirect href="/" />;
 
   // A flaky LAN hop, not "nobody needs help any more" — never conflate the two.
-  if (isError && !alert) {
+  // A close-out is a record, not a claim about right now, so it is allowed to
+  // stand on a stale poll; everything else on this screen is a live claim.
+  if (unreachable && !closed) {
     return (
       <Screen scroll={false} style={{ justifyContent: 'center' }}>
         <ErrorState message={copy.loadError} onRetry={refetch} />

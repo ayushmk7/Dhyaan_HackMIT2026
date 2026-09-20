@@ -92,19 +92,29 @@ ZONES = ["bedroom", "hallway", "kitchen", "living_room", "bathroom"]
 
 
 async def seed_day(day: datetime, anomalous: bool):
-    """One plausible day. Asha wakes ~06:40, eats 3x, walks ~3x."""
+    """One plausible day. Asha wakes ~06:40, eats 3x, walks ~3x.
+
+    Today's events are clamped to the clock. Seeding at 05:23 used to write
+    dinner at 18:07 *today*, so `/residents` reported `last_seen` 18:07 while it
+    was still morning and the timeline showed a day that had not happened yet.
+    Nothing later than `now` is seeded; past days are untouched by this.
+    """
     r = "res_eleanor"
     date_s = day.strftime("%A %-d %B")
+    now = datetime.now(TZ)
 
     wake = day.replace(hour=6, minute=40) + timedelta(minutes=random.randint(-25, 25))
-    await emit(resident_id=r, source="camera", type="bed_exit", ts=wake, zone="bedroom",
-               payload={"hour_local": wake.hour},
-               embedding_text=f"On {date_s} at {wake:%-I:%M %p}, Asha got out of bed.")
+    if wake <= now:
+        await emit(resident_id=r, source="camera", type="bed_exit", ts=wake, zone="bedroom",
+                   payload={"hour_local": wake.hour},
+                   embedding_text=f"On {date_s} at {wake:%-I:%M %p}, Asha got out of bed.")
 
     for meal, hour in (("breakfast", 7), ("lunch", 12), ("dinner", 18)):
         if anomalous and meal == "lunch":
             continue  # she skipped lunch today
         t = day.replace(hour=hour, minute=random.randint(0, 50))
+        if t > now:
+            continue
         await emit(resident_id=r, source="camera", type="meal_observed", ts=t,
                    zone="kitchen", confidence=0.85,
                    payload={"meal": meal, "seated_duration_s": random.randint(600, 1800)},
@@ -119,6 +129,8 @@ async def seed_day(day: datetime, anomalous: bool):
         # Spread across waking hours and clamp: hour=10+i*3 overflows past 23 once
         # walks >= 5 and datetime.replace raises, silently truncating the seed.
         t = day.replace(hour=min(9 + i * 2, 21), minute=random.randint(0, 50))
+        if t > now:
+            continue
         dur = random.randint(300, 1500)
         await emit(resident_id=r, source="camera", type="walk_completed", ts=t,
                    zone="hallway", payload={"duration_s": dur},
@@ -127,12 +139,16 @@ async def seed_day(day: datetime, anomalous: bool):
 
     for i in range(random.randint(0, 2)):
         t = day.replace(hour=random.choice([1, 2, 3]), minute=random.randint(0, 59))
+        if t > now:
+            continue
         await emit(resident_id=r, source="band", type="bed_exit", ts=t, zone="bathroom",
                    payload={"hour_local": t.hour, "night": True},
                    embedding_text=f"On {date_s} at {t:%-I:%M %p}, Asha got up during the night.")
 
     for i, z in enumerate(random.sample(ZONES, 3)):
         t = day.replace(hour=9 + i * 4, minute=random.randint(0, 59))
+        if t > now:
+            continue
         await emit(resident_id=r, source="band", type="zone_entered", ts=t, zone=z,
                    confidence=0.78, payload={"method": "ble"},
                    embedding_text=f"On {date_s} at {t:%-I:%M %p}, Asha moved into the {z.replace('_', ' ')}.")

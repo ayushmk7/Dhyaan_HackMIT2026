@@ -66,7 +66,7 @@ async def _wait_for_call(db, alert_id, timeout=3.0, interval=0.02):
 async def test_place_call_writes_a_simulated_calls_row(db, resident, monkeypatch):
     monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 0.05)
     alert = await alerts.open_alert(resident, "evt_v1", kind="fall", severity="critical")
-    doc = await _wait_for_state(db, alert["_id"], "CALLING_RESIDENT")
+    await _wait_for_state(db, alert["_id"], "CALLING_RESIDENT")
 
     call = await _wait_for_call(db, alert["_id"])
     assert call is not None
@@ -76,6 +76,10 @@ async def test_place_call_writes_a_simulated_calls_row(db, resident, monkeypatch
     assert call["call_sid"].startswith("CAstub")
     assert call["status"] in ("ringing", "no-answer")  # no_answer script, background task may have finished
     assert "started_at" in call
+    # Re-read: the state write lands before the action that does the `$inc`, so
+    # the doc `_wait_for_state` returned can be a poll tick older than the
+    # counter. Passed alone, failed in a busy suite.
+    doc = await db.alerts.find_one({"_id": alert["_id"]})
     assert doc["resident_call_attempts"] == 1
 
 

@@ -9,6 +9,10 @@ selector that fires twice in ten seconds is the waste VLM_PLAN exists to avoid.
 heavy, so this file never touches torch or a camera device.
 """
 
+from datetime import datetime, timedelta, timezone
+
+import time
+
 import numpy as np
 import pytest
 
@@ -816,3 +820,204 @@ def test_the_scripted_day_contains_the_three_episodes_the_dedup_needs():
         for b in s["boxes"]:
             assert len(b) == 4 and all(0.0 <= c <= 1.0 for c in b), b
     assert max(len(s["boxes"]) for s in day) == 2      # her and one visitor
+
+
+# --- the loop's honesty about itself ------------------------------------------
+
+class _FrozenCamera:
+    """Delivers three frames and then the same one for ever.
+
+    Which is what a camera failure actually looks like on this machine: no
+    exception, no None, just `read()` handing back the frame it handed back
+    last time. Continuity Camera giving the phone back to its owner, a USB
+    cable moving, macOS sleeping the device — all three look like this.
+    """
+
+    def __init__(self, resume_after=None):
+        self.n = 0
+        self.closed = False
+        self.resume_after = resume_after
+
+    def read(self):
+        self.n += 1
+        if self.resume_after is not None and self.n > self.resume_after:
+            return self.n, blank()          # the device came back
+        return min(self.n, 3), blank()
+
+    def close(self):
+        self.closed = True
+
+    def script(self):
+        # The synthetic source owns perception (nothing reads a drawn figure as
+        # a person); an empty room is the right answer for a blank frame.
+        return dict(vlm.ABSENT, boxes=[], person_count=0)
+
+
+def _loop_once(monkeypatch, cam, cfg=None, stop_when=None, **tuning):
+    """Run the real loop against a fake camera until `stop_when(beats)` is true.
+
+    Returns (worker, heartbeats). Everything outbound is captured, so no socket
+    is opened and no model is loaded.
+    """
+    stop_when = stop_when or (lambda beats: beats[-1] == "offline")
+    w = worker.Worker(source="synthetic", camera_id="cam_x", api="http://localhost:0",
+                      band_key="k", dry_run=True, no_yolo=True)
+    w.cfg = dict(cfg or worker.STANDIN_CONFIG)
+    w.tuning = dict(w.tuning, config_poll_s=999, heartbeat_s=999, **tuning)
+    beats = []
+
+    def heartbeat(state):
+        beats.append(state)
+        if stop_when(beats):
+            w._stopping = True
+
+    monkeypatch.setattr(w, "heartbeat", heartbeat)
+    monkeypatch.setattr(w, "monitor", lambda *a, **k: None)
+    monkeypatch.setattr(w, "post", lambda *a, **k: None)
+    monkeypatch.setattr(w, "post_async", lambda *a, **k: None)
+    monkeypatch.setattr(w, "_refresh_config", lambda: None)
+    monkeypatch.setattr(worker, "SyntheticCamera", lambda: cam)
+    w.run()
+    return w, beats
+
+
+def test_a_camera_that_stops_delivering_frames_reports_itself_offline(monkeypatch):
+    """The worst failure this product has, and it used to be silent.
+
+    `read()` returning a stale frame is not an error, so the loop `continue`d
+    for ever: `_mark_fps` was never reached, self.fps froze at its last value,
+    and the heartbeat went on saying "watching". The family app then showed a
+    live camera with a sentence that never changed — it looked like it was
+    watching her when it had stopped.
+    """
+    cam = _FrozenCamera()
+    w, beats = _loop_once(monkeypatch, cam, stall_s=0.05)
+
+    assert w._stalled is True
+    assert beats[-1] == "offline"
+    assert cam.n > 3, "the loop kept reading; it did not wedge"
+    assert w.fps == 0.0, "a stalled camera has no frame rate to report"
+    assert w.last_obs == worker.EMPTY_OBS, "and nothing left to claim about her"
+    assert cam.closed
+
+
+def test_a_camera_that_comes_back_is_watching_again(monkeypatch):
+    """Saying offline is only half of it — a Mac that wakes, or a cable pushed
+    back in, must not leave the family looking at a camera the app wrote off."""
+    cam = _FrozenCamera(resume_after=40)
+    w, beats = _loop_once(
+        monkeypatch, cam, stall_s=0.05,
+        stop_when=lambda b: b[-1] == "watching" and "offline" in b)
+
+    # (the loop's `finally` heartbeats offline on the way out, so this looks
+    # at the order, not the last element.)
+    assert "watching" in beats[beats.index("offline") + 1:], "it never came back"
+    assert w._stalled is False
+
+
+def test_a_paused_camera_stops_saying_what_it_last_saw(monkeypatch):
+    """The privacy beat. Clearing the boxes but not the words left the hub
+    reading "eating at the table" all the way through the one moment in the
+    demo where the screen has to prove it stopped looking."""
+    w = worker.Worker(source="synthetic", camera_id="cam_x", api="http://localhost:0",
+                      band_key="k", dry_run=True, no_yolo=True)
+    w.cfg = dict(worker.NO_CONSENT)
+    w.last_obs = {"activity": "eating", "sentence": "eating at the table",
+                  "confidence": 0.8, "latency_ms": 12, "batch_frames": 1}
+    w.boxes, w.people, w._subject = [[0.1, 0.1, 0.2, 0.2]], 1, (1, 2, 3, 4)
+    seen = []
+    monkeypatch.setattr(w, "heartbeat", lambda s: seen.append(s))
+    monkeypatch.setattr(w, "monitor", lambda *a, **k: setattr(w, "_stopping", True))
+    monkeypatch.setattr(w, "_refresh_config", lambda: None)
+    monkeypatch.setattr(worker, "SyntheticCamera", lambda: _FrozenCamera())
+    # Consent is withdrawn, so run() would block at the gate. Enter the loop
+    # the way a live pause does: consented at open, revoked a moment later.
+    w.cfg = dict(worker.STANDIN_CONFIG, consent_camera=1)
+    monkeypatch.setattr(w, "state", lambda: "paused")
+    w.run()
+
+    assert w.last_obs == worker.EMPTY_OBS
+    assert (w.boxes, w.people, w._subject) == ([], 0, None)
+
+
+def test_an_observation_captured_before_she_left_may_not_land_after(monkeypatch):
+    """The VLM answers on its own thread ~2.4 s after the frames were taken.
+    If she walked off in those seconds the loop has already posted "out of
+    view"; letting the batch land put a person eating back into an empty room
+    until the next observation."""
+    w = worker.Worker(source="synthetic", camera_id="cam_x", api="http://localhost:0",
+                      band_key="k", dry_run=True)
+    w.cfg = dict(worker.STANDIN_CONFIG)
+    posted = []
+    monkeypatch.setattr(w, "post", lambda p, **k: posted.append(p))
+
+    eating = dict(vlm_said(), activity="eating", person_count=1)
+    captured = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    w._absent_ts = captured + timedelta(seconds=2)      # she left while it thought
+    w._post_obs(eating, captured, 1.0, 4, "qwen", 2400)
+    assert posted == [], "a stale sentence must not reach the app"
+    assert w.last_obs == worker.EMPTY_OBS
+
+    # ...but the sentence is the whole reason the VLM runs, so one captured
+    # after the absence still lands. Guarding against "older than the console"
+    # instead would have dropped nearly every observation it ever made.
+    w._post_obs(eating, w._absent_ts + timedelta(seconds=1), 1.0, 4, "qwen", 2400)
+    assert len(posted) == 1 and w.last_obs["activity"] == "eating"
+
+
+class _LiveCamera(_FrozenCamera):
+    """A camera that keeps delivering, and whose frames MOVE.
+
+    A still frame is absorbed into MOG2's background within a second, the
+    detector then stops being run, `self.scene` goes None and the quick-post
+    path is never reached — which made the first version of the test below
+    pass against the very bug it was written to catch.
+    """
+
+    def read(self):
+        self.n += 1
+        x = 100 + (self.n % 9) * 6
+        return self.n, with_block(x, 40, x + 90, 200)
+
+
+def test_a_flapping_posture_cannot_become_a_write_storm(monkeypatch):
+    """`posture_band` returns None whenever the knees fall below the landmark
+    visibility floor, which at a desk, a table edge or under a blanket is every
+    other frame. The quick post fires on any change of shape, so unthrottled
+    that was ~15 writes a second into Mongo and the event ladder, for as long
+    as she sat there. The floor collapses the flap; it does not drop it —
+    `_last_shape` only advances when a post actually goes out.
+    """
+    import itertools
+
+    w = worker.Worker(source=0, camera_id="cam_x", api="http://localhost:0",
+                      band_key="k", dry_run=True)
+    w.cfg = dict(worker.STANDIN_CONFIG)
+    w.tuning = dict(w.tuning, config_poll_s=999, heartbeat_s=999,
+                    quick_min_s=0.2, sample_every_n=1)
+
+    bands = itertools.cycle(["mid", None])
+    monkeypatch.setattr(worker, "posture_band", lambda *a, **k: next(bands))
+    monkeypatch.setattr(worker, "Camera", lambda *a, **k: _LiveCamera())
+    monkeypatch.setattr(worker, "PersonGate",
+                        lambda **kw: fake_gate([hit("person", (10, 10, 40, 120))]))
+    # Times, not a count: how many posts fit in a fixed window depends on how
+    # much CPU the test gets, and that swung 3-8 between runs on this machine.
+    # The spacing between them does not — it is the thing the floor sets.
+    at = []
+    monkeypatch.setattr(w, "post_async", lambda p, **k: at.append(time.monotonic()))
+    monkeypatch.setattr(w, "post", lambda *a, **k: None)
+    monkeypatch.setattr(w, "heartbeat", lambda *a, **k: None)
+    monkeypatch.setattr(w, "_refresh_config", lambda: None)
+    end = time.monotonic() + 1.2
+    monkeypatch.setattr(w, "monitor",
+                        lambda *a, **k: setattr(w, "_stopping", time.monotonic() > end))
+    w.run()
+
+    assert len(at) >= 2, f"the flap never reached the quick path ({len(at)} posts)"
+    gaps = [b - a for a, b in zip(at, at[1:])]
+    # Delete the floor in worker.py and these gaps collapse to ~0.03 s, which
+    # is how this test was checked for being vacuous. It was, once: the first
+    # version used a still frame, MOG2 absorbed it, and the detector never ran.
+    assert min(gaps) >= w.tuning["quick_min_s"] * 0.9, f"gaps {gaps}"

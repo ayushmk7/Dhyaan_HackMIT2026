@@ -107,6 +107,17 @@ const activeSurveys = new Map<string, { surveyId: string; timer: ReturnType<type
 
 const isNotFound = (e: unknown) => e instanceof Error && /not found/i.test(e.message);
 
+// The two family reads below degrade to an empty day instead of throwing, so
+// they need a stricter test than "the word 404 happened somewhere". Point
+// EXPO_PUBLIC_API_BASE at a host missing /v1 and FastAPI answers every route
+// with {"detail": "Not Found"} — which isNotFound matched, so a wrong base URL
+// rendered as all-zero tiles and a synthetic no-camera presence: a calm,
+// plausible, entirely invented day. Only the route's own words mean "there is
+// nothing here yet" (memory.require_resident raises exactly this); anything
+// else is the app failing to reach the hub, and must surface as that.
+const isUnknownResident = (e: unknown) =>
+  e instanceof Error && /resident not found/i.test(e.message);
+
 // §6.5: "A family must always be able to tell observed from assumed." One
 // place builds the visible prefix for each kind.
 function citationLabel(kind: 'observed' | 'told' | 'pattern', ts: string): string {
@@ -564,15 +575,15 @@ export const httpApi = {
   // ---- camera lane (VLM_PLAN §6.1) ------------------------------------------
 
   // GET /residents/{id}/presence — no zone, no evidence, by contract.
-  // ponytail: while the camera router is still landing, a 404 degrades to an
-  // honest "no camera set up" presence instead of throwing, so Today shows
-  // its real empty state rather than an error it can't act on. Any other
-  // failure still throws and surfaces as a retryable error.
+  // ponytail: a resident the hub has never heard of degrades to an honest "no
+  // camera set up" presence instead of throwing, so Today shows its real empty
+  // state rather than an error it can't act on. Any other failure — including
+  // a route that isn't there — still throws and surfaces as a retryable error.
   getPresence: async (residentId: string): Promise<Presence> => {
     try {
       return await get<Presence>(`/residents/${residentId}/presence`);
     } catch (e) {
-      if (isNotFound(e)) {
+      if (isUnknownResident(e)) {
         return {
           status: 'no_camera', activity: null, spot_is_usual: false,
           since: null, last_observation_at: null, sentence: '',
@@ -591,7 +602,7 @@ export const httpApi = {
       // labels it "Last noticed". Reverse once here rather than in each screen.
       return { ...day, items: [...day.items].reverse() };
     } catch (e) {
-      if (isNotFound(e)) {
+      if (isUnknownResident(e)) {
         return {
           date,
           tiles: { meals: 0, walks: 0, out_of_house: 0, night_ups: 0, in_view_minutes: 0 },
@@ -702,12 +713,16 @@ export const httpApi = {
   },
   // The voice agent's leave_message tool lands as a family_note event with the
   // spoken text in payload.message (backend/app/voice_adapter.py). Newest wins.
+  // /timeline is family-scrubbed and sends no `payload`, so the message comes
+  // through as its own field; the mocks still send the raw payload.
   latestMessage: async (): Promise<{ text: string; at: string } | null> => {
     const events = await httpApi.getEvents(residentId()).catch(() => []);
-    const note = events.find(
-      (e) => e.type === 'family_note' && typeof e.payload?.message === 'string',
-    );
-    return note ? { text: note.payload.message as string, at: note.ts } : null;
+    for (const e of events) {
+      if (e.type !== 'family_note') continue;
+      const text = e.message ?? (typeof e.payload?.message === 'string' ? e.payload.message : '');
+      if (text) return { text, at: e.ts };
+    }
+    return null;
   },
   planFromThread: async (thread: string): Promise<FamilyPlan> =>
     (await aiPlanFromThread(thread)) ?? {

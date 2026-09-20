@@ -196,8 +196,29 @@ def posture_from_landmarks(lm, h, w):
     if torso_len < 1e-3:
         return UNCLEAR
 
+    # Foreshortening, which the tilt below cannot see. A body lying with its
+    # head toward the lens projects shoulders and hips almost on top of each
+    # other: torso_len collapses, tilt reads ~0 (vertical!), the knees are in
+    # front of the hips and it came back `seated` at full confidence. That is a
+    # real fall confidently contradicted, and the VLM lane is then never asked.
+    # A torso projecting shorter than the shoulders are wide is not a torso we
+    # are looking at side-on, whatever its angle says.
+    # ponytail: this can only ever produce `unclear`, never an `on_floor` - two
+    # normalised landmarks cannot tell lying-toward-the-camera from leaning
+    # hard toward it, and guessing the wrong one of those puts "Eleanor
+    # appeared to be on the floor" on a family's screen. Upgrade: MediaPipe
+    # hands back world landmarks with a z in metres; that depth cue is what
+    # would turn this branch into a positive.
+    shoulder_w = float(np.linalg.norm(pt(L_SHOULDER) - pt(R_SHOULDER)))
+    if torso_len < shoulder_w:
+        return ("unclear", torso_vis)
+
     # 0deg = torso straight up/down, 90deg = torso lying flat.
     tilt = float(np.degrees(np.arctan2(abs(torso[0]), abs(torso[1]))))
+    if os.getenv("POSE_DEBUG"):
+        print(f"[pose] tilt={tilt:5.1f} torso_len={torso_len:6.1f} "
+              f"torso_vis={torso_vis:.2f} knee_vis={vis(L_KNEE, R_KNEE):.2f} "
+              f"h={h} w={w}", flush=True)
     if tilt > 55:
         return ("on_floor", torso_vis)
 

@@ -18,6 +18,7 @@ The two things that must never be relaxed here:
   in `rag.search(family=True)`. A client-side filter is not a privacy control.
 """
 
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -29,6 +30,8 @@ from pydantic import BaseModel, Field, field_validator
 from .. import memory, presence, rag
 from ..db import db
 from ..events import emit
+
+log = logging.getLogger("dhyaan.camera")
 
 device = APIRouter(prefix="/v1", tags=["camera"])
 family = APIRouter(prefix="/v1", tags=["camera"])
@@ -122,6 +125,21 @@ class ObservationIn(BaseModel):
     model: str = ""
     latency_ms: int | None = Field(default=None, ge=0)
     simulated: bool = False
+
+    @field_validator("ts")
+    @classmethod
+    def _not_from_the_future(cls, v: datetime) -> datetime:
+        """A camera on the LAN is a trust boundary, and a skewed device clock is
+        the cheapest way through it. `ts` becomes `presence.last_observation_at`,
+        which is how presence decides she has gone out of view — one observation
+        stamped `now + 1h` and `now - last > IN_VIEW_STALE_S` is never true
+        again, so the home screen reads "in view" forever after the camera dies.
+        Rejected, not clamped: a clock this wrong is something the installer has
+        to fix, and silently rewriting it hides that."""
+        if (_aware(v) - datetime.now(timezone.utc)).total_seconds() > 60:
+            log.warning("rejected observation stamped %s (device clock ahead)", v)
+            raise ValueError("ts is more than 60s in the future — check the device clock")
+        return v
 
 
 def _is_paused(camera: dict) -> bool:
@@ -330,7 +348,7 @@ def _family_item(ev: dict) -> dict:
     """One timeline row. Everything the family must not see is dropped here,
     on the server, rather than sent and hidden: no zone, no evidence, no
     posture, no movement quality."""
-    return {
+    item = {
         "id": ev["_id"], "ts": ev["ts"], "ts_end": ev.get("ts_end"),
         "type": ev["type"],
         "sentence": rag.scrub_rooms((ev.get("payload") or {}).get("narrative")
@@ -338,6 +356,15 @@ def _family_item(ev: dict) -> dict:
         "kind": "pattern" if ev["type"] in rag.PATTERN_TYPES else "observed",
         "confidence": ev.get("confidence"),
     }
+    # A family_note is the one payload field that IS for the family: her own
+    # words, which she asked Dhyaan to pass on, and which the home screen
+    # quotes. `embedding_text` only carries them wrapped in narration, so
+    # dropping the whole payload took the message with it and the card went
+    # quietly blank. Scrubbed like any other prose.
+    if ev["type"] == "family_note":
+        item["message"] = rag.scrub_rooms(
+            (ev.get("payload") or {}).get("message", "") or "")
+    return item
 
 
 @family.get("/residents/{resident_id}/activity")

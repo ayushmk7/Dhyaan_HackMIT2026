@@ -93,7 +93,7 @@ export function EventRow({ event, onPress }: { event: KEvent; onPress?: () => vo
       icon={eventSymbol(event.type)}
       label={eventTitle(event.type)}
       time={timeOf(event.ts)}
-      sentence={displaySentence(event.embedding_text)}
+      sentence={displaySentence(event.sentence ?? event.embedding_text ?? '')}
       onPress={onPress}
     />
   );

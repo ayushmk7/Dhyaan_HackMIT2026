@@ -1,10 +1,11 @@
-"""Pure-function tests for app/location.py — no DB, no event loop needed.
+"""Tests for app/location.py.
 
 k-NN (`classify`) and the HMM (`step`) are the non-trivial logic here, so they
-are tested directly as pure functions per the task brief.
+are tested directly as pure functions per the task brief. The one test that
+needs Mongo is the fingerprint loader, which is the only impure thing here.
 """
 
-from app.location import _new_state, classify, step
+from app.location import _fingerprints_for, _new_state, classify, step
 
 FINGERPRINTS = [
     {"zone": "kitchen", "vector": {"bcn_kitchen": -50, "bcn_hall": -70}},
@@ -71,3 +72,18 @@ def test_genuine_sustained_move_commits():
 
     state = _settle(state, BEDROOM_SCAN, ticks=4)
     assert state["zone_id"] == "bedroom"
+
+
+async def test_a_fingerprint_for_an_unknown_zone_is_dropped(resident, db):
+    """`step` only sums over ZONES, so a fingerprint for a zone outside the
+    graph wins `classify` and can never be committed — the resident sits at
+    location_unknown for as long as she stands there. Drop it at load."""
+    await db.fingerprints.insert_many([
+        {"resident_id": resident, "zone": "dining_room",
+         "vectors": [{"bcn_dining": -50}]},
+        {"resident_id": resident, "zone": "kitchen",
+         "vectors": [{"bcn_kitchen": -50}]},
+    ])
+    fingerprints = await _fingerprints_for(resident)
+    assert [f["zone"] for f in fingerprints] == ["kitchen"]
+    assert classify({"bcn_dining": -51}, fingerprints)[0] == "location_unknown"

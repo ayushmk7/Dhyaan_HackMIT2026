@@ -338,7 +338,7 @@ export default function ResidentDetail() {
               <Txt kind="body">{answer.text}</Txt>
               {!!answer.citations?.length && (
                 <Row gap={2} style={{ marginTop: sp(3), flexWrap: 'wrap' }}>
-                  {answer.citations.map((c) => <Chip key={c.id} label={c.label} />)}
+                  {answer.citations.map((c, i) => <Chip key={`${c.id}_${i}`} label={c.label} />)}
                 </Row>
               )}
             </Card>

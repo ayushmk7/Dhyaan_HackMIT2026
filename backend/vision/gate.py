@@ -429,7 +429,7 @@ class PersonGate:
 # ponytail: one module-level slot, single camera process, single worker thread.
 # Ceiling: two cameras in one process would interleave frames here; the upgrade
 # is to hang this off the PersonGate instance and pass it through the selector.
-_LAST = {"frame": None, "box": None, "band": None}
+_LAST = {"frame": None, "box": None, "band": None, "wide_run": 0}
 _warned = False
 
 
@@ -533,6 +533,9 @@ def posture_band(box, tuning=None):
     """
     global _warned
     if box is None:
+        # Nobody to have a posture. Drop any part-built run of wide reads with
+        # them, so the next person in the room does not inherit it.
+        _LAST["wide_run"] = 0
         return None
     t = dict(TUNING, **(tuning or {}))
     frame = _LAST["frame"]
@@ -551,8 +554,28 @@ def posture_band(box, tuning=None):
         if _LAST["box"] != key:                  # ~13.8 ms; called 3x per cycle
             _LAST["box"] = key
             label, _conf = _posture.posture(frame, box)
-            _LAST["band"] = {"upright": "tall", "seated": "mid",
-                             "on_floor": "wide"}.get(label)
+            raw = {"upright": "tall", "seated": "mid", "on_floor": "wide"}.get(label)
+            # One frame is not a fall. Measured on this machine over a morning:
+            # 104 of 2091 observations came back `on_floor` — 5% — with nobody
+            # ever on the floor. The landmarker puts the hips somewhere plausible
+            # when it cannot really see them, and a hip guessed a little sideways
+            # of the shoulders is a torso past 55 degrees, which is the one band
+            # that opens an alert.
+            #
+            # The keyframe selector already refused to spend a VLM call on a
+            # single wide frame; it wanted a run of them. The change-driven post
+            # added later went straight from one frame to an observation and
+            # walked around that. So the run moves here, where every consumer
+            # gets it: `wide` is reported only once it has been read
+            # `pose_wide_run` times without interruption, and a marginal read
+            # before then is None — not "seated", because we do not know.
+            if raw == "wide":
+                _LAST["wide_run"] += 1
+                _LAST["band"] = ("wide" if _LAST["wide_run"] >= t["pose_wide_run"]
+                                 else None)
+            else:
+                _LAST["wide_run"] = 0
+                _LAST["band"] = raw
         return _LAST["band"]
 
     band = _bbox_band(box, t)

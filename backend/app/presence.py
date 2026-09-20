@@ -284,6 +284,14 @@ async def _flush(iv: dict, resident: dict, tz: ZoneInfo, min_obs: int, min_dur_s
             "embedding_text": text, "derived_from": iv["obs_ids"],
             "payload.n_observations": iv["n"],
         }})
+        # The sentence just changed ("for 15 minutes" -> "for 40 minutes") but
+        # the stored vector is still the first version's, so a long episode is
+        # retrieved by how it started. Re-embed in the background, exactly as
+        # emit() does on create. Import lazily: rag subscribes to events.
+        from . import rag
+        t = asyncio.create_task(rag._embed_and_store(iv["event_id"], text))
+        rag._embed_tasks.add(t)
+        t.add_done_callback(rag._embed_tasks.discard)
         return []
     if iv["n"] < min_obs or dur < min_dur_s:
         return []

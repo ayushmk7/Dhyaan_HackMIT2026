@@ -27,9 +27,10 @@
 // console follows the scheme instead of being the one black thing on a light
 // screen.
 //
-// What a person reads lives in lib/copy/family.ts under `camera`. The
-// telemetry keys and readings (FPS, MODEL, REC, PERSON 01, the gate names) are
-// the machine's own and stay here on purpose.
+// What a person reads lives in lib/copy/family.ts under `camera`, and so do
+// the telemetry KEYS (FPS, MODEL, REC): they are names of things. The VALUES
+// next to them are never copy — every one is a field off the monitor tick, or
+// the one glyph that says the worker left the field empty.
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -42,10 +43,10 @@ import {
   useReducedMotion,
 } from '@/components';
 import { family } from '@/lib/copy/family';
-import { ago, timeOf } from '@/lib/format';
+import { ago, scrubRooms, timeOf } from '@/lib/format';
 import { api } from '@/lib/api';
-import { useCameraMonitor, useCameras } from '@/lib/hooks';
-import type { CameraMonitorTick, CameraSummary, GateState, NormBox } from '@/lib/types';
+import { useCameraMonitor, useCameras, useNow } from '@/lib/hooks';
+import type { CameraMonitorTick, CameraSummary, NormBox } from '@/lib/types';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
 import { motion, radius, rule, sp, useTheme } from '@/theme';
@@ -82,20 +83,6 @@ function asTick(raw: unknown): CameraMonitorTick | null {
   if ('tick' in o) return asTick(o.tick);
   if (typeof o.fps !== 'number' || !Array.isArray(o.boxes) || typeof o.ts !== 'string') return null;
   return { ...(o as unknown as CameraMonitorTick), boxes: (o.boxes as unknown[]).filter(isBox) };
-}
-
-/**
- * A clock the screen can read without calling `Date.now()` mid-render. One
- * interval, one number, and everything derived from "is this still true?"
- * hangs off it.
- */
-function useNow(everyMs = 1000): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), everyMs);
-    return () => clearInterval(id);
-  }, [everyMs]);
-  return now;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -195,7 +182,7 @@ function SentenceTrack({ text }: { text: string }) {
         exiting={reduced ? undefined : FadeOut.duration(dur)}
         style={[FILL, styles.captionPad]}
       >
-        <Txt kind="label" accessibilityLiveRegion="polite" numberOfLines={2}>
+        <Txt kind="body" accessibilityLiveRegion="polite" numberOfLines={2}>
           {text}
         </Txt>
       </Animated.View>
@@ -239,7 +226,7 @@ function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
         <View style={styles.recPill}>
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: recColor }} />
           <Txt kind="micro" style={{ color: recColor }}>
-            {live ? 'REC' : 'SIMULATED'}
+            {live ? copy.rec : copy.simulated}
           </Txt>
         </View>
       </View>
@@ -247,7 +234,7 @@ function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
       {/* Bottom chrome: the sentence track, under one accent rule. */}
       <View style={styles.captionBar}>
         <Rule color={t.accent} />
-        <SentenceTrack text={tick.sentence?.trim() || copy.noSentence} />
+        <SentenceTrack text={sentenceOf(tick)} />
       </View>
     </View>
   );
@@ -257,15 +244,45 @@ function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
 // Telemetry
 // ---------------------------------------------------------------------------
 
-// The worker's own stage names (VLM_PLAN §3.3). Instrumentation.
-const GATE_WORD: Record<GateState, string> = {
-  idle: 'IDLE', motion: 'MOTION', person: 'PERSON', thinking: 'THINKING',
+/**
+ * The worker's sentence, or the honest line that says it has not written one.
+ * The hub already runs `sentence` through `rag.scrub_rooms`; the same regex is
+ * run again here (lib/format) so a contract drift on the server cannot put a
+ * room name on a family screen. Belt and braces, costing one call.
+ */
+const sentenceOf = (tick: CameraMonitorTick) => {
+  const raw = (tick.sentence ?? '').trim();
+  return raw ? scrubRooms(raw) : copy.noSentence;
+};
+
+// Readings. Each takes the tick's field and returns the machine's own word or
+// number, or the empty glyph when the worker left the field unfilled. None of
+// these can produce a value the tick did not carry.
+const NONE = copy.none;
+const gateOf = (t: CameraMonitorTick) => String(t.gate ?? '').toUpperCase() || NONE;
+const peopleOf = (t: CameraMonitorTick) =>
+  typeof t.person_count === 'number' ? pad(t.person_count) : NONE;
+const activityOf = (t: CameraMonitorTick) =>
+  t.activity ? String(t.activity).replace(/_/g, ' ').toUpperCase() : NONE;
+const confOf = (t: CameraMonitorTick) =>
+  typeof t.confidence === 'number' ? t.confidence.toFixed(2) : NONE;
+const fpsOf = (t: CameraMonitorTick) => t.fps.toFixed(1);
+const latencyOf = (t: CameraMonitorTick) =>
+  typeof t.latency_ms === 'number' ? `${t.latency_ms} MS` : NONE;
+const batchOf = (t: CameraMonitorTick) =>
+  typeof t.batch_frames === 'number' ? pad(t.batch_frames) : NONE;
+const modelOf = (t: CameraMonitorTick) => (t.model ?? '').trim() || NONE;
+/** Seconds since the worker stamped this tick, on the phone's clock. Two digits, so the cell never grows. */
+const ageOf = (t: CameraMonitorTick, now: number) => {
+  const s = Math.round((now - new Date(t.ts).getTime()) / 1000);
+  if (!Number.isFinite(s)) return NONE;
+  return `${pad(Math.min(99, Math.max(0, s)))} S`;
 };
 
 function Cell({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.cell}>
-      <Txt kind="micro" tone="muted">{label}</Txt>
+      <Txt kind="micro" tone="muted" numberOfLines={1}>{label}</Txt>
       <Txt kind="data" numberOfLines={1} style={{ marginTop: sp(1) }}>
         {value}
       </Txt>
@@ -273,23 +290,42 @@ function Cell({ label, value }: { label: string; value: string }) {
   );
 }
 
-// Keys and readings are the worker's own. Not copy. Four, on one line: the
-// stage it is at, how fast it is going, what it thinks it sees, how sure it
-// is. The cascade that used to draw the stage as four ruled columns, and the
-// latency, model and batch cells, were readings nobody on a family screen
-// acted on.
-function Telemetry({ tick }: { tick: CameraMonitorTick }) {
-  const cells: { label: string; value: string }[] = [
-    { label: 'GATE', value: GATE_WORD[tick.gate] ?? '—' },
-    { label: 'FPS', value: tick.fps.toFixed(1) },
-    { label: 'ACTIVITY', value: (tick.activity ?? '—').replace(/_/g, ' ').toUpperCase() },
-    { label: 'CONF', value: tick.confidence == null ? '—' : tick.confidence.toFixed(2) },
+// Two rows of four, then the model on a line of its own. The grid is fixed:
+// every cell is a quarter of the row and one line tall whatever it says, so a
+// reading changing width once a second cannot move anything under it. Rows
+// are never mounted or unmounted on the tick; an unfilled field shows the
+// glyph in the same slot.
+//   Row 1: what the pipeline is doing, and what it thinks it sees.
+//   Row 2: how it is running.
+function Telemetry({ tick, now }: { tick: CameraMonitorTick; now: number }) {
+  const k = copy.keys;
+  const rows: { label: string; value: string }[][] = [
+    [
+      { label: k.gate, value: gateOf(tick) },
+      { label: k.people, value: peopleOf(tick) },
+      { label: k.activity, value: activityOf(tick) },
+      { label: k.conf, value: confOf(tick) },
+    ],
+    [
+      { label: k.fps, value: fpsOf(tick) },
+      { label: k.latency, value: latencyOf(tick) },
+      { label: k.batch, value: batchOf(tick) },
+      { label: k.age, value: ageOf(tick, now) },
+    ],
   ];
   return (
-    <View style={{ flexDirection: 'row' }}>
-      {cells.map((c) => (
-        <Cell key={c.label} label={c.label} value={c.value} />
+    <View>
+      {rows.map((cells, r) => (
+        <View key={r} style={{ flexDirection: 'row' }}>
+          {cells.map((c) => (
+            <Cell key={c.label} label={c.label} value={c.value} />
+          ))}
+        </View>
       ))}
+      <View style={styles.modelRow}>
+        <Txt kind="micro" tone="muted">{k.model}</Txt>
+        <Txt kind="stamp" numberOfLines={1} style={{ flex: 1 }}>{modelOf(tick)}</Txt>
+      </View>
     </View>
   );
 }
@@ -319,9 +355,14 @@ export default function CameraConsole() {
   // already know is live, never the evidence that anything is live at all:
   // left alone, the last push would sit in the store forever and this console
   // would keep reading 12 fps over a worker that died an hour ago.
+  // Between the two, the newer stamp wins: a socket that went quiet must not
+  // keep an older tick in front of a poll that is still arriving.
   const polledTick = monitor.isError ? null : asTick(monitor.data);
-  const tick = polledTick ? (socketTick ?? polledTick) : null;
-  const now = useNow(5000);
+  const tick = polledTick
+    ? (socketTick && socketTick.ts >= polledTick.ts ? socketTick : polledTick)
+    : null;
+  // 1 s: the age cell counts in seconds, and the tick itself lands about that often.
+  const now = useNow(1000);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [trouble, setTrouble] = useState<string | null>(null);
@@ -435,10 +476,10 @@ export default function CameraConsole() {
           </Txt>
         </View>
 
-        {/* One section for the machine: four readings under one heading. */}
+        {/* One section for the machine: the tick's readings under one heading. */}
         <View>
           <Marquee title={copy.worker} first />
-          <Telemetry tick={tick} />
+          <Telemetry tick={tick} now={now} />
         </View>
       </Stagger>
     );
@@ -544,8 +585,9 @@ const styles = {
   },
   caption: {
     // Fixed, because the layers inside are absolute and because a caption bar
-    // that resizes under a sentence swap is a caption bar that twitches.
-    height: sp(14),
+    // that resizes under a sentence swap is a caption bar that twitches. Sized
+    // for two lines of body.
+    height: sp(16),
   },
   captionPad: {
     paddingHorizontal: sp(3.5),
@@ -562,5 +604,11 @@ const styles = {
     flex: 1,
     paddingVertical: sp(2),
     paddingRight: sp(2),
+  },
+  modelRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'baseline' as const,
+    gap: sp(2),
+    paddingVertical: sp(2),
   },
 };

@@ -80,7 +80,7 @@ export default function Rounds() {
         <ErrorState message={copy.loadError} onRetry={refetch} />
       )}
 
-      {!isLoading && !isError && (
+      {!!data && (
         <Stagger>
           {/* The count and whoever deviated are one beat, so a late row does
               not replay the entrance. */}

@@ -145,3 +145,43 @@ def test_deviation_family_sentence_is_plain_english():
                         "2026-09-19") == "Eleanor was up once in the night. She is usually up 3 times."
     assert "slept through" in _family_text(
         "Eleanor", "night_bed_exits", 0, {"kind": "poisson", "lam": 2.0}, "2026-09-19")
+
+
+async def test_the_rate_limiter_actually_damps_the_second_deviation(resident, db):
+    """One non-info deviation per feature per day (PRD §8.5). `result` carries
+    its own undamped severity, so spreading it into the payload after the damped
+    one made the limiter a no-op in both directions."""
+    state = None
+    for d in _dates(14):
+        state = await baseline.update_feature(resident, "meal_count", 4.0, d)
+    result = baseline.score("meal_count", 0.0, state)
+    assert result["severity"] != "info"
+
+    dev_day = "2026-08-15"
+    for _ in range(2):
+        await baseline._emit_deviation(
+            resident, "meal_count", 0.0, result, dev_day, {"display_name": "Eleanor"}
+        )
+
+    # _id is a ULID, so this is write order even though ts_epoch is whole seconds.
+    events = await db.events.find({"type": "baseline_deviation"}).sort("_id", 1).to_list(10)
+    assert [e["payload"]["severity"] for e in events] == [result["severity"], "info"]
+    assert events[1]["payload"]["raw_severity"] == result["severity"]
+
+
+def test_zone_dwell_room_time_reads_the_key_location_writes():
+    """location.py emits `dwell_s`; reading `duration_s` alone made the three
+    room-time features publish hard zeros forever."""
+    from zoneinfo import ZoneInfo
+
+    docs = [{"type": "zone_dwell", "zone": "kitchen", "ts_epoch": 1757000000,
+             "payload": {"dwell_s": 600}}]
+    features = baseline._derive_features(docs, ZoneInfo("America/New_York"))
+    assert features["time_in_kitchen_s"] == 600
+
+
+async def test_a_day_with_no_events_is_not_a_day_she_did_not_eat(resident, db):
+    """An outage used to write meal_count=0, score it warn, and leave it in the
+    60-day window."""
+    assert await baseline.rollup(resident, "2026-08-14") == {}
+    assert await db.baseline_observations.count_documents({"resident_id": resident}) == 0

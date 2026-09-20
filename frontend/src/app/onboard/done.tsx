@@ -1,10 +1,18 @@
 // The one write. Everything onboarding collected (consent, her description,
 // the camera's room, and every fact) goes to the server here, in one place,
-// so there is exactly one thing that can fail and exactly one retry to build.
+// so there is one screen that can fail and one retry to build.
+//
+// It is two calls, though, and they fail apart: the profile PUT lands, and then
+// POST /profile/facts 403s (consent.memory is off) or 422s. The screen used to
+// say "Nothing was saved" over a resident whose profile and consent were
+// already on the hub, and offer to walk away from a write that had half
+// happened. So the two are tracked separately — the banner names what is
+// actually still on this phone, and Try again does not re-send a profile that
+// already landed.
 //
 // It does not pretend to have succeeded: if the write fails you stay on this
 // screen with the error and a Try again, and the only way past it says plainly
-// that the answers live on this phone until it works.
+// what still lives on this phone until it works.
 //
 // Consent is MERGED, never replaced. The session's grants are `null` for any
 // question not answered in this run (a plain sign-in, or the stack entered
@@ -60,6 +68,7 @@ export default function Done() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
 
   const facts = session.factDrafts.filter((f) => f.text.trim().length > 0);
   const appearance = facts.find((f) => f.key === 'appearance')?.text;
@@ -70,22 +79,25 @@ export default function Done() {
     setBusy(true);
     setError(null);
     try {
-      // Best effort: a fresh resident may have no profile yet, and a read
-      // that fails must not block the write, which merges on the server.
-      const existing = await api.getProfile(session.residentId).catch(() => null);
-      const consent = mergeConsent(
-        session.grants, existing?.consent ?? null, session.consentGivenBy, session.consentRelationship,
-      );
-      await api.putProfile(session.residentId, {
-        // Her name was typed on the consent screen; without that screen the
-        // session only holds its default, which is not hers to overwrite.
-        ...(consentedNow ? { name: session.residentName } : {}),
-        ...(appearance ? { appearance: appearance.slice(0, 200) } : {}),
-        ...(Object.keys(consent).length ? { consent } : {}),
-        ...(session.camera.zone
-          ? { camera: { zone: session.camera.zone, zone_hint: session.camera.zoneHint } }
-          : {}),
-      });
+      if (!profileSaved) {
+        // Best effort: a fresh resident may have no profile yet, and a read
+        // that fails must not block the write, which merges on the server.
+        const existing = await api.getProfile(session.residentId).catch(() => null);
+        const consent = mergeConsent(
+          session.grants, existing?.consent ?? null, session.consentGivenBy, session.consentRelationship,
+        );
+        await api.putProfile(session.residentId, {
+          // Her name was typed on the consent screen; without that screen the
+          // session only holds its default, which is not hers to overwrite.
+          ...(consentedNow ? { name: session.residentName } : {}),
+          ...(appearance ? { appearance: appearance.slice(0, 200) } : {}),
+          ...(Object.keys(consent).length ? { consent } : {}),
+          ...(session.camera.zone
+            ? { camera: { zone: session.camera.zone, zone_hint: session.camera.zoneHint } }
+            : {}),
+        });
+        setProfileSaved(true);
+      }
       if (facts.length) {
         await api.addFacts(session.residentId, facts, session.consentGivenBy);
       }
@@ -107,7 +119,7 @@ export default function Done() {
         <Btn
           label={saved ? copy.openApp : copy.saveAndOpen}
           busy={busy}
-          onPress={save}
+          onPress={saved ? () => router.replace('/(family)/home') : save}
         />
       }
     >
@@ -128,11 +140,11 @@ export default function Done() {
         <Entrance index={2} style={{ marginTop: sp(8), gap: sp(2) }}>
           <ErrorState inline message={error} onRetry={save} />
           <Txt kind="caption" tone="muted">{/* voice-ok */}
-            {copy.nothingSaved}
+            {profileSaved ? copy.notesNotSaved : copy.nothingSaved}
           </Txt>
           <Btn
             kind="quiet"
-            label={copy.skipWithoutSaving}
+            label={profileSaved ? copy.skipWithoutNotes : copy.skipWithoutSaving}
             onPress={() => { session.finishOnboarding(); router.replace('/(family)/home'); }}
           />
         </Entrance>

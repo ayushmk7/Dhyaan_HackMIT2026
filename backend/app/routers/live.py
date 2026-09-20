@@ -13,6 +13,8 @@ import contextlib
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..events import subscribe
+from ..rag import FAMILY_EXCLUDED_TYPES
+from .camera import _family_item
 
 router = APIRouter(prefix="/v1", tags=["app"])
 
@@ -22,12 +24,6 @@ router = APIRouter(prefix="/v1", tags=["app"])
 _connections: dict[WebSocket, dict] = {}
 
 _PING_INTERVAL_S = 25
-
-
-def _ser(doc: dict) -> dict:
-    out = dict(doc)
-    out["id"] = out.pop("_id", doc.get("id"))
-    return out
 
 
 async def _send(ws: WebSocket, msg: dict) -> None:
@@ -57,8 +53,20 @@ async def broadcast(msg: dict, resident_id: str | None) -> None:
 @subscribe
 async def _on_event(doc: dict) -> None:
     """Registered once at import time. Fired by `events.emit()` after every
-    write — this is the entire "push every new event" requirement."""
-    await broadcast({"t": "event.new", "event": _ser(doc)}, doc.get("resident_id"))
+    write — this is the entire "push every new event" requirement.
+
+    It used to push the raw Mongo doc: `zone` and the raw `embedding_text`
+    ("Asha moved into the bathroom") went to every client on the LAN, which is
+    the same D-001 leak `/timeline` had. Same shaper as `/activity` and
+    `/timeline`, so a row cannot be safe on one path and not the other. The
+    `resident_id` is added back because clients route on it and `_family_item`
+    (written for a single-resident day view) has no reason to carry it.
+    """
+    if doc["type"] in FAMILY_EXCLUDED_TYPES:
+        return
+    await broadcast({"t": "event.new",
+                     "event": {**_family_item(doc), "resident_id": doc.get("resident_id")}},
+                    doc.get("resident_id"))
 
 
 async def broadcast_alert(alert: dict) -> None:

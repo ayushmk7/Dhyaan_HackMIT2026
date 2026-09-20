@@ -24,12 +24,12 @@ import {
 } from '@/components';
 import { family } from '@/lib/copy/family';
 import {
-  useActivity, useContacts, useLatestMessage, usePresence, useResident, useTalkAbout,
+  useActivity, useContacts, useLatestMessage, useNow, usePresence, useResident, useTalkAbout,
 } from '@/lib/hooks';
 import { ago, displaySentence, residentNumber, timeOf } from '@/lib/format';
 import type { ActivityItem, Presence } from '@/lib/types';
 import { useCareFile } from '@/store/carefile';
-import { useLive } from '@/store/live';
+import { LIVE_PRESENCE_MS, useLive } from '@/store/live';
 import { useSession } from '@/store/session';
 import { sp, useTheme } from '@/theme';
 
@@ -74,6 +74,10 @@ function emptySentence(p: Presence | undefined, name: string): string {
 /** The missing-value glyph, for a figure nobody has counted yet. */
 const NONE = '–';
 
+/** Three missed 15 s polls. Past this the cached answer is not today's news,
+ *  it is the last thing the hub said before it stopped answering. */
+const PRESENCE_STALE_MS = 45_000;
+
 /**
  * One quiet row: a small label, the sentence under it, and a time on the
  * right when there is one. No glyph; the label names the thing. A chevron
@@ -106,7 +110,12 @@ export default function Today() {
   const qc = useQueryClient();
   const { residentId, residentName } = useSession();
   const livePresence = useLive((s) => s.presence[residentId]);
-  const { data: fetched, isLoading, isError, error, refetch } = usePresence(residentId);
+  const livePresenceAt = useLive((s) => s.presenceAt[residentId]);
+  // 'closed', not "not open": a cold start sits in 'connecting' for a moment
+  // and that is not news. This line is for a socket that opened and went away,
+  // or one that could not open at all — both of which land here.
+  const socketDown = useLive((s) => s.status === 'closed');
+  const { data: fetched, isLoading, isError, error, refetch, dataUpdatedAt } = usePresence(residentId);
   const { data: activity, isError: activityError, refetch: refetchActivity } = useActivity(residentId);
   const { data: contacts } = useContacts();
   // Her own line rides on the roster projection now, so no extra request.
@@ -116,9 +125,25 @@ export default function Today() {
   const { data: prompts } = useTalkAbout();
   const { data: herMessage } = useLatestMessage();
   const nextAppt = useCareFile((s) => s.appointments[0]);
+  // What makes the two age gates below actually fire: without a clock they
+  // would only be re-read when something else happened to re-render, which on
+  // a dead worker over a live hub is the one case that has nothing to say.
+  const now = useNow(5000);
 
   // The websocket is the fast path; the 15 s refetch is the belt under it.
-  const presence = livePresence ?? fetched;
+  // Both are gated on age, because both go quiet in the one way this screen
+  // must never look calm through:
+  //   · the push only happens on ingest, a state POST or a pause, so a camera
+  //     worker that dies sends nothing at all. Ungated, its last sentence won
+  //     forever and the GET that would have said out_of_view was never read
+  //     again — a hero sentence and "noticed just now" over a dead camera.
+  //   · react-query hands back the last good answer while every refetch
+  //     fails, so a hub that is gone reads as yesterday's day in full ink.
+  // ponytail: both are read off a 5 s clock, so a sentence can outlive its
+  // window by up to five seconds — not by an afternoon, which is what it did.
+  const pushFresh = !!livePresenceAt && now - livePresenceAt < LIVE_PRESENCE_MS;
+  const fetchFresh = !!dataUpdatedAt && now - dataUpdatedAt < PRESENCE_STALE_MS;
+  const presence = (pushFresh ? livePresence : undefined) ?? (fetchFresh ? fetched : undefined);
   const phone = residentNumber(resident, contacts, residentName);
 
   const [refreshing, setRefreshing] = useState(false);
@@ -135,7 +160,11 @@ export default function Today() {
       </Screen>
     );
   }
-  if (isError && !presence) {
+  // `isError && !data` was never true: react-query keeps the previous answer
+  // through every failure, so the error branch never rendered and a dead hub
+  // showed yesterday as now. `presence` is the gated value now, so this asks
+  // the honest question — is there anything current to show.
+  if ((isError || !fetchFresh) && !presence) {
     // The transport's message names the address it could not reach and why.
     // Showing only the friendly line meant the one fact that identifies the
     // problem never reached the person who could fix it.
@@ -205,6 +234,15 @@ export default function Today() {
         <Txt kind="caption" tone="muted" numberOfLines={1} style={{ marginTop: sp(4) }}>
           {subline(presence)}
         </Txt>
+        {/* The socket is down: say so once, quietly, under the line that is
+            already about how fresh this screen is. Nothing moves, nothing
+            turns red — a family does not need a connection dashboard, it
+            needs to know the screen may be behind. */}
+        {socketDown && (
+          <Txt kind="caption" tone="muted" numberOfLines={1} style={{ marginTop: sp(2) }}>
+            {copy.notLive}
+          </Txt>
+        )}
       </Entrance>
 
       {/* Beat 1. The day in four figures, on the screen's one plate. The

@@ -196,6 +196,8 @@ export default function Triage() {
     try {
       await api.ack(alert.id, copy.ackActorFallback);
       await qc.invalidateQueries();
+    } catch {
+      setDemoNote(copy.demo.ackFailed);
     } finally {
       setAckingAlertId(null);
     }

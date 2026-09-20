@@ -33,7 +33,11 @@ export function TabStack({ children }: { children: React.ReactNode }) {
         // system effect is the one Apple ships, so we take it and set nothing.
         headerShadowVisible: false,
         headerTintColor: t.accent,
-        headerTitleStyle: { color: t.ink, fontSize: type.label.fontSize, fontWeight: type.label.fontWeight },
+        // One step up the scale from the body: the round header button is
+        // 32-40pt of chrome, and a 17pt title beside it read as its caption.
+        // The title size at the label weight sits level with the button
+        // without turning the bar into a heading.
+        headerTitleStyle: { color: t.ink, fontSize: type.title.fontSize, fontWeight: type.label.fontWeight },
         contentStyle: { backgroundColor: t.paper },
       }}
     >

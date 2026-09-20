@@ -159,7 +159,11 @@ def call(images_b64, prompt, model=VLM_MODEL, host=OLLAMA_HOST, timeout=60.0):
         obs = Observation.model_validate_json(_strip_fence(raw))
     except ValidationError:
         raw = _post(images_b64, prompt, model, host, timeout, use_schema=True)
-        obs = Observation.model_validate_json(raw)
+        # Fence the retry too. `format` constrains the decode, not the wrapper:
+        # some builds still hand back ```json ... ``` around the object, and
+        # skipping the strip here raised out of the retry and dropped the batch
+        # - i.e. the recovery path failed on the one reply it existed for.
+        obs = Observation.model_validate_json(_strip_fence(raw))
     return obs.model_dump(), int((time.monotonic() - t0) * 1000)
 
 
@@ -193,10 +197,20 @@ def from_scene(scene, posture_hint=None):
         # is on the floor. This branch did not exist - `on_floor` fell through
         # to "sitting", so a correctly detected fall was reported as sitting.
         activity, evidence = "on_floor", "one person, on the floor"
-    elif scene["food"]:
+    elif scene["food"] and posture != "upright":
+        # A bowl left on the table plus someone crossing the room is not a meal.
+        # The detector cannot see a gesture - hand_to_mouth_observed is False by
+        # construction here - so posture is the only evidence left that she
+        # stopped to eat, and `upright` is the one reading that says she did
+        # not. Deliberately NOT `posture == "seated"`: at a table the knees are
+        # under it, the landmarker returns `unclear` (see posture.py), and the
+        # meal beat has to fire on that.
         activity, evidence = "eating", f"one person, {', '.join(scene['food'][:2])} in view"
     elif posture == "upright":
-        activity, evidence = "walking", "one person, upright"
+        # "standing", not "walking": one frame shows a stance, never a journey.
+        # `movement` below says "unclear" for exactly that reason, and two of
+        # these posts used to add up to "Eleanor was up and moving about."
+        activity, evidence = "standing", "one person, upright"
     elif posture == "seated":
         activity, evidence = "sitting", "one person, seated"
     else:

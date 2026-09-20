@@ -42,6 +42,10 @@ function sensorSentence(e: KEvent): string {
 const familySentence = (e: KEvent): string => {
   if (e.type === 'fall_suspected') return family.shared.fallSuspected;
   if (e.type === 'fall_confirmed') return family.shared.fallConfirmed;
+  // The field is required by the type and optional in Mongo. An event without
+  // one took the whole detail screen down inside `.replace`; the filed title is
+  // thin, but it is true and it renders.
+  if (!e.embedding_text) return eventTitle(e.type);
   // The raw record names rooms; this is a family screen, so the same scrub the
   // server runs on the activity feed runs here too (the second lock, for real).
   return scrubRooms(displaySentence(e.embedding_text));

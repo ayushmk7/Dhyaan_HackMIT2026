@@ -14,7 +14,7 @@ spends most of its lines defending.
 import numpy as np
 import pytest
 
-from vision import gate
+from vision import TUNING, gate
 from vision import posture as P
 from vision.keyframe import KeyframeSelector
 
@@ -45,12 +45,17 @@ def frame():
 
 @pytest.fixture(autouse=True)
 def _clean():
-    """No test leaks a remembered frame or a fired warning into the next."""
+    """No test leaks a remembered frame, a fired warning or a part-built run of
+    wide reads into the next. The run is deliberately NOT cleared by
+    remember_frame — it has to survive from frame to frame to mean anything —
+    so it is cleared here instead."""
     gate.remember_frame(None)
     gate._warned = False
+    gate._LAST["wide_run"] = 0
     yield
     gate.remember_frame(None)
     gate._warned = False
+    gate._LAST["wide_run"] = 0
 
 
 # --- the rule itself, on synthetic bodies -------------------------------------
@@ -124,18 +129,57 @@ def test_landmark_unclear_never_falls_back_to_the_bbox(monkeypatch):
 
 def test_landmark_postures_map_onto_the_old_bands(monkeypatch):
     gate.remember_frame(frame())
-    for label, band in (("upright", "tall"), ("seated", "mid"), ("on_floor", "wide")):
+    for label, band in (("upright", "tall"), ("seated", "mid")):
         _landmarks_say(monkeypatch, label)
         gate.remember_frame(frame())        # new frame -> no cached answer
         assert gate.posture_band(BOX_WIDE) == band
+
+    # `wide` is the one that opens an alert, so it costs a run of frames.
+    _landmarks_say(monkeypatch, "on_floor")
+    seen = []
+    for _ in range(TUNING["pose_wide_run"]):
+        gate.remember_frame(frame())
+        seen.append(gate.posture_band(BOX_WIDE))
+    assert seen[-1] == "wide"
+    assert set(seen[:-1]) <= {None}, "a part-confirmed fall says nothing, not 'seated'"
+
+
+def test_a_single_bad_hip_estimate_never_becomes_a_fall(monkeypatch):
+    """The bug this exists for: over one morning 104 of 2091 observations came
+    back `on_floor` with nobody ever on the floor. The landmarker puts the hips
+    somewhere plausible when it cannot really see them, and a hip guessed a
+    little sideways of the shoulders is a torso past 55 degrees."""
+    for _ in range(4):
+        _landmarks_say(monkeypatch, "on_floor")
+        gate.remember_frame(frame())
+        assert gate.posture_band(BOX_WIDE) is None
+
+        _landmarks_say(monkeypatch, "seated")       # ...and the flicker passes
+        gate.remember_frame(frame())
+        assert gate.posture_band(BOX_WIDE) == "mid"
+
+
+def test_the_run_does_not_carry_over_to_the_next_person(monkeypatch):
+    _landmarks_say(monkeypatch, "on_floor")
+    for _ in range(TUNING["pose_wide_run"] - 1):
+        gate.remember_frame(frame())
+        gate.posture_band(BOX_WIDE)
+    gate.posture_band(None)                         # she left view
+    gate.remember_frame(frame())
+    assert gate.posture_band(BOX_WIDE) is None, "the run restarted"
 
 
 def test_a_landmark_on_floor_still_fires_the_fall(monkeypatch):
     """Stricter, not deafer: a fall the body agrees with still jumps the queue."""
     _landmarks_say(monkeypatch, "on_floor")
-    gate.remember_frame(frame())
     k = KeyframeSelector()
-    reasons = [k.update(float(i), True, BOX_WIDE) for i in range(4)]
+    reasons = []
+    for i in range(8):
+        # One frame per turn, which is what the lane does. `remember_frame` is
+        # what lets the pose be read again, so the run is counted per frame and
+        # someone lying perfectly still — an unchanging box — still confirms.
+        gate.remember_frame(frame())
+        reasons.append(k.update(float(i), True, BOX_WIDE))
     assert "on_floor" in reasons
 
 

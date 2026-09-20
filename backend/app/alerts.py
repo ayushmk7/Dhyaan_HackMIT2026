@@ -59,20 +59,11 @@ async def _noop(alert, detail=None):
     pass
 
 
-async def _start_cancel_timer(alert, detail=None):
-    _schedule(alert["_id"], cfg.CANCEL_WINDOW_S, "cancel_timeout")
-
-
 async def _call_resident(alert, detail=None):
     await db().alerts.update_one({"_id": alert["_id"]}, {"$inc": {"resident_call_attempts": 1}})
     resident = await db().residents.find_one({"_id": alert["resident_id"]})
     if resident and resident.get("phone_e164"):
         await voice.place_call(resident["phone_e164"], "resident", alert["_id"])
-    _schedule(alert["_id"], RESIDENT_RESPONSE_TIMEOUT_S, "silence")
-
-
-async def _schedule_retry(alert, detail=None):
-    _schedule(alert["_id"], RETRY_WAIT_S, "retry_timeout")
 
 
 async def _leave_voicemail(alert, detail=None):
@@ -87,23 +78,25 @@ async def _notify_family_warn(alert, detail=None):
     await _apply(alert["_id"], "notified", detail=detail)
 
 
-async def _call_contact(alert, ladder_order: int, next_trigger_delay: int):
+async def _call_contact(alert, ladder_order: int):
     if alert.get("severity") != "warn":
         await db().alerts.update_one({"_id": alert["_id"]}, {"$set": {"severity": "critical"}})
     contact = await db().contacts.find_one(
         {"resident_id": alert["resident_id"], "ladder_order": ladder_order}
     )
-    if contact:
+    # A contact row without a phone number is a data problem, not a reason to
+    # stop dialling: the rung's timer is already armed, so skipping here moves
+    # the ladder on to the next contact instead of raising and stranding it.
+    if contact and contact.get("phone_e164"):
         await voice.place_call(contact["phone_e164"], "contact", alert["_id"])
-    _schedule(alert["_id"], next_trigger_delay, "contact_timeout")
 
 
 async def _call_contact1(alert, detail=None):
-    await _call_contact(alert, 1, cfg.CONTACT_WAIT_S)
+    await _call_contact(alert, 1)
 
 
 async def _call_contact2(alert, detail=None):
-    await _call_contact(alert, 2, cfg.CONTACT_WAIT_S)
+    await _call_contact(alert, 2)
 
 
 async def _final_escalation(alert, detail=None):
@@ -112,16 +105,15 @@ async def _final_escalation(alert, detail=None):
     name = resident.get("display_name", "")
     address = resident.get("address", "")
     for contact in contacts:
+        if not contact.get("phone_e164"):
+            continue
         sid = await voice.place_call(contact["phone_e164"], "contact_final", alert["_id"])
         await voice.speak_final_escalation(sid, name, address)
-    _schedule(alert["_id"], cfg.EXHAUSTED_AFTER_S, "exhausted_timeout")
 
 
 ACTIONS = {
     "noop": _noop,
-    "start_cancel_timer": _start_cancel_timer,
     "call_resident": _call_resident,
-    "schedule_retry": _schedule_retry,
     "leave_voicemail": _leave_voicemail,
     "notify_family_warn": _notify_family_warn,
     "call_contact1": _call_contact1,
@@ -158,12 +150,12 @@ RESOLUTION_FOR_STATE = {
 # ---------------------------------------------------------------------------
 
 TABLE: dict[tuple[str, str], tuple[str, str]] = {
-    ("SUSPECTED", "window_open"): ("LOCAL_CANCEL", "start_cancel_timer"),
+    ("SUSPECTED", "window_open"): ("LOCAL_CANCEL", "noop"),
 
     ("LOCAL_CANCEL", "cancel"): ("CANCELLED", "noop"),
     ("LOCAL_CANCEL", "cancel_timeout"): ("CALLING_RESIDENT", "call_resident"),
 
-    ("CALLING_RESIDENT", "no_answer"): ("RETRY_RESIDENT", "schedule_retry"),
+    ("CALLING_RESIDENT", "no_answer"): ("RETRY_RESIDENT", "noop"),
     ("CALLING_RESIDENT", "voicemail"): ("VOICEMAIL", "leave_voicemail"),
     ("CALLING_RESIDENT", "connected"): ("CLASSIFYING", "noop"),
     ("CALLING_RESIDENT", "silence"): ("CALLING_CONTACT_1", "call_contact1"),
@@ -178,6 +170,10 @@ TABLE: dict[tuple[str, str], tuple[str, str]] = {
     ("CLASSIFYING", "fell_but_fine"): ("FELL_BUT_FINE", "notify_family_warn"),
     ("CLASSIFYING", "distress"): ("CALLING_CONTACT_1", "call_contact1"),
     ("CLASSIFYING", "incoherent"): ("CALLING_CONTACT_1", "call_contact1"),
+    # She picked up and then nothing usable came back. Without this the ladder
+    # had no clock at all in CLASSIFYING: a live fall stopped escalating and
+    # never reached a terminal state.
+    ("CLASSIFYING", "silence"): ("CALLING_CONTACT_1", "call_contact1"),
 
     ("FELL_BUT_FINE", "notified"): ("CALLING_CONTACT_1", "call_contact1"),
 
@@ -231,17 +227,27 @@ def _schedule(alert_id: str, delay_s: float, trigger: str) -> None:
 
 
 # Which trigger each waiting state is waiting FOR, and how long it waits. This
-# is the timer half of TABLE, and it has to agree with the `_schedule(...)` call
-# in the action that enters each state — a state here with the wrong trigger
-# would re-arm an alert onto a transition TABLE has no entry for. States absent
-# from this map are not waiting on a clock: VOICEMAIL and FELL_BUT_FINE chain
-# straight through, CLASSIFYING waits on a human, and the terminal states are
-# done.
+# is now the ONLY place a ladder timeout is declared: `_apply` arms it on entry
+# to the state, so it is also, by construction, what `_rearm_pending` restores
+# after a restart. It used to be a second copy of the `_schedule(...)` calls
+# scattered through the actions, and the two disagreed — CLASSIFYING had a clock
+# in neither, so an alert that got as far as "she answered" quietly stopped
+# escalating and never reached a terminal state.
+#
+# A window of 0.0 means "this state chains straight through and its action calls
+# `_apply` itself" — `_apply` does not arm a timer for those (racing the action
+# would double-fire the transition), they are listed only so `_rearm_pending`
+# can unstick an alert that crashed mid-chain instead of leaving it parked in a
+# state nothing will ever fire.
 def _pending_timer(state: str) -> tuple[str, float] | None:
     return {
+        "SUSPECTED": ("window_open", 0.0),
         "LOCAL_CANCEL": ("cancel_timeout", float(cfg.CANCEL_WINDOW_S)),
         "CALLING_RESIDENT": ("silence", float(RESIDENT_RESPONSE_TIMEOUT_S)),
         "RETRY_RESIDENT": ("retry_timeout", float(RETRY_WAIT_S)),
+        "VOICEMAIL": ("voicemail_done", 0.0),
+        "CLASSIFYING": ("silence", float(RESIDENT_RESPONSE_TIMEOUT_S)),
+        "FELL_BUT_FINE": ("notified", 0.0),
         "CALLING_CONTACT_1": ("contact_timeout", float(cfg.CONTACT_WAIT_S)),
         "CALLING_CONTACT_2": ("contact_timeout", float(cfg.CONTACT_WAIT_S)),
         "ESCALATED_FINAL": ("exhausted_timeout", float(cfg.EXHAUSTED_AFTER_S)),
@@ -313,12 +319,36 @@ async def _apply(alert_id: str, trigger: str, detail=None) -> dict:
         raise ValueError(f"no transition for state={state!r} trigger={trigger!r}")
     next_state, action_name = TABLE[key]
 
-    _cancel_timer(alert_id)
     update = {"state": next_state, "updated_at": datetime.now(timezone.utc).isoformat()}
     if next_state in RESOLUTION_FOR_STATE:
         update["resolution"] = RESOLUTION_FOR_STATE[next_state]
-    await db().alerts.update_one({"_id": alert_id}, {"$set": update})
+    # Compare-and-swap on the state we read, because nothing here holds a lock
+    # and two triggers really do arrive at once: the firing timer pops itself
+    # from `_timers` before calling us, so a `POST /alerts/{id}/ack` landing in
+    # that gap cancels nothing. Ack wrote ACKNOWLEDGED, the timer then wrote
+    # CALLING_CONTACT_1 on top of it, and the family got dialled for an alert a
+    # human had already taken. Whoever writes first wins; the loser returns the
+    # alert as it now stands and does not emit, broadcast or dial.
+    res = await db().alerts.update_one({"_id": alert_id, "state": state}, {"$set": update})
+    if res.matched_count == 0:
+        log.info("alert %s: %s->%s (%s) lost the race; already moved on",
+                 alert_id, state, next_state, trigger)
+        return await _get(alert_id)
     alert.update(update)
+
+    # Arm the next rung's clock BEFORE running the action. The action is where
+    # the real world is (a Twilio call that times out, a contact row with no
+    # phone number), and when it raised, the `_schedule()` at the end of it never
+    # ran: the alert sat in CALLING_RESIDENT forever, the app said "Calling her
+    # now." indefinitely, and contact 2 was never dialled. A failing action must
+    # not cost the ladder its clock.
+    #
+    # Ordering: no `await` between the CAS above and these two, so the loop
+    # cannot interleave and cancel a timer the winner just armed.
+    _cancel_timer(alert_id)
+    pending = _pending_timer(next_state)
+    if pending and pending[1]:
+        _schedule(alert_id, pending[1], pending[0])
 
     await emit(
         resident_id=alert["resident_id"],

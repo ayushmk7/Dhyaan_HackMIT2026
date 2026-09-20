@@ -34,6 +34,10 @@ async def ensure_indexes():
     await d.events.create_index([("resident_id", 1), ("ts_epoch", -1)])
     await d.events.create_index([("type", 1), ("ts_epoch", -1)])
     await d.events.create_index([("resident_id", 1), ("type", 1), ("ts_epoch", -1)])
+    # Every FSM transition and every socket push reads the ladder back out of
+    # `events` by payload.alert_id (routers/residents.py::alert_response), and
+    # without this that is a full collection scan each time.
+    await d.events.create_index("payload.alert_id")
     await d.alerts.create_index([("state", 1), ("opened_at", -1)])
     await d.alerts.create_index([("resident_id", 1), ("opened_at", -1)])
     await d.bands.create_index("resident_id")

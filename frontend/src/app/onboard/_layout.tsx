@@ -21,7 +21,7 @@ import React from 'react';
 import { Pressable, View, ViewStyle } from 'react-native';
 import { Btn, DataLabel, Txt, useSurfaceColors } from '@/components';
 import { onboard, shell } from '@/lib/copy/staff';
-import { radius, size as S, sp, useTheme } from '@/theme';
+import { radius, size as S, sp, type as typeScale, useTheme } from '@/theme';
 import { useSession, type Grants } from '@/store/session';
 
 // ---- the sequence ---------------------------------------------------------------
@@ -129,9 +129,14 @@ export default function OnboardLayout() {
         headerShadowVisible: false,
         headerBackButtonDisplayMode: 'minimal',
         headerTintColor: t.accent,
-        // The size is the navigation bar's own default; only the weight and
-        // colour are ours (the scale forbids an inline size).
-        headerTitleStyle: { color: t.ink, fontWeight: '600' },
+        // The same title as every other stack (see TabStack in lib/nav.tsx):
+        // the title size at the label weight, read off the scale, never a
+        // literal, so the app has one header title and it moves with the scale.
+        headerTitleStyle: {
+          color: t.ink,
+          fontSize: typeScale.title.fontSize,
+          fontWeight: typeScale.label.fontWeight,
+        },
         contentStyle: { backgroundColor: t.paper },
         headerRight: onboarded
           // A full-height target: the bar is 44pt and so is the button.

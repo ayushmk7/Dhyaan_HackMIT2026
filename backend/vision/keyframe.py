@@ -31,6 +31,17 @@ class KeyframeSelector:
         self.floor_fired = False
         self.last_floor_t = None
 
+    @property
+    def floor_confirmed(self):
+        """Has `wide` been read enough times in a row to be believed?
+
+        `on_floor_confirm` used to govern only this class, i.e. only the VLM
+        lane. The worker's detector-change post is a second route from a bbox
+        to the word "floor" and it had no confirm of its own, so this exposes
+        the run rather than letting that path keep a second copy of the rule.
+        """
+        return self.wide_run >= self.t["on_floor_confirm"]
+
     def update(self, t, person, box=None):
         T = self.t
 
@@ -62,7 +73,15 @@ class KeyframeSelector:
         else:
             self.wide_run = 0
             self.floor_fired = False
-        cooled = self.last_floor_t is None or t - self.last_floor_t >= T["on_floor_cooldown_s"]
+        # ...but a cooldown armed by a FALSE on_floor must not sit on a real
+        # one for the next 30 s, which is what it did: the reason was ANDed
+        # away here and min_gap_s then ate the fall-through, so the fall showed
+        # up 20-30 s late. Twice the confirm - four consecutive wide frames
+        # where two normally suffice - is strictly more evidence than the read
+        # that armed the cooldown ever had, so it is allowed through it.
+        cooled = (self.last_floor_t is None
+                  or t - self.last_floor_t >= T["on_floor_cooldown_s"]
+                  or self.wide_run >= 2 * T["on_floor_confirm"])
         if self.wide_run >= T["on_floor_confirm"] and not self.floor_fired and cooled:
             self.floor_fired = True
             self.last_floor_t = t

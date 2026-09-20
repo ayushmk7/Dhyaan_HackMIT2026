@@ -66,6 +66,10 @@ export const family = {
 
     call: (name: string) => `Call ${name}`,
 
+    // The socket is down. One line, no dashboard: the family is told the
+    // screen may be behind, and nothing else changes.
+    notLive: 'Not connected just now. This screen may be behind.',
+
     todayError: 'Couldn’t load today’s figures. The rest of the screen is still current.',
     tryAgain: 'Try again',
     // The figures plate opens her day; this is the label on it.
@@ -125,6 +129,15 @@ export const family = {
 
     whatItNoticed: 'What it noticed',
     shownOf: (shown: number, total: number) => `${shown} of ${total}`,
+    // The landmarks in the list: each run of rows is headed by the part of
+    // the day it happened in, so scrolling always says where you are.
+    parts: {
+      overnight: 'Overnight',
+      morning: 'Morning',
+      afternoon: 'Afternoon',
+      evening: 'Evening',
+      night: 'Night',
+    },
     noActivity: (isToday: boolean) =>
       `No activity noticed ${isToday ? 'yet today' : 'on this day'}. Dhyaan only writes a line when it is confident enough to say a whole sentence.`,
     nothingUnder: (filter: string, isToday: boolean) =>
@@ -426,8 +439,26 @@ export const family = {
       noHeartbeat: 'NO HEARTBEAT YET',
     },
 
-    // The one heading under the pane: the worker's four readings.
+    // The one heading under the pane. Every reading beneath it is the tick's.
     worker: 'The worker',
+    // Telemetry keys: names of things, not data. The values next to them are
+    // the worker's own numbers and words, straight off the monitor tick.
+    keys: {
+      gate: 'GATE',
+      people: 'PEOPLE',
+      activity: 'ACTIVITY',
+      conf: 'CONF',
+      fps: 'FPS',
+      latency: 'LATENCY',
+      batch: 'BATCH',
+      age: 'TICK AGE',
+      model: 'MODEL',
+    },
+    // The REC light's two words. Which one shows is the tick's `simulated`.
+    rec: 'REC',
+    simulated: 'SIMULATED',
+    // The glyph for a field the worker did not fill. Typography, not a reading.
+    none: '—',
 
     simulate: 'Simulate',
     meal: 'Meal',
@@ -442,13 +473,13 @@ export const family = {
   alert: {
     kind: {
       fall: 'Possible fall',
-      bathroom: 'Long bathroom stay',
+      bathroom: 'A long stay in one place',
       sos: 'Help button pressed',
       inactivity: 'Unusually still',
       baseline_deviation: 'Change in routine',
     } as Record<string, string>,
     headline: (kind: string, name: string) =>
-      kind === 'bathroom' ? `${name} has been in the bathroom a long time.` : `${name} may have fallen.`,
+      kind === 'bathroom' ? `${name} has been in one place a long time.` : `${name} may have fallen.`,
 
     // When the session has no name for who is involved.
     unknownResident: 'the resident',

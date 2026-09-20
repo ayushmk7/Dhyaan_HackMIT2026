@@ -1,8 +1,24 @@
 // TanStack Query owns anything cacheable (§10.3). Zustand owns what the socket mutates.
 import { useQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSession } from '@/store/session';
 import { api } from './api';
+
+/**
+ * A clock the screen can read without calling `Date.now()` mid-render, which
+ * the compiler's purity rule forbids and which would go stale in place anyway.
+ * One interval, one number, and everything derived from "is this still true?"
+ * hangs off it. Lived in the camera console until Today and the alert takeover
+ * needed the same question asked of their own data.
+ */
+export function useNow(everyMs = 1000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), everyMs);
+    return () => clearInterval(id);
+  }, [everyMs]);
+  return now;
+}
 
 export const useResidents = () =>
   useQuery({ queryKey: ['residents'], queryFn: api.listResidents });
@@ -29,14 +45,27 @@ export const useLocationHistory = (residentId: string, date: string) =>
 export const useBaselines = (residentId: string) =>
   useQuery({ queryKey: ['baselines', residentId], queryFn: () => api.getBaselines(residentId) });
 
-export const useContacts = () =>
-  useQuery({ queryKey: ['contacts'], queryFn: api.getContacts });
+// All three read the session's resident inside `api` (http.ts: `residentId()`),
+// so the cache must be keyed by it too. Unkeyed, the takeover for a resident
+// this phone has switched to named the previous one's contact.
+export const useContacts = () => {
+  const residentId = useSession((s) => s.residentId);
+  return useQuery({ queryKey: ['contacts', residentId], queryFn: api.getContacts });
+};
 
-export const useTalkAbout = () =>
-  useQuery({ queryKey: ['talkAbout'], queryFn: api.talkAbout });
+export const useTalkAbout = () => {
+  const residentId = useSession((s) => s.residentId);
+  return useQuery({ queryKey: ['talkAbout', residentId], queryFn: api.talkAbout });
+};
 
-export const useLatestMessage = () =>
-  useQuery({ queryKey: ['latestMessage'], queryFn: api.latestMessage, refetchInterval: 10_000 });
+export const useLatestMessage = () => {
+  const residentId = useSession((s) => s.residentId);
+  return useQuery({
+    queryKey: ['latestMessage', residentId],
+    queryFn: api.latestMessage,
+    refetchInterval: 10_000,
+  });
+};
 
 export const useAlert = (id: string) =>
   useQuery({

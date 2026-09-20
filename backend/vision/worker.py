@@ -133,6 +133,16 @@ class Worker:
             self.cfg = dict(NO_CONSENT)
             return
 
+        # A 200 is not an answer. A captive portal or a proxy returns one with
+        # an HTML body, `cfg` is then a str, and the first cfg.get() below
+        # raised AttributeError straight out of run() - the lane died instead
+        # of polling, which is the one thing the poll exists to survive.
+        if not isinstance(cfg, dict):
+            log(f"config: reply was {type(cfg).__name__}, not an object "
+                "-> treating as NO CONSENT")
+            self.cfg = dict(NO_CONSENT)
+            return
+
         # The API returns 422 for a private zone, but a worker that would point a
         # camera at a bedroom because a server said so is not a gate.
         if str(cfg.get("zone", "")).lower() in PRIVATE_ZONES:
@@ -405,7 +415,7 @@ class Worker:
                         self.heartbeat("offline")
                         self.monitor("stalled", force=True)
                         log(f"camera delivered no new frame for "
-                            f"{self.tuning['stall_s']:.0f}s — reported offline")
+                            f"{self.tuning['stall_s']:g}s — reported offline")
                     time.sleep(0.005)
                     continue
                 if self._stalled:
@@ -442,8 +452,20 @@ class Worker:
                 # detector's own observation the moment what it sees changes,
                 # and leave the selector to its slow VLM cadence.
                 if self.scene is not None:
+                    band = posture_band(box, self.tuning)
+                    # One wide frame is not a fall here either. This path posts
+                    # the moment the detector's answer changes, which walked
+                    # straight around `on_floor_confirm` - a nap on the sofa or
+                    # a sideways bend became "Eleanor appeared to be on the
+                    # floor at 3:14 pm" off a single rectangle. Borrow the
+                    # selector's run instead of counting a second one. It lags
+                    # one frame, because selector.update() for THIS frame is
+                    # still below; a fall that has been on the floor for two
+                    # frames has been there for three.
+                    if band == "wide" and not selector.floor_confirmed:
+                        band = None
                     shape = (self.scene["person_count"], bool(self.scene["food"]),
-                             bool(self.scene["dishes"]), posture_band(box, self.tuning))
+                             bool(self.scene["dishes"]), band)
                     # The floor is what stops a posture flap becoming a write
                     # storm; see tuning["quick_min_s"]. `_last_shape` advances
                     # only on a real post, so a change held back here fires on
@@ -458,8 +480,7 @@ class Worker:
                         log(f"scene: people={sc['person_count']} food={sc['food']} "
                             f"dishes={sc['dishes']} seating={sc['seating']} "
                             f"({getattr(self, 'scene_ms', 0)} ms)")
-                        quick = vlm.post_rules(
-                            vlm.from_scene(self.scene, posture_band(box, self.tuning)))
+                        quick = vlm.post_rules(vlm.from_scene(self.scene, band))
                         self._last_obs = quick
                         ms = getattr(self, "scene_ms", 0)
                         # Both of them. `_last_obs` is what the preview draws and
@@ -488,11 +509,19 @@ class Worker:
                 # was invisible for the seconds between keyframes, which is
                 # exactly when someone picks up a bottle. `openvocab_every_n`
                 # throttles it if a slower machine starts dropping frames.
+                # ...and these two are not alternatives. Written as if/elif,
+                # the throttle above swallowed the keyframe pass: with
+                # openvocab_every_n=3 the `elif` was unreachable on every frame
+                # a person was in view, so on the COCO revert path 2 keyframes
+                # in 3 went to the VLM with no food labels at all. `ran_ov`
+                # only stops the same frame paying for the detector twice.
+                ran_ov = False
                 if seen and self.tuning.get("openvocab"):
                     self._ov_tick = getattr(self, "_ov_tick", 0) + 1
                     if self._ov_tick % self.tuning.get("openvocab_every_n", 1) == 0:
                         self._openvocab(masked)
-                elif reason and reason != "absent":
+                        ran_ov = True
+                if reason and reason != "absent" and not ran_ov:
                     self._openvocab(masked)
                 status = f"motion {score:.3f}" + (" · person" if seen else "") + \
                          (f" · {reason}" if reason else "")

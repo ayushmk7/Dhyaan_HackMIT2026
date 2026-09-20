@@ -6,6 +6,7 @@ import { toAlert } from '@/lib/http';
 import { LiveClient } from '@/lib/live';
 import { dhyaan } from '@/lib/mock/dhyaan';
 import { queryClient } from '@/lib/queryClient';
+import { useSession } from '@/store/session';
 import type {
   Alert, CameraMonitorTick, LadderStep, Presence, ResidentLocation, TranscriptLine, WsEnvelope,
 } from '@/lib/types';
@@ -18,6 +19,18 @@ type LiveState = {
   // VLM_PLAN §6.1: pushed after every observation and heartbeat state change.
   // Today reads this first and falls back to the 15 s GET /presence refetch.
   presence: Record<string, Presence>;
+  /** resident_id -> when that push landed, by this phone's clock.
+   *
+   *  A pushed presence is live telemetry, not a record. `_push_presence`
+   *  (backend/app/routers/camera.py) fires on ingest, on an explicit state
+   *  POST and on a pause — a worker that dies sends no goodbye. Unstamped,
+   *  the last push sat here forever and Today, which reads
+   *  `livePresence ?? fetched`, never consulted the 15 s GET again: "Camera
+   *  on · noticed just now" over a camera that stopped an hour ago. Same
+   *  hygiene the monitor tick gets above, one field instead of a timer
+   *  because the reader already re-renders on every poll.
+   *  Readers drop a push older than LIVE_PRESENCE_MS. */
+  presenceAt: Record<string, number>;
   /** camera_id -> the last tick. The console reads this; nothing else does. */
   monitor: Record<string, CameraMonitorTick>;
   activeAlert: Alert | null;
@@ -39,6 +52,11 @@ const shapeAlert = (a: Alert): Alert => (USE_MOCKS ? a : toAlert(a as never));
 
 // Mirrors MONITOR_STALE_S in backend/app/routers/camera.py. Keep in sync.
 const MONITOR_STALE_MS = 15_000;
+
+/** How long a pushed presence is allowed to speak for the present. Longer than
+ *  the 15 s GET under it, so a healthy socket is never second-guessed by the
+ *  belt it is faster than. */
+export const LIVE_PRESENCE_MS = 20_000;
 const staleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** Drop a camera's tick once it stops being live. Each new tick pushes the
@@ -59,6 +77,7 @@ export const useLive = create<LiveState>((set, get) => ({
   states: {},
   locations: {},
   presence: {},
+  presenceAt: {},
   monitor: {},
   activeAlert: null,
   ladder: [],
@@ -76,11 +95,20 @@ export const useLive = create<LiveState>((set, get) => ({
     // backoff and never throws out of onmessage. The raw `new WebSocket` this
     // replaced gave up permanently the first time the Mac's API restarted,
     // which on a demo LAN is every code reload.
-    const client = new LiveClient();
-    const off = client.subscribe((m) => {
-      if (get().status !== 'open') set({ status: 'open' });
-      get().applyEvent(m);
-    });
+    // The socket's own open/close, not "a message arrived once": status used
+    // to be written from inside the message handler, so it could only ever
+    // become 'open' and stayed there through every silent reconnect. Today
+    // renders one quiet line off this, and a line that cannot go false is
+    // worse than no line at all.
+    // Scope the feed to this phone's resident unless this is the staff lane,
+    // which watches the whole floor. Unscoped, a family phone received every
+    // resident's alert and opened the takeover for a stranger's fall.
+    const { role, residentId } = useSession.getState();
+    const client = new LiveClient(
+      role === 'staff' ? undefined : residentId,
+      (open) => set({ status: open ? 'open' : 'closed' }),
+    );
+    const off = client.subscribe((m) => get().applyEvent(m));
     client.connect();
     unsubscribe = () => { off(); client.close(); set({ status: 'closed' }); };
   },
@@ -99,6 +127,11 @@ export const useLive = create<LiveState>((set, get) => ({
       // opens the takeover and still closes it.
       case 'alert.update': {
         const a = shapeAlert(m.alert);
+        // Belt to the socket's scope above: a family phone that connected
+        // before its role was known must still never take over for another
+        // resident's alert.
+        const { role, residentId } = useSession.getState();
+        if (role !== 'staff' && a.resident_id !== residentId) break;
         set((s) => ({
           activeAlert: a.closed_at ? (s.activeAlert?.id === a.id ? null : s.activeAlert) : a,
           ladder: a.closed_at ? s.ladder : [...(a.ladder ?? [])],
@@ -131,7 +164,10 @@ export const useLive = create<LiveState>((set, get) => ({
         break;
       }
       case 'presence.update':
-        set((s) => ({ presence: { ...s.presence, [m.resident_id]: m.presence } }));
+        set((s) => ({
+          presence: { ...s.presence, [m.resident_id]: m.presence },
+          presenceAt: { ...s.presenceAt, [m.resident_id]: Date.now() },
+        }));
         break;
       case 'location.changed':
         set((s) => ({ locations: { ...s.locations, [m.resident_id]: m.location } }));
