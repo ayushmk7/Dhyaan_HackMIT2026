@@ -44,8 +44,49 @@ def _aware(ts: datetime) -> datetime:
     return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
 
 
+# The last presence actually pushed, per resident, so an unchanged one is not
+# pushed again. See `_push_presence`.
+_LAST_PRESENCE: dict[str, tuple] = {}
+
+
+def _presence_signature(p: dict) -> tuple:
+    """Everything in a presence that a family screen renders differently.
+
+    Deliberately excludes `last_observation_at`. That moves on every single
+    observation, and the worker posts two or three a second, so including it
+    made every push look like a change when nothing a person could see had
+    changed. `since` IS included: it only moves when an episode starts, which
+    is a real event.
+    """
+    cam = p.get("camera") or {}
+    return (
+        p.get("status"), p.get("activity"), p.get("spot_is_usual"),
+        p.get("since"), p.get("sentence"),
+        cam.get("online"), cam.get("consent"),
+        cam.get("paused_until"), cam.get("paused_by"),
+    )
+
+
 async def _push_presence(resident_id: str) -> dict:
+    """Recompute presence, and push it only if it actually changed.
+
+    `presence.update` used to fire on every observation. With a live camera
+    that is two or three times a second, and each one handed the app a new
+    presence object: the home screen re-rendered at that rate, its hero
+    re-mounted and re-animated because it is keyed on the sentence, and rows
+    that appear only when they have something to say flickered in and out. The
+    page looked like it was reformatting itself while nobody touched it.
+
+    The freshness the dropped pushes carried ("noticed 4 minutes ago") is not
+    lost: `usePresence` refetches on its own timer, which is the right cadence
+    for a relative timestamp that changes once a minute.
+    """
     p = await presence.family_presence(resident_id)
+    sig = _presence_signature(p)
+    if _LAST_PRESENCE.get(resident_id) == sig:
+        return p
+    _LAST_PRESENCE[resident_id] = sig
+
     from .live import broadcast  # lazy: live.py imports events, events imports db
 
     await broadcast({"t": "presence.update", "resident_id": resident_id, "presence": p},

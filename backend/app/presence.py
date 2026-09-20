@@ -165,7 +165,9 @@ def presence_sentence(name: str, presence: dict, tz: ZoneInfo, spot_is_usual: bo
         return f"{name} has been resting{' ' + where if where else ''}{since_s}."
     if a in ("sitting", "reading", "watching_tv", "using_phone"):
         word = _ACTIVITY_WORD.get(a, a)
-        return f"{name} has been settled{' ' + where if where else ''}{since_s} — {word}, by the look of it."
+        # No em dash: this is the one sentence a family reads on the home
+        # screen, and DESIGN.md bans them in user-facing prose.
+        return f"{name} has been settled{' ' + where if where else ''}{since_s}. {word.capitalize()}, by the look of it."
     return f"{name} is at home{since_s}."
 
 

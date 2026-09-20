@@ -86,7 +86,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 | Var | Default | Effect |
 |---|---|---|
 | `DEMO_FAST` | off | Scales every dedup gap and minimum duration to a tenth, so a 30-second stage lunch becomes one `meal_observed`. Reported back to the worker as `demo_fast` on `/camera/config`. |
-| `CHAT_FALLBACK_MODEL` | *(unset)* | When set (the demo uses `qwen3-vl:8b`), chat answers fall back to a local Ollama text call when there is no Anthropic key. Unset, the fallback is a kind-grouped template answer. |
+| `CHAT_FALLBACK_MODEL` | *(unset)* | When set (the demo uses `qwen3-vl:8b`), chat answers fall back to a local Ollama text call when there is no OpenAI key. Unset, the fallback is a kind-grouped template answer. |
 
 ## New event types (§6.3)
 

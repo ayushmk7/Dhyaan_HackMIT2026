@@ -8,7 +8,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 MONGO_DB = os.getenv("MONGO_DB", "dhyaan")
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
 
 # Escalation ladder timings (seconds). Tunable at the venue — see TECHNICAL_PRD §4.2.

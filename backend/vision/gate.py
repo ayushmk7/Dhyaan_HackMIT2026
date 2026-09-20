@@ -190,6 +190,11 @@ BUCKET = {w: b for table in (COCO_WORDS, VOCAB) for b, words in table.items() fo
 
 EMPTY_SCENE = {"person_count": 0, "boxes": [], "food": [], "dishes": [], "seating": []}
 
+# Consecutive predict() failures before the detector retires itself. One is a
+# transient — Ollama and this model share a single MPS queue and occasionally
+# collide. Three in a row is a model that is genuinely gone.
+SCENE_FAIL_LIMIT = int(os.getenv("SCENE_FAIL_LIMIT", "3"))
+
 
 def dedupe_boxes(boxes, min_inside=0.7):
     """One person, several boxes: drop any box mostly inside a larger kept one.
@@ -242,6 +247,7 @@ class PersonGate:
         self.warm_s = 0.0
         # Labels reported on the previous pass, for the hysteresis in scene().
         self._held = set()
+        self._fails = 0              # consecutive predict() failures; see scene()
         if not enabled:
             return
         try:
@@ -363,10 +369,24 @@ class PersonGate:
             # A detector that dies mid-run becomes the cut path, live, rather
             # than taking the camera down with it. The worker reads `enabled`
             # every frame.
+            #
+            # But not on the FIRST failure. Ollama and this model share one MPS
+            # queue, so a VLM call landing at the wrong moment can cost a single
+            # predict() — and disabling on one of those retired the detector for
+            # the rest of the run. Motion-only then has no way to re-confirm a
+            # still person, so a seated resident became "absent", while every
+            # payload still carried model="yolov8s-worldv2". A silent downgrade
+            # that keeps the old model's name on it is worse than the crash.
+            self._fails += 1
             print(f"[vision] {self.model_name} failed on a frame ({type(e).__name__}: "
-                  f"{str(e)[:120]}); continuing motion-only.", flush=True)
-            self.enabled = False
+                  f"{str(e)[:120]}); {self._fails}/{SCENE_FAIL_LIMIT}.", flush=True)
+            if self._fails >= SCENE_FAIL_LIMIT:
+                self.enabled = False
+                self.model_name = "none"
+                print(f"[vision] detector off after {self._fails} failures in a row; "
+                      f"continuing motion-only.", flush=True)
             return dict(EMPTY_SCENE, boxes=[], food=[], dishes=[], seating=[])
+        self._fails = 0
         names = self.model.names
         # Hysteresis. A calibrated-low cosine floor means a real snack bag sits
         # ON the floor once the frame is compressed: 0.13-0.28, median 0.19,

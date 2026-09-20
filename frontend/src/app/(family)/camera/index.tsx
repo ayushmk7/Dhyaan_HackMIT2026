@@ -33,13 +33,13 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, StyleSheet, View, ViewStyle } from 'react-native';
+import { RefreshControl, View, ViewStyle } from 'react-native';
 import Animated, {
   Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming,
 } from 'react-native-reanimated';
 import {
-  Btn, Card, CornerTicks, DataLabel, EmptyState, ErrorState,
-  LoadingState, Marquee, Rule, Stagger, Screen, Txt, useReducedMotion,
+  Btn, Card, DataLabel, EmptyState, ErrorState, LoadingState, Marquee, Rule, Stagger, Screen, Txt,
+  useReducedMotion,
 } from '@/components';
 import { family } from '@/lib/copy/family';
 import { ago, timeOf } from '@/lib/format';
@@ -98,22 +98,7 @@ function useNow(everyMs = 1000): number {
   return now;
 }
 
-// ---------------------------------------------------------------------------
-// Burned-in clock
-// ---------------------------------------------------------------------------
-
 const pad = (n: number) => String(n).padStart(2, '0');
-const stampOf = (d: Date) =>
-  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}  ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-
-function useStamp(): string {
-  const [text, setText] = useState(() => stampOf(new Date()));
-  useEffect(() => {
-    const id = setInterval(() => setText(stampOf(new Date())), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return text;
-}
 
 // ---------------------------------------------------------------------------
 // The pane
@@ -220,7 +205,6 @@ function SentenceTrack({ text }: { text: string }) {
 
 function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
   const t = useTheme();
-  const stamp = useStamp();
   const [size, setSize] = useState({ w: 0, h: 0 });
   const slots: (NormBox | null)[] = Array.from(
     { length: MAX_BOXES },
@@ -232,9 +216,9 @@ function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
   // pointing out that it is not the camera). Neither is a hue.
   const recColor = live ? t.ink : t.accent;
 
-  // The one plate on the screen: the accent wash, framed by the ticks. No
-  // glass around it and no scrim over it; the geometry and the sentence sit
-  // straight on the wash and read in the surface's own ink.
+  // The one plate on the screen: the accent wash, bare. No corner ticks, no
+  // burned-in clock; the geometry, the REC light and the sentence sit straight
+  // on the wash and read in the surface's own ink.
   return (
     <View
       accessibilityRole="image"
@@ -249,10 +233,8 @@ function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
         <BoxFrame key={i} box={b} index={i} paneW={size.w} paneH={size.h} />
       ))}
 
-      <CornerTicks color={t.accent} size={16} inset={sp(2.5)} weight={rule.ink} />
-
-      {/* Top chrome: the REC light left, the burned-in clock right. Both
-          readings are telemetry, not words. */}
+      {/* Top chrome: the REC light, and only that. It is the one reading on
+          the pane that changes what a person should believe about it. */}
       <View style={[styles.paneRow, { top: sp(3) }]}>
         <View style={styles.recPill}>
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: recColor }} />
@@ -260,7 +242,6 @@ function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
             {live ? 'REC' : 'SIMULATED'}
           </Txt>
         </View>
-        <Txt kind="stamp" tone="muted">{stamp}</Txt>
       </View>
 
       {/* Bottom chrome: the sentence track, under one accent rule. */}
@@ -273,51 +254,17 @@ function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
 }
 
 // ---------------------------------------------------------------------------
-// The gate cascade (VLM_PLAN §3.3)
-// ---------------------------------------------------------------------------
-
-// The worker's own stage names and the model behind each. Instrumentation.
-const GATES: { key: GateState; label: string; note: string }[] = [
-  { key: 'idle', label: 'IDLE', note: 'sampling' },
-  { key: 'motion', label: 'MOTION', note: 'MOG2' },
-  { key: 'person', label: 'PERSON', note: 'YOLO11n' },
-  { key: 'thinking', label: 'THINKING', note: 'VLM' },
-];
-
-function GateCascade({ gate }: { gate: GateState }) {
-  const t = useTheme();
-  const active = GATES.findIndex((g) => g.key === gate);
-  return (
-    <View style={{ flexDirection: 'row', gap: sp(2) }}>
-      {GATES.map((g, i) => {
-        const on = i === active;
-        const passed = active > i;
-        const fg = on ? t.accent : passed ? t.ink : t.inkMuted;
-        return (
-          <View key={g.key} style={{ flex: 1 }}>
-            <Rule
-              weight={on ? 'heavy' : 'ink'}
-              color={on ? t.accent : passed ? t.ink : t.line}
-            />
-            <View style={{ paddingTop: sp(2) }}>
-              <Txt kind="micro" style={{ color: fg }}>{g.label}</Txt>
-              <Txt kind="micro" tone="muted" style={{ marginTop: 2, opacity: 0.7 }}>{g.note}</Txt>
-            </View>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Telemetry
 // ---------------------------------------------------------------------------
 
-function Cell({ label, value, ruled }: { label: string; value: string; ruled: boolean }) {
-  const t = useTheme();
+// The worker's own stage names (VLM_PLAN §3.3). Instrumentation.
+const GATE_WORD: Record<GateState, string> = {
+  idle: 'IDLE', motion: 'MOTION', person: 'PERSON', thinking: 'THINKING',
+};
+
+function Cell({ label, value }: { label: string; value: string }) {
   return (
-    <View style={[styles.cell, ruled && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }]}>
+    <View style={styles.cell}>
       <Txt kind="micro" tone="muted">{label}</Txt>
       <Txt kind="data" numberOfLines={1} style={{ marginTop: sp(1) }}>
         {value}
@@ -326,26 +273,23 @@ function Cell({ label, value, ruled }: { label: string; value: string; ruled: bo
   );
 }
 
-// Keys and readings are the worker's own. Not copy. Six, not nine: the gate
-// is the cascade above, the head count is the boxes on the pane, and the
-// source is the REC pill, so printing them again here was decoration.
+// Keys and readings are the worker's own. Not copy. Four, on one line: the
+// stage it is at, how fast it is going, what it thinks it sees, how sure it
+// is. The cascade that used to draw the stage as four ruled columns, and the
+// latency, model and batch cells, were readings nobody on a family screen
+// acted on.
 function Telemetry({ tick }: { tick: CameraMonitorTick }) {
   const cells: { label: string; value: string }[] = [
+    { label: 'GATE', value: GATE_WORD[tick.gate] ?? '—' },
     { label: 'FPS', value: tick.fps.toFixed(1) },
-    { label: 'LATENCY', value: tick.latency_ms == null ? '—' : `${tick.latency_ms} ms` },
-    { label: 'MODEL', value: tick.model || '—' },
     { label: 'ACTIVITY', value: (tick.activity ?? '—').replace(/_/g, ' ').toUpperCase() },
     { label: 'CONF', value: tick.confidence == null ? '—' : tick.confidence.toFixed(2) },
-    { label: 'BATCH', value: `${tick.batch_frames} f` },
   ];
   return (
-    <View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-        {cells.map((c, i) => (
-          <Cell key={c.label} label={c.label} value={c.value} ruled={i < cells.length - 3} />
-        ))}
-      </View>
-      <Rule weight="hair" />
+    <View style={{ flexDirection: 'row' }}>
+      {cells.map((c) => (
+        <Cell key={c.label} label={c.label} value={c.value} />
+      ))}
     </View>
   );
 }
@@ -438,7 +382,6 @@ export default function CameraConsole() {
           <EmptyState
             title={copy.consentOff}
             action={<Btn kind="quiet" label={copy.openSettings} onPress={openSettings} />}
-            meta={copy.meta.camera(cam.id)}
           >
             {copy.consentOffBody}
           </EmptyState>
@@ -448,7 +391,7 @@ export default function CameraConsole() {
     if (pausedUntil) {
       return (
         <Card>
-          <EmptyState title={copy.paused(timeOf(pausedUntil))} meta={copy.meta.camera(cam.id)}>
+          <EmptyState title={copy.paused(timeOf(pausedUntil))}>
             {copy.pausedBody}
           </EmptyState>
         </Card>
@@ -483,23 +426,19 @@ export default function CameraConsole() {
     }
 
     return (
-      <Stagger gap={5}>
+      <Stagger gap={9}>
         <View>
           <MonitorPane tick={tick} />
           {/* The one human line on the screen, and the product's best claim. */}
-          <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>
+          <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>
             {copy.privacy}
           </Txt>
         </View>
 
-        {/* One section for the machine: the cascade says where the worker
-            is, the readings say how it is doing. Two headings said less. */}
+        {/* One section for the machine: four readings under one heading. */}
         <View>
-          <Marquee title={copy.worker} meta={copy.meta.camera(cam.id)} first />
-          <GateCascade gate={tick.gate} />
-          <View style={{ marginTop: sp(4) }}>
-            <Telemetry tick={tick} />
-          </View>
+          <Marquee title={copy.worker} first />
+          <Telemetry tick={tick} />
         </View>
       </Stagger>
     );
@@ -620,8 +559,8 @@ const styles = {
     paddingVertical: 1,
   },
   cell: {
-    width: '33.333%' as const,
-    paddingVertical: sp(2.5),
+    flex: 1,
+    paddingVertical: sp(2),
     paddingRight: sp(2),
   },
 };

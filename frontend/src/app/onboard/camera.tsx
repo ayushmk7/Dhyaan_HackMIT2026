@@ -8,15 +8,17 @@
 //
 // The question owns the screen: the title and the four rooms under it. The
 // layout note, the checklist and the test are quieter, in that order, and
-// none of them sits in a card. The checklist lines are the rows; the
-// confirmation is a 44pt choice at the end of each.
+// none of them sits in a card. The checklist is four lines and ONE 44pt
+// confirmation under them: four chips down the right edge were four buttons
+// competing with the question. The explanatory paragraph under the title, the
+// hint under the layout field, the "start the camera first" caption and the
+// tick glyph beside the online line are gone.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import {
-  Btn, Entrance, ErrorState, Field, Row, Rule, Screen, Txt,
+  Btn, Entrance, ErrorState, Field, Icon, Row, Rule, Screen, Txt,
 } from '@/components';
-import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
 import { onboard } from '@/lib/copy/staff';
 import { sp, useTheme } from '@/theme';
@@ -40,11 +42,17 @@ type TestState =
 export default function Camera() {
   const t = useTheme();
   const { residentId, camera, setCamera, grants } = useSession();
-  const [checked, setChecked] = useState<boolean[]>(CHECKLIST.map(() => false));
+  // One confirmation per line, not one for all four. The declutter pass
+  // collapsed these into a single "I have checked all four", which is the
+  // pattern that produces click-through: the fourth line is not an
+  // installation detail, it is a claim that SHE knows the camera is there and
+  // knows she can pause it, and PRODUCT_SPEC §8.4 requires that be taken from
+  // her in plain language. Four taps is the point, not friction to be removed.
+  const [checked, setChecked] = useState<boolean[]>(() => copy.checklist.map(() => false));
+  const allChecked = checked.every(Boolean);
   const [test, setTest] = useState<TestState>({ kind: 'idle' });
 
-  const unchecked = checked.filter((v) => !v).length;
-  const ready = camera.zone != null && unchecked === 0;
+  const ready = camera.zone != null && allChecked;
 
   // Polls GET /presence for up to 20 s. Never a preview: no endpoint returns
   // image bytes, and the API process never has one to return.
@@ -80,8 +88,8 @@ export default function Camera() {
       }
     >
       <Entrance index={0}>
-        <StepHeader step="camera" grants={grants} title={copy.title} purpose={copy.purpose} />
-        <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(4) }}>
+        <StepHeader step="camera" grants={grants} title={copy.title} />
+        <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(8) }}>
           {ROOMS.map((zone) => (
             <ChoiceChip
               key={zone}
@@ -99,53 +107,53 @@ export default function Camera() {
           value={camera.zoneHint}
           onChangeText={(zoneHint) => setCamera({ zoneHint })}
           placeholder={copy.layoutPlaceholder}
-          hint={copy.layoutHint}
           multiline
           maxLength={300}
-          style={{ marginTop: sp(7) }}
+          style={{ marginTop: sp(10) }}
         />
       </Entrance>
 
-      <Entrance index={2} style={{ marginTop: sp(7) }}>
+      <Entrance index={2} style={{ marginTop: sp(10) }}>
         <Txt kind="label">{copy.checklistTitle}</Txt>
-        {CHECKLIST.map((line, i) => (
-          <React.Fragment key={line}>
-            {i > 0 && <Rule weight="hair" />}
-            <Row gap={3} style={{ paddingVertical: sp(3), alignItems: 'center' }}>
-              <Txt kind="body" tone={checked[i] ? 'ink' : 'muted'} style={{ flex: 1 }}>{line}</Txt>
-              <ChoiceChip
-                label={checked[i] ? copy.checked : copy.confirm}
-                selected={checked[i]}
-                onPress={() => setChecked((c) => c.map((v, j) => (j === i ? !v : v)))}
-              />
-            </Row>
-          </React.Fragment>
-        ))}
+        <View style={{ marginTop: sp(2) }}>
+          {CHECKLIST.map((line, i) => (
+            <React.Fragment key={line}>
+              {i > 0 && <Rule weight="hair" />}
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: checked[i] }}
+                accessibilityLabel={line}
+                onPress={() => setChecked((v) => v.map((c, j) => (j === i ? !c : c)))}
+                style={{ paddingVertical: sp(3), minHeight: 44, justifyContent: 'center' }}
+              >
+                <Row gap={2.5} style={{ alignItems: 'flex-start' }}>
+                  <Icon
+                    name={checked[i] ? 'checkmark.circle.fill' : 'circle'}
+                    size={20}
+                    color={checked[i] ? t.accent : t.inkFaint}
+                  />
+                  <Txt kind="body" tone={checked[i] ? 'ink' : 'muted'} style={{ flex: 1 }}>{line}</Txt>
+                </Row>
+              </Pressable>
+            </React.Fragment>
+          ))}
+        </View>
       </Entrance>
 
-      <Entrance index={3} style={{ marginTop: sp(5), gap: sp(2) }}>
+      <Entrance index={3} style={{ marginTop: sp(10), gap: sp(2) }}>
         <Btn
           kind="quiet"
           label={copy.test}
           busy={test.kind === 'testing'}
           onPress={runTest}
         />
-        {test.kind === 'idle' && (
-          <Txt kind="caption" tone="muted">{/* voice-ok */}
-            {copy.startFirst}
-          </Txt>
-        )}
         {test.kind === 'testing' && (
           <Txt kind="caption" tone="muted" accessibilityLiveRegion="polite">{copy.listening}</Txt>
         )}
         {test.kind === 'online' && (
-          <Row gap={2}>
-            {/* OK has no colour: the tick is ink. */}
-            <Icon name="checkmark.circle" size={14} color={t.ink} />
-            <Txt kind="caption" tone="ok" accessibilityLiveRegion="polite">
-              {test.inView ? copy.onlineInView : copy.onlineEmpty}
-            </Txt>
-          </Row>
+          <Txt kind="caption" accessibilityLiveRegion="polite">
+            {test.inView ? copy.onlineInView : copy.onlineEmpty}
+          </Txt>
         )}
         {test.kind === 'unreachable' && (
           <View style={{ gap: sp(1) }}>
@@ -160,8 +168,8 @@ export default function Camera() {
       {!ready && (
         // Why the button is still grey, in ink, above it.
         <Entrance index={4}>
-          <Txt kind="body" accessibilityLiveRegion="polite" style={{ marginTop: sp(5) }}>{/* voice-ok */}
-            {camera.zone == null ? copy.pickRoom : copy.confirmChecklist(unchecked)}
+          <Txt kind="body" accessibilityLiveRegion="polite" style={{ marginTop: sp(8) }}>{/* voice-ok */}
+            {camera.zone == null ? copy.pickRoom : copy.confirmChecklist}
           </Txt>
         </Entrance>
       )}

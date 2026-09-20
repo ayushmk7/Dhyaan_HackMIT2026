@@ -157,7 +157,17 @@ def build_settings(ctx: dict) -> dict:
             "greeting": greeting,
             "listen": {"provider": {"type": "deepgram", "model": "flux-general-en"}},
             "think": {
-                "provider": {"type": "anthropic", "model": "claude-haiku-4-5", "temperature": 0.2},
+                # Deepgram's own provider table (developers.deepgram.com/docs/
+                # voice-agent-llm-models, checked 2026-09-20): the OpenAI type is
+                # spelled `open_ai` (underscore), fields are `model` and
+                # `temperature`, and Deepgram routes the call itself — no
+                # OPENAI_API_KEY is sent from here. gpt-4.1-mini is on that
+                # table and is a non-reasoning model: no hidden thinking tokens
+                # before the first spoken word, which is what a phone turn
+                # needs, and Deepgram exposes no reasoning-effort knob to turn
+                # that off on the gpt-5.x family. Tool calling is unchanged:
+                # `functions` (incl. defer_until_eot) is Deepgram's own schema.
+                "provider": {"type": "open_ai", "model": "gpt-4.1-mini", "temperature": 0.2},
                 "prompt": prompt,
                 "functions": TOOLS,
             },

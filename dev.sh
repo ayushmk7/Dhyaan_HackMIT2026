@@ -101,7 +101,7 @@ else
   # demo nobody can watch happen is not a demo. Override it in the environment
   # to exercise the real thresholds: DEMO_FAST=0 ./dev.sh
   # CHAT_FALLBACK_MODEL turns Ask from a template into an answer. With no
-  # ANTHROPIC_API_KEY set, rag.py falls back to stitching the retrieved
+  # OPENAI_API_KEY set, rag.py falls back to stitching the retrieved
   # sentences together; pointing it at the vision model (already pulled, and
   # kept warm for the camera lane) gets real prose out of the same Ollama for
   # no extra download. Measured: "Yes, she has eaten today. She had dinner at

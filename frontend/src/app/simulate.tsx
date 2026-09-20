@@ -7,15 +7,16 @@
 //   2. no alert opened  -> `api.simulate` resolves null (bathroom and walk are
 //                          benign by design, and a fall can be cancelled)
 //   3. the call failed  -> a rejected promise, which used to leave a blank screen
-// This is machine chrome, not a family screen, so it is the one place the
-// uppercase mono voice is allowed to describe the request itself. It sits on
-// the ordinary paper ground: a rehearsal is not an alarm, and it is not night.
+// It sits on the ordinary paper ground: a rehearsal is not an alarm, and it
+// is not night. The outcome sentence is the screen; the route readout and
+// the rule that used to head it were chrome describing the request to
+// someone who only wants to know what happened.
 //
 // Every sentence this screen says lives in lib/copy/family.ts under `simulate`.
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
-import { Btn, DataLabel, Entrance, LoadingState, Rule, Screen, Txt } from '@/components';
+import { Btn, Entrance, LoadingState, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
 import { family } from '@/lib/copy/family';
 import { sp } from '@/theme/tokens';
@@ -55,26 +56,20 @@ export default function Simulate() {
 
   return (
     <Screen wash scroll={false} style={{ justifyContent: 'center' }}>
-      <Entrance index={0}>
-        {/* The reading is the route itself, in the machine's voice. */}
-        <DataLabel value="POST /admin/simulate">{copy.rehearsal}</DataLabel>
-        <Rule style={{ marginTop: sp(2) }} />
-      </Entrance>
-
       {outcome.t === 'running' ? (
-        <Entrance index={1}>
+        <Entrance index={0}>
           <LoadingState label={copy.sending} />
         </Entrance>
       ) : (
-        <Entrance index={1}>
+        <Entrance index={0}>
           {/* The outcome is the whole screen, so it takes the display step;
               the detail under it is the machine explaining itself. */}
-          <View style={{ marginTop: sp(6), gap: sp(3) }}>
+          <View style={{ gap: sp(4) }}>
             <Txt kind="display">
               {outcome.t === 'no_alert' ? copy.wentThrough : copy.didNotGoThrough}
             </Txt>
             <Txt kind="body" tone="muted">{detail}</Txt>
-            <View style={{ gap: sp(2), marginTop: sp(6) }}>
+            <View style={{ gap: sp(2), marginTop: sp(8) }}>
               <Btn label={copy.backToToday} onPress={() => router.replace('/(family)/home')} />
               {outcome.t === 'failed' && (
                 <Btn

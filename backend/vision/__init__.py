@@ -94,6 +94,19 @@ TUNING = dict(
     config_poll_s=10,
     heartbeat_s=30,
     monitor_s=1.0,            # at most one monitor tick a second (telemetry, not data)
+    # A camera can stop delivering frames without ever erroring: Continuity
+    # Camera hands the phone back, a USB cable moves, macOS sleeps the device.
+    # read() then returns the same frame forever and the loop happily keeps
+    # saying "watching". This is how long that may go on before the worker
+    # reports itself offline instead, which is the difference between the app
+    # showing a frozen sentence and it saying nobody is watching.
+    stall_s=float(os.getenv("STALL_S", "5")),
+    # Floor between two detector-change posts. posture_band flips at the
+    # landmark visibility boundary (a desk, a table edge, a blanket) and
+    # without this the flap posts every frame - ~15 writes a second, forever.
+    # The change is not lost, only collapsed: `_last_shape` is only advanced
+    # when a post actually goes out.
+    quick_min_s=float(os.getenv("QUICK_MIN_S", "1.0")),
 )
 
 # --demo: the same rules, fast enough that a bite becomes a sentence inside the

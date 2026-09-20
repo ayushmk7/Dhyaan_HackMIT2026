@@ -1,22 +1,23 @@
-// Client-side LLM calls for the connection layer (Meta challenge).
-// OpenAI first (their sponsor challenge; EXPO_PUBLIC_OPENAI_API_KEY), Anthropic
-// as fallback when only that key exists. Keys ship in the demo build —
-// acceptable for a hackathon demo, never for production (move behind the
-// backend at integration). Every function returns null when no key or on
-// failure; callers fall back to mock.
-import Anthropic from '@anthropic-ai/sdk';
-import { ANTHROPIC_KEY, OPENAI_KEY, OPENAI_MODEL } from './config';
+// Client-side LLM calls for the connection layer.
+//
+// OpenAI only. This used to fall back to Anthropic when only that key existed;
+// the project is on OpenAI's track now, and two providers meant two prompt
+// dialects, two response shapes and two sets of failure modes for one feature.
+// One path is easier to keep correct than a fallback nobody exercises.
+//
+// The key ships in the demo build, which is acceptable for a hackathon and
+// never for production: move these calls behind the backend at integration.
+// Every function returns null when there is no key or on failure, and callers
+// fall back to their mock, so the app works with no key at all.
+import { OPENAI_KEY, OPENAI_MODEL } from './config';
 
 // Defensive on purpose. `process.env.EXPO_PUBLIC_*` is inlined by Metro at
 // bundle time, and a variable that is absent from .env does not always arrive
 // as the empty string the `?? ''` in config.ts expects. Reading `.length` off
 // it threw at MODULE scope, which takes the whole screen down before anything
 // renders rather than degrading to "no AI configured".
-export const hasAI = !!OPENAI_KEY || !!ANTHROPIC_KEY;
+export const hasAI = !!OPENAI_KEY;
 
-const anthropic = ANTHROPIC_KEY
-  ? new Anthropic({ apiKey: ANTHROPIC_KEY, dangerouslyAllowBrowser: true })
-  : null;
 
 type OaiContent = string | ({ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } })[];
 
@@ -45,17 +46,8 @@ async function askOpenAI(content: OaiContent, maxTokens: number): Promise<string
 
 async function ask(prompt: string, maxTokens = 2000): Promise<string | null> {
   try {
-    if (OPENAI_KEY) return await askOpenAI(prompt, maxTokens);
-    if (anthropic) {
-      const res = await anthropic.messages.create({
-        model: 'claude-opus-5',
-        max_tokens: maxTokens,
-        messages: [{ role: 'user', content: prompt }],
-      });
-      const block = res.content.find((b) => b.type === 'text');
-      return block && block.type === 'text' ? block.text : null;
-    }
-    return null;
+    if (!OPENAI_KEY) return null;
+    return await askOpenAI(prompt, maxTokens);
   } catch (e) {
     console.warn('ai call failed, falling back to mock:', e);
     return null;
@@ -146,38 +138,14 @@ export async function extractCareInfo(
 ): Promise<CareExtract | null> {
   if (!hasAI) return null;
   try {
-    if (OPENAI_KEY) {
-      const content: OaiContent =
-        'text' in input
-          ? `${CARE_PROMPT}\n\nDOCUMENT:\n${input.text.slice(0, 8000)}`
-          : [
-              { type: 'image_url', image_url: { url: `data:${input.mediaType};base64,${input.imageBase64}` } },
-              { type: 'text', text: CARE_PROMPT },
-            ];
-      return extractJson<CareExtract>(await askOpenAI(content, 2000));
-    }
-    if (!anthropic) return null;
-    const content: Anthropic.ContentBlockParam[] =
+    const content: OaiContent =
       'text' in input
-        ? [{ type: 'text', text: `${CARE_PROMPT}\n\nDOCUMENT:\n${input.text.slice(0, 8000)}` }]
+        ? `${CARE_PROMPT}\n\nDOCUMENT:\n${input.text.slice(0, 8000)}`
         : [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: input.mediaType as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif',
-                data: input.imageBase64,
-              },
-            },
+            { type: 'image_url', image_url: { url: `data:${input.mediaType};base64,${input.imageBase64}` } },
             { type: 'text', text: CARE_PROMPT },
           ];
-    const res = await anthropic.messages.create({
-      model: 'claude-opus-5',
-      max_tokens: 2000,
-      messages: [{ role: 'user', content }],
-    });
-    const block = res.content.find((b) => b.type === 'text');
-    return extractJson<CareExtract>(block && block.type === 'text' ? block.text : null);
+    return extractJson<CareExtract>(await askOpenAI(content, 2000));
   } catch (e) {
     console.warn('care extraction failed:', e);
     return null;

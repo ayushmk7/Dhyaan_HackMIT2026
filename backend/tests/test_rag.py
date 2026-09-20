@@ -1,15 +1,15 @@
-"""Tests for the RAG layer, app/rag.py. No ANTHROPIC_API_KEY is set in the test
+"""Tests for the RAG layer, app/rag.py. No OPENAI_API_KEY is set in the test
 environment (see conftest.py) -- these tests exercise the offline fallback
 path exclusively, on purpose: the demo must work with no network."""
 
 from app import rag
-from app.config import ANTHROPIC_API_KEY
+from app.config import OPENAI_API_KEY
 from app.events import emit
 
 
 def test_no_api_key_in_test_env():
     # Sanity check that we are actually exercising the offline path.
-    assert not ANTHROPIC_API_KEY
+    assert not OPENAI_API_KEY
 
 
 async def test_embed_is_stable_and_consistently_shaped():

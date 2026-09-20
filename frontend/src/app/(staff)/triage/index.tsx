@@ -2,13 +2,18 @@
 // the product. Marcus covers 40 rooms and reads only the first few rows.
 //
 // The hierarchy is the point, so it is drawn in three weights:
-//   1. The count. One large tabular number on paper, nothing else that size.
-//   2. Whoever is alerting. Each one is an inverted plate (ink in light, white
-//      in dark): the only inversion on the screen, and impossible to miss.
-//      A count that was always inverted, even at 00, spent that gesture on
-//      nothing, so the count no longer sits on a slab.
-//   3. Everyone else. "Worth a look" and "band offline" get a full row with
-//      the reason; "doing fine" collapses to one dense line per resident.
+//   1. The count. One large tabular number on paper, nothing else that size,
+//      and nothing beside it.
+//   2. Whoever is alerting. Each one is the plate: the only plate on the
+//      screen, and impossible to miss.
+//   3. Everyone else. "Worth a look" and "band offline" get a row with the
+//      reason; "doing fine" collapses to one line per resident behind a button.
+//
+// Decluttered: the count's side column (total, updated-at) and the "N of M"
+// heading that restated the count are gone; so are the seen/zone/battery
+// strip on every row, the chevrons, and the dot on rows that were all the
+// same dot. A care worker scans this, so what is left is the state, the name,
+// the room and the reason.
 //
 // Three things used to keep this screen permanently blank against the real
 // backend, all fixed here:
@@ -26,7 +31,7 @@ import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 import {
-  Btn, Card, Chevron, DataLabel, ErrorState, LoadingState, Marquee, Row, RowGroup, Rule,
+  Btn, Card, DataLabel, ErrorState, LoadingState, Marquee, Row, RowGroup, Rule,
   Screen, Slab, Stagger, StatusDot, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
@@ -38,69 +43,54 @@ import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
 import { sp, useTheme } from '@/theme';
 import type { ResidentState } from '@/theme/tokens';
-import { NEEDS_EYES, OFFLINE_AFTER_MIN, TIER, deriveState, pad2, triageReason } from '../_layout';
+import { NEEDS_EYES, TIER, deriveState, pad2, triageReason } from '../_layout';
 
 type TriageItem = Resident & { state: ResidentState; alert?: Alert; reason: string | null };
 
 const stamp = (r: Resident) => (r.room ? copy.row.roomStamp(r.room) : readout.noRoomStamp);
 const seen = (r: Resident) => (r.last_seen ? timeOf(r.last_seen) : readout.noTime);
 
-// The one large number on the screen. Ink on paper: a count is a reading, not
-// an alarm, so it earns no inversion.
-function Count({ needing, total, updatedAt }: { needing: number; total: number; updatedAt: number }) {
+// The one large number on the screen, and the only thing at that size. It
+// says how many need a check; the rows under it say who. Nothing else sits
+// beside it: the total is on the "Doing fine" line, and "updated at" was a
+// reading nobody acted on (pull to refresh is the action).
+function Count({ needing, onLongPress }: { needing: number; onLongPress: () => void }) {
   return (
-    <View>
-      <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }} gap={4}>
-        <View>
-          <Txt kind="readout">{pad2(needing)}</Txt>
-          <DataLabel style={{ marginTop: sp(1) }}>{copy.slab.needsCheck}</DataLabel>
-        </View>
-        <View style={{ alignItems: 'flex-end', gap: sp(1.5), paddingBottom: sp(0.5) }}>
-          <DataLabel value={pad2(total)}>{copy.slab.onFloor}</DataLabel>
-          <DataLabel value={updatedAt ? timeOf(new Date(updatedAt).toISOString()) : readout.noTime}>
-            {copy.slab.updated}
-          </DataLabel>
-        </View>
-      </Row>
-      <Rule weight="heavy" style={{ marginTop: sp(3) }} />
-    </View>
+    <Pressable onLongPress={onLongPress} delayLongPress={600}>
+      <Txt kind="readout">{pad2(needing)}</Txt>
+      <DataLabel style={{ marginTop: sp(1) }}>{copy.needsCheck}</DataLabel>
+      <Rule weight="heavy" style={{ marginTop: sp(4) }} />
+    </Pressable>
   );
 }
 
-// An alerting resident: the inverted plate. The slab hands every child its
-// colour, so nothing inside is told what it sits on.
+// An alerting resident: the one plate on the screen. Name, room, why, and the
+// one thing to do about it. The seen/zone/battery strip is gone: the reason
+// already carries the clock, and the rest is on the resident's own page.
 function UrgentCard({ r, acking, onPress, onAck }: {
   r: TriageItem; acking?: boolean; onPress: () => void; onAck?: () => void;
 }) {
   return (
-    <Slab onPress={onPress} accessibilityLabel={copy.row.a11y(r.display_name, r.room)} style={{ marginTop: sp(3) }}>
+    <Slab onPress={onPress} accessibilityLabel={copy.row.a11y(r.display_name, r.room)} style={{ marginTop: sp(4) }}>
       <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={3}>
         <Txt kind="title" numberOfLines={1} style={{ flex: 1 }}>{r.display_name}</Txt>
         {/* Staff MAY see whereabouts; family never may (D-001). */}
         <Txt kind="stamp" tone="muted">{stamp(r)}</Txt>
       </Row>
       {!!r.reason && (
-        <Txt kind="body" style={{ marginTop: sp(1.5) }}>{r.reason}</Txt>
+        <Txt kind="body" style={{ marginTop: sp(2) }}>{r.reason}</Txt>
       )}
-      <Rule weight="hair" style={{ marginTop: sp(3.5) }} />
-      <Row style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: sp(3) }} gap={3}>
-        <Row gap={3} style={{ flexWrap: 'wrap', flex: 1 }}>
-          <DataLabel value={seen(r)}>{copy.row.seen}</DataLabel>
-          {!!r.location && <DataLabel value={r.location.label}>{copy.row.zone}</DataLabel>}
-          {r.band_battery_pct != null && (
-            <DataLabel value={`${r.band_battery_pct}%`}>{copy.row.band}</DataLabel>
-          )}
-        </Row>
-        {onAck && (
+      {onAck && (
+        <Row style={{ justifyContent: 'flex-end', marginTop: sp(5) }}>
           <Btn label={copy.row.acknowledge} kind="inverse" size="small" busy={acking} onPress={onAck} />
-        )}
-      </Row>
+        </Row>
+      )}
     </Slab>
   );
 }
 
-// A resident worth a look, or whose band has gone quiet: a full row with the
-// reason in the reading weight.
+// A resident worth a look, or whose band has gone quiet: the dot carries the
+// state, the line under the name carries the reason. That is the whole row.
 function WatchRow({ r, onPress }: { r: TriageItem; onPress: () => void }) {
   return (
     <Pressable
@@ -108,7 +98,7 @@ function WatchRow({ r, onPress }: { r: TriageItem; onPress: () => void }) {
       accessibilityLabel={copy.row.a11y(r.display_name, r.room)}
       accessibilityHint={copy.openRowHint}
       onPress={onPress}
-      style={({ pressed }) => [{ paddingVertical: sp(3), minHeight: 44 }, pressed && { opacity: 0.6 }]}
+      style={({ pressed }) => [{ paddingVertical: sp(3.5), minHeight: 44 }, pressed && { opacity: 0.6 }]}
     >
       <Row gap={3} style={{ alignItems: 'flex-start' }}>
         <View style={{ paddingTop: sp(1.5) }}>
@@ -120,24 +110,16 @@ function WatchRow({ r, onPress }: { r: TriageItem; onPress: () => void }) {
             <Txt kind="stamp" tone="muted">{stamp(r)}</Txt>
           </Row>
           {!!r.reason && (
-            <Txt kind="body" numberOfLines={2} style={{ marginTop: 2 }}>{r.reason}</Txt>
+            <Txt kind="body" tone="muted" numberOfLines={2} style={{ marginTop: sp(1) }}>{r.reason}</Txt>
           )}
-          <Row gap={3} style={{ marginTop: sp(1.5), flexWrap: 'wrap' }}>
-            <DataLabel value={seen(r)}>{copy.row.seen}</DataLabel>
-            {!!r.location && <DataLabel value={r.location.label}>{copy.row.zone}</DataLabel>}
-            {r.band_battery_pct != null && (
-              <DataLabel value={`${r.band_battery_pct}%`}>{copy.row.band}</DataLabel>
-            )}
-          </Row>
         </View>
-        <Chevron style={{ marginTop: sp(1.5) }} />
       </Row>
     </Pressable>
   );
 }
 
-// Doing fine: one dense line. Name, room, last signal, and the chevron that
-// says the line opens, the same as every other row here.
+// Doing fine: name, room, last signal. No dot (every one would be the same
+// dot) and no chevron (the whole row is the button).
 function QuietRow({ r, onPress }: { r: TriageItem; onPress: () => void }) {
   return (
     <Pressable
@@ -146,19 +128,15 @@ function QuietRow({ r, onPress }: { r: TriageItem; onPress: () => void }) {
       accessibilityHint={copy.openRowHint}
       onPress={onPress}
       style={({ pressed }) => [
-        { paddingVertical: sp(2.5), minHeight: 44, justifyContent: 'center' },
+        { paddingVertical: sp(3), minHeight: 44, justifyContent: 'center' },
         pressed && { opacity: 0.6 },
       ]}
     >
       <Row style={{ justifyContent: 'space-between' }} gap={3}>
-        <Row gap={2} style={{ flex: 1 }}>
-          <StatusDot state={r.state} size={8} />
-          <Txt kind="label" numberOfLines={1} style={{ flex: 1 }}>{r.display_name}</Txt>
-        </Row>
-        <Row gap={3}>
+        <Txt kind="label" numberOfLines={1} style={{ flex: 1 }}>{r.display_name}</Txt>
+        <Row gap={4}>
           <Txt kind="stamp" tone="muted">{stamp(r)}</Txt>
           <Txt kind="stamp" tone="muted">{seen(r)}</Txt>
-          <Chevron />
         </Row>
       </Row>
     </Pressable>
@@ -168,7 +146,7 @@ function QuietRow({ r, onPress }: { r: TriageItem; onPress: () => void }) {
 export default function Triage() {
   const t = useTheme();
   const qc = useQueryClient();
-  const { data, isLoading, isError, refetch, dataUpdatedAt } = useResidents();
+  const { data, isLoading, isError, refetch } = useResidents();
   // ponytail: no useOpenAlerts hook in lib/hooks.ts, so the facade is called
   // directly here, the same pattern the alert screen's belt-and-braces poll uses.
   const { data: openAlerts } = useQuery({
@@ -271,20 +249,15 @@ export default function Triage() {
   const needing = urgent.length + watch.length;
   const open = (r: TriageItem) => router.push(`/(staff)/triage/resident/${r.id}`);
 
+  // The count and the rows under it are one beat of the entrance, so a row
+  // that arrives with a later fetch does not replay the sequence. Optional
+  // sections (Doing fine, the demo) come after everything that must not move.
   return (
     <Screen native wash refreshControl={refreshControl}>
       <Stagger>
-        <Count needing={needing} total={residents.length} updatedAt={dataUpdatedAt} />
-
         <View>
-          {/* Long-press the heading to reveal demo controls; no visible demo chrome. */}
-          <Pressable onLongPress={() => setShowDemo((v) => !v)} delayLongPress={600}>
-            <Marquee
-              title={copy.needsCheck}
-              meta={copy.ofMeta(pad2(needing), pad2(residents.length))}
-              style={{ marginTop: sp(5) }}
-            />
-          </Pressable>
+          {/* Long-press the count to reveal demo controls; no visible demo chrome. */}
+          <Count needing={needing} onLongPress={() => setShowDemo((v) => !v)} />
 
           {urgent.map((r) => (
             <UrgentCard
@@ -297,21 +270,21 @@ export default function Triage() {
           ))}
 
           {watch.length > 0 && (
-            <RowGroup style={{ marginTop: urgent.length ? sp(3) : 0 }}>
+            <RowGroup style={{ marginTop: sp(4) }}>
               {watch.map((r) => <WatchRow key={r.id} r={r} onPress={() => open(r)} />)}
             </RowGroup>
           )}
 
           {needing === 0 && (
-            // The calm state is the one large sentence, with what it rests
-            // on and what to do next under it. Never a bare "all quiet".
-            <View style={{ marginTop: sp(2), paddingRight: sp(6), gap: sp(2) }}>
+            // The calm state is one sentence. The no-residents case keeps the
+            // line that says how residents get here, because that is an action.
+            <View style={{ marginTop: sp(6), paddingRight: sp(8), gap: sp(3) }}>
               <Txt kind="title">
                 {residents.length === 0 ? copy.emptyNoResidents : copy.emptyNobody}
               </Txt>
-              <Txt kind="body" tone="muted">
-                {residents.length === 0 ? copy.emptyNoResidentsHint : copy.emptyNobodyHint(OFFLINE_AFTER_MIN)}
-              </Txt>
+              {residents.length === 0 && (
+                <Txt kind="body" tone="muted">{copy.emptyNoResidentsHint}</Txt>
+              )}
             </View>
           )}
         </View>
@@ -320,6 +293,7 @@ export default function Triage() {
           <View>
             <Marquee
               title={copy.doingFine}
+              style={{ marginTop: sp(12) }}
               right={
                 <Btn
                   kind="quiet"
@@ -339,7 +313,7 @@ export default function Triage() {
 
         {showDemo && (
           <View>
-            <Marquee title={copy.demo.title} meta={copy.demo.meta} />
+            <Marquee title={copy.demo.title} style={{ marginTop: sp(12) }} />
             <Card style={{ gap: sp(2) }}>
               <Btn
                 label={copy.demo.simulateFall}

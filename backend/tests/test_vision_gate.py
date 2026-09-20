@@ -618,17 +618,38 @@ def test_the_vocabulary_is_set_at_start_and_the_first_frame_is_warm(monkeypatch)
     assert g.model_name == "yolov8s-worldv2"
 
 
-def test_a_detector_that_dies_mid_run_becomes_the_cut_path(capsys):
-    class Exploding(_FakeYOLO):
-        def predict(self, *a, **kw):
-            raise RuntimeError("MPS einsum fell over in the contrastive head")
+class Exploding(_FakeYOLO):
+    def predict(self, *a, **kw):
+        raise RuntimeError("MPS einsum fell over in the contrastive head")
 
+
+def test_a_detector_that_dies_mid_run_becomes_the_cut_path(capsys):
     g = fake_gate([])
     g.model = Exploding([])
-    assert g.scene(blank()) == {"person_count": 0, "boxes": [], "food": [], "dishes": [],
-                                "seating": []}
+    for _ in range(gate.SCENE_FAIL_LIMIT):
+        assert g.scene(blank()) == {"person_count": 0, "boxes": [], "food": [],
+                                    "dishes": [], "seating": []}
     assert g.enabled is False, "the worker reads this every frame and takes the motion-only path"
-    assert "motion-only" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "motion-only" in out
+    # The payloads must stop carrying a model name the detector no longer has.
+    assert g.model_name == "none"
+
+
+def test_one_failed_frame_does_not_retire_the_detector(capsys):
+    """Ollama and YOLO share a single MPS queue, so a collision can cost one
+    predict(). Retiring on that left the run motion-only for hours — with no
+    way to re-confirm a still person, so a seated resident read as absent —
+    while every payload still named the model that was no longer running."""
+    g = fake_gate([])
+    real, g.model = g.model, Exploding([])
+    g.scene(blank())
+    assert g.enabled is True, "one transient failure is not a dead model"
+    g.model = real
+    assert g.scene(blank())["person_count"] == 0
+    g.model = Exploding([])
+    g.scene(blank())
+    assert g.enabled is True, "the counter must reset on a frame that worked"
 
 
 # --- what a richer vocabulary changes downstream ------------------------------

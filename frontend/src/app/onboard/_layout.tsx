@@ -1,7 +1,7 @@
 // Onboarding: a native stack with the app's compact, centred, translucent
-// header. The screens keep their own in-content headings (a Marquee on a hard
-// rule), so the bar carries the back chevron and, when the stack was entered
-// from inside the app, a Cancel that returns there. Welcome is the front door
+// header. The screens keep their own in-content headings (one question at the
+// display size, with air around it), so the bar carries the back chevron and,
+// when the stack was entered from inside the app, a Cancel that returns there. Welcome is the front door
 // and has no header at all. Every other screen renders <Screen native> so its
 // content starts below the bar.
 //
@@ -19,7 +19,7 @@
 import { router, Stack, useNavigation } from 'expo-router';
 import React from 'react';
 import { Pressable, View, ViewStyle } from 'react-native';
-import { Btn, DataLabel, Marquee, Txt, useSurfaceColors } from '@/components';
+import { Btn, DataLabel, Txt, useSurfaceColors } from '@/components';
 import { onboard, shell } from '@/lib/copy/staff';
 import { radius, size as S, sp, useTheme } from '@/theme';
 import { useSession, type Grants } from '@/store/session';
@@ -52,18 +52,19 @@ export function stepOf(step: StepName, grants: Grants): string {
 }
 
 /**
- * Where you are, what this screen is called, and what it is for: the same
- * three lines at the top of every step, so a first-time family member is
- * never asked to do something without being told why.
+ * Where you are and the one question this step asks. Each step is one
+ * question with a lot of air around it: a small machine line, the question at
+ * the display size, and at most one quiet sentence under it when the question
+ * genuinely needs one. No rule, no counter, no caption.
  */
-export function StepHeader({ step, grants, title, purpose, meta }: {
-  step: StepName; grants: Grants; title: string; purpose?: string; meta?: string;
+export function StepHeader({ step, grants, title, purpose }: {
+  step: StepName; grants: Grants; title: string; purpose?: string;
 }) {
   return (
     <View>
       <DataLabel value={stepOf(step, grants)}>{onboard.step.label}</DataLabel>
-      <Marquee first title={title} meta={meta} style={{ marginTop: sp(2) }} />
-      {!!purpose && <Txt kind="body" tone="muted">{purpose}</Txt>}
+      <Txt kind="display" style={{ marginTop: sp(3) }} accessibilityRole="header">{title}</Txt>
+      {!!purpose && <Txt kind="body" tone="muted" style={{ marginTop: sp(3) }}>{purpose}</Txt>}
     </View>
   );
 }

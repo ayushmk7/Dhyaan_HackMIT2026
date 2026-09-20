@@ -30,7 +30,7 @@ Create a short, restrained launch-style film for Dhyaan, an eldercare sensing sy
 ### Claims that are true and may appear
 208 Hz · ±16 g on-band cascade · 30-second cancel window · qwen2.5vl:3b at 0.69 s per call · YOLO-World 9–11.5 ms · MediaPipe pose ~13.8 ms · room-level (not metre-level) localization · no frame is ever written to disk, enforced by an AST test · 263 backend tests.
 
-**Do not state or imply** that the text LLM is local. Anthropic's Claude is used for written narratives and family Q&A and runs in the cloud; it is not part of this video. Nothing on screen may claim otherwise.
+**Do not state or imply** that the text LLM is local. OpenAI's API is used for written narratives and family Q&A and runs in the cloud; it is not part of this video. Nothing on screen may claim otherwise. (With no key configured the backend falls back to a local Ollama model, but the video must not claim that as the design.)
 
 ## Creative Direction
 - Tone preset: polished

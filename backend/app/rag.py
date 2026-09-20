@@ -8,7 +8,7 @@ table scan per query, fine to maybe ~50k events on a laptop. Upgrade: Mongo
 Atlas Vector Search ($vectorSearch) once the corpus outgrows a scan, exactly
 as the comment in app/db.py already anticipates.
 
-Embeddings are Claude-written daily narratives, not raw event rows (§9.1) —
+Embeddings are LLM-written daily narratives, not raw event rows (§9.1) —
 the narrative is the RAG chunk. Raw event embedding_text is also indexed (via
 events.subscribe, so app/events.py needs no changes) for precise "when did X
 happen" lookups.
@@ -161,7 +161,7 @@ def _day_range_utc(tz: ZoneInfo, date_local: str) -> tuple[int, int]:
 
 
 def _template_narrative(name: str, date_local: str, docs: list[dict]) -> str:
-    """The day in plain sentences, for when there is no Claude key.
+    """The day in plain sentences, for when there is no OpenAI key.
 
     This is what the family reads on Her day, so it is written to be read, not
     logged: no leading date stamp, no "had 33 recorded events", no "bed exit(s)"
@@ -583,7 +583,7 @@ _KIND_LABEL = {"told": "You told us", "observed": "Dhyaan saw", "pattern": "From
 
 
 def _template_answer(hits: list[dict]) -> str:
-    """Cut-list item 4: when there is no Claude key and no local chat model, the
+    """Cut-list item 4: when there is no OpenAI key and no local chat model, the
     answer is the retrieved sentences grouped by kind — still labelled, so the
     family can still tell observed from assumed.
 
@@ -627,7 +627,12 @@ def _system(resident_name: str) -> str:
     )
 
 
-async def _claude_answer(question: str, hits: list[dict], resident_name: str) -> str | None:
+async def _llm_answer(question: str, hits: list[dict], resident_name: str) -> str | None:
+    """First link of the answer chain: the cloud model behind app/llm.py
+    (OpenAI today). Returns None with no OPENAI_API_KEY or on any API hiccup,
+    which is what hands the question to _ollama_answer and then
+    _template_answer below — in that order, and that chain is what makes the
+    demo answer with no key at all."""
     return await llm.complete(
         _system(resident_name), f"Question: {question}\n\nObservations:\n{_context(hits)}",
         max_tokens=500,
@@ -637,7 +642,7 @@ async def _claude_answer(question: str, hits: list[dict], resident_name: str) ->
 # ponytail: the local chat fallback is one httpx POST at the same Ollama that
 # already serves the embedder — no second client, no second dependency. Off
 # unless CHAT_FALLBACK_MODEL is set, so the test suite stays offline and fast;
-# the demo runs with CHAT_FALLBACK_MODEL=qwen3-vl:8b (called with no images).
+# dev.sh runs the demo with CHAT_FALLBACK_MODEL=qwen2.5vl:3b (called with no images).
 CHAT_FALLBACK_MODEL = os.getenv("CHAT_FALLBACK_MODEL", "")
 CHAT_TIMEOUT_S = float(os.getenv("CHAT_TIMEOUT_S", "25"))
 
@@ -709,7 +714,7 @@ async def answer_family(resident_id: str, question: str) -> dict:
     for h in hits:
         h["text"] = scrub_rooms(h["text"])
 
-    text = (await _claude_answer(q, hits, name)
+    text = (await _llm_answer(q, hits, name)
             or await _ollama_answer(q, hits, name)
             or _template_answer(hits))
     text = scrub_rooms(text)

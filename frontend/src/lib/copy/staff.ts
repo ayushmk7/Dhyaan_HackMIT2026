@@ -60,7 +60,6 @@ export const readout = {
   blank: '—',
   noRoomStamp: 'NO ROOM',
   none: 'NONE',
-  coldBaseline: 'COLD',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -90,27 +89,16 @@ export const reason = {
 export const triage = {
   loading: 'Loading tonight’s list…',
   loadError: 'Couldn’t reach the floor list.',
-  slab: {
-    needsCheck: 'Needs a check',
-    onFloor: 'On the floor',
-    updated: 'Updated',
-  },
+  needsCheck: 'Needs a check',
   row: {
-    seen: 'Seen',
-    zone: 'Zone',
-    band: 'Band',
     roomStamp: (room: string) => `RM ${room}`,
     a11y: (name: string, room: string | null | undefined) =>
       `${name}, ${room ? `room ${room}` : 'no room'}`,
     acknowledge: 'Acknowledge',
   },
-  needsCheck: 'Needs a check',
-  ofMeta: (needing: string, total: string) => `${needing} of ${total}`,
   emptyNoResidents: 'No residents on this floor yet.',
   emptyNoResidentsHint: 'Residents appear here once they are set up on the hub. Pull down to check again.',
   emptyNobody: 'Nobody needs a check right now.',
-  emptyNobodyHint: (minutes: number) =>
-    `Every band has reported in the last ${minutes} minutes and no alert is open. This list refreshes on its own.`,
   doingFine: 'Doing fine',
   hide: 'Hide the list',
   showN: (n: string) => `Show all ${n}`,
@@ -119,7 +107,6 @@ export const triage = {
   ackActorFallback: 'Staff',
   demo: {
     title: 'Demo',
-    meta: 'Admin',
     simulateFall: 'Simulate a fall',
     familyApp: 'Family app',
     nothingCrossed: 'The event went in, but nothing crossed an alert threshold.',
@@ -138,8 +125,6 @@ export const resident = {
   openAlert: 'Open the live alert',
   slab: {
     room: 'Room',
-    seen: 'Seen',
-    band: 'Band',
   },
   where: {
     inZoneSince: (label: string, since: string) => `${label} · since ${since}`,
@@ -158,25 +143,16 @@ export const resident = {
   },
   whereToday: {
     title: 'Where they’ve been today',
-    meta: (n: number) => plural(n, 'segment', 'segments'),
-    nowIn: (label: string, since: string | null) =>
-      `Now in the ${label.toLowerCase()}${since ? `, since ${since}` : ''}.`,
-    noZone: 'No current zone reading.',
   },
   routine: {
     title: 'Routine',
-    meta: (n: number) => plural(n, 'baseline', 'baselines'),
     empty: (firstName: string) => `No baseline has been learned for ${firstName} yet.`,
     usual: 'Usual',
-    obs: 'Obs',
-    baseline: 'Baseline',
-    updated: 'Updated',
     noReading: 'No reading recorded yet.',
     oneReading: (unit: string) => `${unit} · one reading, no trend yet`,
   },
   today: {
     title: 'Today',
-    meta: (n: number) => plural(n, 'entry', 'entries'),
     empty: 'Nothing recorded yet today.',
     savingNote: 'Saving note',
   },
@@ -190,7 +166,6 @@ export const resident = {
   },
   ask: {
     title: (firstName: string) => `Ask about ${firstName}`,
-    label: 'Question',
     placeholder: (firstName: string) => `Has ${firstName} been eating?`,
     button: 'Ask',
     error: 'Couldn’t reach Dhyaan. Try again.',
@@ -204,21 +179,15 @@ export const resident = {
 export const floor = {
   loading: 'Loading rooms…',
   loadError: 'Couldn’t reach the floor list.',
-  slab: {
-    rooms: 'Rooms',
-    needSomeone: 'Need someone',
-    updated: 'Updated',
-  },
+  needSomeone: 'Need someone',
   tile: {
     inRoom: 'In room',
     noSignal: 'No signal',
-    seen: 'Seen',
     a11y: (room: string | null | undefined, name: string, stateWord: string) =>
       `${room ? `Room ${room}` : 'No room'}, ${name}, ${stateWord}`,
   },
   empty: 'No rooms are set up on this floor yet.',
   emptyHint: 'Rooms appear here once residents are set up on the hub. Pull down to check again.',
-  keyLabel: 'Key',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -228,19 +197,9 @@ export const floor = {
 export const rounds = {
   loading: 'Loading tonight’s rounds…',
   loadError: 'Couldn’t reach the floor list.',
-  slab: {
-    needsLook: 'Needs a look',
-    onFloor: 'On the floor',
-    updated: 'Updated',
-  },
-  needsLookTonight: 'Needs a look tonight',
+  needsLook: 'Needs a look',
   emptyQuiet: 'Nothing has deviated tonight.',
-  emptyQuietHint: (minutes: number) =>
-    `Every band has reported in the last ${minutes} minutes and no alert is open. The roll call below shows each band’s last signal.`,
   card: {
-    room: 'Room',
-    seen: 'Seen',
-    band: 'Band',
     a11y: (name: string, room: string | null | undefined) =>
       `${name}, ${room ? `room ${room}` : 'no room'}`,
   },
@@ -427,8 +386,6 @@ export const onboard = {
   step: {
     label: 'Step',
     of: (n: number, total: number) => `${n} of ${total}`,
-    /** What the whole setup is. Shown once, on Welcome. */
-    overview: 'A few short steps. Nothing is saved to her hub until the last one, and you can stop at any point.',
   },
   welcome: {
     title: 'Dhyaan',
@@ -436,16 +393,12 @@ export const onboard = {
     getStarted: 'Set up Dhyaan for her',
     exploreDemo: 'Look around a sample home first',
     exploreDemoA11y: 'Explore the demo. Long-press for the staff demo.',
-    source: 'Source',
-    sourceSample: 'sample data',
-    sourceLive: 'live backend',
     disclaimer: 'Dhyaan is not a medical device and never dials 911.',
   },
 
   consent: {
     grants: CONSENT_GRANTS,
     title: 'Permissions',
-    intro: 'Three things Dhyaan can do for her. Each one is a separate yes or no, and she can change any of them later in Settings.',
     /** What saying no to a grant means. Design copy, not the compliance script above. */
     ifNo: {
       falls: 'If you say no, there is no band to pair and Dhyaan will not call anyone.',
@@ -454,14 +407,12 @@ export const onboard = {
     } satisfies Record<ConsentGrantKey, string>,
     answered: (word: string) => `You said ${word.toLowerCase()}.`,
     herName: 'Her name',
-    herNamePlaceholder: 'Her name',
     yes: 'Yes',
     no: 'No',
     /** Screen-reader label for one Yes/No option on a grant. */
     yesNoA11y: (word: string, grantTitle: string) => `${word} to ${grantTitle}`,
     howItWorks: 'How it works',
     howItWorksA11y: (grantTitle: string) => `How ${grantTitle} works`,
-    whoIsAgreeing: 'Who is agreeing',
     yourName: 'Your name',
     yourNamePlaceholder: 'Full name',
     relationship: 'Relationship',
@@ -475,10 +426,8 @@ export const onboard = {
   about: {
     questions: ABOUT_QUESTIONS,
     questionCounter: 'Question',
-    purpose: 'Skip anything you are not sure of. An unanswered question is simply something Dhyaan was not told.',
-    fieldLabel: 'What Dhyaan should remember',
-    charCount: (n: number, max: number) => `${n} of ${max} characters`,
-    storedAsSentence: 'This is stored as a sentence and read back to you when it’s used.',
+    /** Screen-reader name for the answer field; nothing visible restates the question. */
+    fieldA11y: 'Your answer',
     next: 'Next',
     saveAll: 'Save what you told us',
     back: 'Back',
@@ -488,8 +437,6 @@ export const onboard = {
   pair: {
     title: (residentName: string) => `Pair ${residentName}’s band`,
     intro: 'Type the 6-digit code printed on the band, or the one it reads aloud.',
-    purpose: 'This tells her hub which band is hers, so a fall on this band is filed under her name.',
-    needDigits: (n: number) => `Type ${plural(n, 'more digit', 'more digits')} to pair.`,
     codePlaceholder: '000000',
     codeA11y: '6-digit pairing code',
     pair: 'Pair the band',
@@ -497,15 +444,14 @@ export const onboard = {
     rejected: 'The hub didn’t accept that code.',
     bandOnFile: 'Band on file',
     recorded: (residentName: string) =>
-      `Her hub recorded that band as ${residentName}’s. It has not heard from the band itself yet. It will count as connected the moment the band sends its first reading.`,
-    checkDigits: 'Check those digits against the ones printed on the band. The hub accepts any six digits, so a typo here would file her falls under a band nobody is wearing.',
+      `Her hub recorded that band as ${residentName}’s. It counts as connected the moment the band sends its first reading.`,
+    checkDigits: 'Check the digits against the ones printed on the band before you go on.',
     differentCode: 'Type a different code',
     toSurvey: 'Continue to the room walk',
   },
 
   survey: {
     title: 'Walk each room with the band',
-    progress: (done: number, needed: number) => `${done}/${needed}`,
     intro: (residentName: string) => `Carry the band into each room and stand there for 30 seconds. That teaches Dhyaan where ${residentName} is.`,
     // The zones her hub accepts for a walk (backend/app/location.py).
     rooms: {
@@ -515,15 +461,10 @@ export const onboard = {
       living_room: 'Living room',
       hallway: 'Hallway',
     },
-    needMore: (n: number) => `${plural(n, 'more room', 'more rooms')} to go before you can continue. Start with the rooms she uses most.`,
-    oneAtATime: 'One room at a time. Wait for the countdown to finish before starting the next.',
-    honesty: 'This phone cannot read radio signal strength, so what it sends is only the timing of each reading. Her band’s own readings are what teach the map.',
     continue: 'Continue',
     mapMore: (n: number) => `Map ${plural(n, 'more room', 'more rooms')}`,
     secondsLeft: (s: number) => `${s}s`,
     readings: 'Readings',
-    walking: 'Walking now. A reading goes to her hub every two seconds.',
-    stored: 'Her hub stored this walk.',
     walkAgain: 'Walk it again',
     tryAgain: 'Try this room again',
     mapRoom: 'Map this room',
@@ -533,7 +474,6 @@ export const onboard = {
 
   camera: {
     title: 'Which room is the camera in?',
-    purpose: 'One camera, in the room she spends her day in. Bedrooms and bathrooms are not offered because they are not allowed.',
     rooms: {
       kitchen: 'Kitchen',
       living_room: 'Living room',
@@ -542,8 +482,7 @@ export const onboard = {
     } satisfies Partial<Record<CameraZone, string>>,
     layoutLabel: 'How is the room laid out?',
     layoutPlaceholder: 'The dining table is on the left, her armchair by the window on the right.',
-    layoutHint: 'So Dhyaan can name her spot: her armchair, the table.',
-    checklistTitle: 'Before you point it anywhere, check each of these',
+    checklistTitle: 'Before you point it anywhere',
     checklist: [
       'It cannot see into a bedroom or bathroom, even through an open doorway.',
       'If a private door is in view, mask it on the computer first. Masked pixels never reach the detector.',
@@ -551,9 +490,8 @@ export const onboard = {
       'She knows it is there, and knows she can pause it for two hours from the computer.',
     ],
     checked: 'Checked',
-    confirm: 'Confirm',
+    confirm: 'I have checked all four',
     test: 'Test the camera',
-    startFirst: 'Start the camera on her computer first.',
     listening: 'Listening for up to 20 seconds…',
     onlineInView: 'Camera online, someone in view.',
     onlineEmpty: 'Camera online, nothing in view yet.',
@@ -563,16 +501,13 @@ export const onboard = {
     notRunning: 'The camera is set up but is not running right now.',
     finishLater: 'You can finish setup without it and test later.',
     pickRoom: 'To continue, pick the room the camera is in.',
-    confirmChecklist: (n: number) => `To continue, confirm the ${plural(n, 'remaining line', 'remaining lines')} of the checklist. The camera test is optional.`,
+    confirmChecklist: 'To continue, confirm the checklist. The camera test is optional.',
     continue: 'Continue',
   },
 
   contacts: {
     title: 'Who should Dhyaan call?',
-    meta: (n: number) => plural(n, 'contact', 'contacts'),
     calledInOrder: (residentName: string) => `If ${residentName} doesn’t answer, these people are called one after another, top to bottom.`,
-    orderHint: 'Use the arrows to change the order.',
-    emptyBody: 'Add at least one person. If nobody is on this list, a call that she doesn’t answer has nowhere to go.',
     addFirst: 'Add the first person',
     addAnother: 'Add another person',
     contactLine: (relationship: string, phone: string) => `${relationship} · ${phone}`,
@@ -580,7 +515,6 @@ export const onboard = {
     moveLater: (name: string) => `Move ${name} later`,
     remove: (name: string) => `Remove ${name}`,
     name: 'Name',
-    namePlaceholder: 'Their full name',
     phone: 'Phone number',
     // A format, not a number: a placeholder that looks like a real phone
     // number reads as a suggestion of whom to call.
@@ -589,7 +523,6 @@ export const onboard = {
     relationshipPlaceholder: 'Daughter, neighbour',
     cancel: 'Cancel',
     add: 'Add to the list',
-    needNameAndPhone: 'A name and a phone number are needed.',
     continue: 'Save the call list',
     saveError: 'Couldn’t save the call list. Try again.',
   },
@@ -597,15 +530,7 @@ export const onboard = {
   done: {
     hero: 'That’s\neverything.',
     getToKnow: (residentName: string) => `Dhyaan will get to know ${residentName} over the next week.`,
-    expectTitle: 'What to expect',
-    expect: [
-      'For the first few days it mostly repeats what you told it.',
-      'It learns where she usually sits at each time of day from what it sees, and starts calling it "her usual spot" once it is sure.',
-      'You will never see a room name for where she is, and there is no video to see. Ask it anything in the Ask tab.',
-    ],
     notesToSave: 'Notes to save',
-    noNotes: 'Nothing yet. You can add notes any time in Settings.',
-    notesEditable: 'Every one is editable in Settings, and Forget her profile removes all of them at once.',
     openApp: 'Open the app',
     saveAndOpen: 'Save and open the app',
     saveError: 'Couldn’t save that to her home hub.',

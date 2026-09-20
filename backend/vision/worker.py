@@ -46,6 +46,13 @@ def _sentence(obs):
                                 _SPOT.get(obs.get("spot"))) if x)
 
 
+# The console's "nothing is claimed" state. One definition, because the two
+# places that need it — startup and a paused camera — drifted apart once and
+# the hub went on printing "eating at the table" through the privacy beat.
+EMPTY_OBS = {"activity": None, "sentence": "", "confidence": None,
+             "latency_ms": 0, "batch_frames": 0}
+
+
 def log(*a):
     print(f"[{datetime.now().strftime('%H:%M:%S')}]", *a, flush=True)
 
@@ -76,8 +83,14 @@ class Worker:
         self.boxes, self.people = [], 0
         self._subject = None      # the person we are following, box coords
         self._last_obs = None     # what the preview window prints
-        self.last_obs = {"activity": None, "sentence": "", "confidence": None,
-                         "latency_ms": 0, "batch_frames": 0}
+        self.last_obs = dict(EMPTY_OBS)
+        # Wall-clock of the last time the loop decided she was out of view.
+        # The VLM runs on its own thread and lands ~2.4 s late, so without this
+        # a batch captured while she was eating overwrites the "out of view"
+        # posted after she left, and the hub reports eating in an empty room.
+        self._absent_ts = None
+        self._last_quick = 0.0    # see tuning["quick_min_s"]
+        self._stalled = False     # see tuning["stall_s"]
         self.cam = None
         self.detector = "none"    # the model behind `self.scene`, named in every post
         self._last_monitor = 0.0
@@ -86,7 +99,11 @@ class Worker:
         self.fps = 0.0
         self._warned_standin = False
         self._warned_monitor = False
-        self._http = httpx.Client(timeout=5.0, headers={"X-Band-Key": band_key})
+        self._band_key = band_key
+        self._http = self._new_http()
+
+    def _new_http(self):
+        return httpx.Client(timeout=5.0, headers={"X-Band-Key": self._band_key})
 
     # --- config + consent -----------------------------------------------------
 
@@ -187,8 +204,13 @@ class Worker:
             if r.status_code != 204 and not self._warned_monitor:
                 self._warned_monitor = True
                 log(f"monitor: {r.status_code} {r.text[:160]} (said once)")
-        except Exception:
-            pass
+        except Exception as e:
+            # Same reasoning one line up: a hub that is blank because the API
+            # moved is indistinguishable from a hub that is blank because the
+            # room is empty, and that cost a debugging round trip once already.
+            if not self._warned_monitor:
+                self._warned_monitor = True
+                log(f"monitor: {type(e).__name__}: {str(e)[:120]} (said once)")
 
     def post_async(self, payload):
         """Fire the ingest POST on a worker thread.
@@ -321,6 +343,12 @@ class Worker:
         last_seq, n_new = 0, 0
         status = "idle"
         self._stopping = False
+        # The finally below closes the client. A second run() on the same Worker
+        # then failed its first config poll, fell to NO_CONSENT and blocked in
+        # the consent loop for ever, which reads exactly like a hang.
+        if self._http.is_closed:
+            self._http = self._new_http()
+        self._stalled, last_new = False, time.monotonic()
         self._install_signals()
         self.heartbeat("watching")
 
@@ -333,7 +361,7 @@ class Worker:
                     self._refresh_config()
                 if now - last_hb >= self.tuning["heartbeat_s"]:
                     last_hb = now
-                    self.heartbeat(self.state())
+                    self.heartbeat("offline" if self._stalled else self.state())
 
                 st = self.state()
                 if st != "watching":
@@ -342,6 +370,14 @@ class Worker:
                     ring.take()
                     status = st
                     self.boxes, self.people = [], 0
+                    # ...and the sentence. Clearing the geometry but not the
+                    # words left the hub reading "eating at the table" all the
+                    # way through the privacy beat, which is the one moment in
+                    # the demo where the screen has to prove it stopped looking.
+                    self._subject, self._last_obs = None, None
+                    self.last_obs = dict(EMPTY_OBS)
+                    # Nothing captured before this may land after it.
+                    self._absent_ts = datetime.now().astimezone()
                     self.monitor("idle")
                     if self.preview and not self._show(None, None, None, 0.0, status):
                         break
@@ -350,9 +386,33 @@ class Worker:
 
                 seq, frame = cam.read()
                 if frame is None or seq == last_seq:
+                    # A camera can stop without erroring. Continuity Camera
+                    # hands the phone back, a cable moves, the Mac sleeps the
+                    # device — read() keeps returning the same frame and this
+                    # `continue` used to run for ever. `_mark_fps` was never
+                    # reached, so self.fps froze at its last value and the
+                    # heartbeat went on saying "watching": the family app then
+                    # showed a live camera with a sentence that never changed,
+                    # which is this product's worst failure dressed as its
+                    # normal state. Say offline instead, once, and keep saying
+                    # it until frames come back.
+                    if not self._stalled and now - last_new >= self.tuning["stall_s"]:
+                        self._stalled, self.fps = True, 0.0
+                        self.boxes, self.people = [], 0
+                        self._subject, self._last_obs = None, None
+                        self.last_obs = dict(EMPTY_OBS)
+                        self._absent_ts = datetime.now().astimezone()
+                        self.heartbeat("offline")
+                        self.monitor("stalled", force=True)
+                        log(f"camera delivered no new frame for "
+                            f"{self.tuning['stall_s']:.0f}s — reported offline")
                     time.sleep(0.005)
                     continue
-                last_seq = seq
+                if self._stalled:
+                    self._stalled = False
+                    self.heartbeat("watching")
+                    log("camera recovered")
+                last_seq, last_new = seq, now
                 n_new += 1
                 self._mark_fps(now)
                 if n_new % self.tuning["sample_every_n"]:      # stage 0
@@ -384,8 +444,13 @@ class Worker:
                 if self.scene is not None:
                     shape = (self.scene["person_count"], bool(self.scene["food"]),
                              bool(self.scene["dishes"]), posture_band(box, self.tuning))
-                    if shape != self._last_shape:
-                        self._last_shape = shape
+                    # The floor is what stops a posture flap becoming a write
+                    # storm; see tuning["quick_min_s"]. `_last_shape` advances
+                    # only on a real post, so a change held back here fires on
+                    # the next frame past the floor rather than being lost.
+                    if shape != self._last_shape and \
+                            now - self._last_quick >= self.tuning["quick_min_s"]:
+                        self._last_shape, self._last_quick = shape, now
                         # One line per change, not per frame: what the detector
                         # named, so a headless run answers "did it see the
                         # cereal?" without the preview window.
@@ -396,10 +461,21 @@ class Worker:
                         quick = vlm.post_rules(
                             vlm.from_scene(self.scene, posture_band(box, self.tuning)))
                         self._last_obs = quick
+                        ms = getattr(self, "scene_ms", 0)
+                        # Both of them. `_last_obs` is what the preview draws and
+                        # `last_obs` is what the monitor POSTs, and for a while
+                        # only the first was set here — so the hub console went
+                        # on showing whatever the VLM last said, minutes stale,
+                        # while the app had the detector's current answer.
+                        self.people = quick["person_count"]
+                        self.last_obs = {"activity": quick["activity"],
+                                         "sentence": _sentence(quick),
+                                         "confidence": round(float(quick["confidence"]), 3),
+                                         "latency_ms": int(ms), "batch_frames": 1}
                         self.post_async(vlm.to_payload(
                             self.camera_id, self.cfg["resident_id"],
                             datetime.now(timezone.utc).isoformat(), 0.0, 1, quick,
-                            model=self.detector, latency_ms=getattr(self, "scene_ms", 0)))
+                            model=self.detector, latency_ms=ms))
 
                 reason = selector.update(now, seen, box)       # stage 4
                 # Stage 3b. A keyframe is a frame already judged worth a VLM
@@ -424,10 +500,18 @@ class Worker:
                 if reason == "absent":
                     ring.take()
                     self.boxes, self.people = [], 0
-                    self.post(vlm.to_payload(
+                    # Stop following whoever was here; otherwise `pick_subject`
+                    # starts the next arrival from a box that is seconds old.
+                    self._subject = None
+                    # post(), not post_async(), meant a 5 s timeout + 1 s sleep
+                    # + 5 s retry ON THE CAPTURE LOOP whenever the API was slow:
+                    # eleven seconds of frozen preview and dropped frames, for a
+                    # result nothing waits on. Every other post path is async.
+                    self.post_async(vlm.to_payload(
                         self.camera_id, self.cfg["resident_id"], t.isoformat(),
                         0.0, 0, vlm.ABSENT, model="none", latency_ms=0,
                         simulated=self.synthetic))
+                    self._absent_ts = t
                     self.last_obs = {"activity": "absent", "sentence": "out of view",
                                      "confidence": vlm.ABSENT["confidence"],
                                      "latency_ms": 0, "batch_frames": 0}
@@ -600,6 +684,13 @@ class Worker:
 
     def _vlm_job(self, images, prompt, ts, span, n_frames, scene):
         """Runs on the VLM thread. Never raises into the loop."""
+        # Consent can be withdrawn in the ~2.4 s between handing this batch over
+        # and answering it. The pause path empties the ring, but it never
+        # touched this queue, so JPEGs already in flight still crossed the
+        # socket and still produced an observation after she said stop.
+        if self.state() != "watching":
+            log("dropped a queued batch: the camera was paused before it ran")
+            return
         try:
             obs, latency = vlm.call(images, prompt, model=self.model,
                                     **({"host": self.ollama} if self.ollama else {}))
@@ -609,10 +700,13 @@ class Worker:
             if self.dry_run:
                 log("dry-run: printing the payload shape with simulated=true so the "
                     "contract is still diffable. THIS IS NOT AN OBSERVATION.")
+                # `wall` was a name from the caller's frame; here the timestamp
+                # is `ts`. It raised NameError, the drain() handler ate it, and
+                # the payload this branch exists to print never printed.
                 self.post(vlm.to_payload(
-                    self.camera_id, self.cfg["resident_id"], wall[-1].isoformat(),
-                    span, len(images), dict(vlm.ABSENT, activity="unclear", confidence=0.0,
-                                            evidence="VLM unavailable; shape only."),
+                    self.camera_id, self.cfg["resident_id"], ts.isoformat(),
+                    span, n_frames, dict(vlm.ABSENT, activity="unclear", confidence=0.0,
+                                         evidence="VLM unavailable; shape only."),
                     model=self.model, latency_ms=0, simulated=True))
             if not self.synthetic:
                 return
@@ -668,6 +762,19 @@ class Worker:
     def _post_obs(self, obs, ts, span, n_frames, model, latency):
         """Post it, then remember it for the console. One place, so a second
         way of producing an observation cannot forget the console again."""
+        # The VLM answers from its own thread ~2.4 s after the frames were
+        # taken. If she left in those seconds the loop has already posted "out
+        # of view" and moved on, and letting this land would put a person
+        # eating back into an empty room until the next observation.
+        #
+        # The test is against the last ABSENCE, not the last observation of any
+        # kind: the detector posts a fresh observation every time what it sees
+        # changes, so "older than the console" would have dropped almost every
+        # sentence the VLM ever produced — which is the whole reason it runs.
+        if self._absent_ts is not None and ts < self._absent_ts:
+            log(f"dropped a late observation ({obs['activity']}): captured "
+                f"{(self._absent_ts - ts).total_seconds():.1f}s before she left view")
+            return
         self.post(vlm.to_payload(self.camera_id, self.cfg["resident_id"],
                                  ts.isoformat(), span, n_frames, obs,
                                  model=model, latency_ms=latency,

@@ -1,8 +1,8 @@
 """Tests for the LLM layer, app/llm.py, and its call sites in app/rag.py and
-app/summaries.py. No ANTHROPIC_API_KEY is set in the test environment (see
+app/summaries.py. No OPENAI_API_KEY is set in the test environment (see
 conftest.py) — every test here proves the offline / failure-safe path works,
 by injecting a fake client or a fake `llm.complete`, never by calling
-Anthropic for real."""
+OpenAI for real."""
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -10,12 +10,12 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app import alerts, llm, rag, summaries
-from app.config import ANTHROPIC_API_KEY
+from app.config import OPENAI_API_KEY
 from app.events import emit
 
 
 def test_no_api_key_in_test_env():
-    assert not ANTHROPIC_API_KEY
+    assert not OPENAI_API_KEY
     assert llm.AVAILABLE is False
 
 
@@ -29,12 +29,9 @@ async def test_complete_returns_none_with_no_key():
 
 
 async def test_complete_returns_none_when_client_raises(monkeypatch):
-    class _FakeMessages:
-        async def create(self, **kwargs):
-            raise RuntimeError("simulated transport failure")
-
     class _FakeClient:
-        messages = _FakeMessages()
+        async def post(self, path, **kwargs):
+            raise RuntimeError("simulated transport failure")
 
     monkeypatch.setattr(llm, "AVAILABLE", True)
     monkeypatch.setattr(llm, "_get_client", lambda: _FakeClient())
@@ -49,13 +46,10 @@ async def test_complete_retries_once_on_rate_limit_then_gives_up(monkeypatch):
     class _RateLimited(Exception):
         status_code = 429
 
-    class _FakeMessages:
-        async def create(self, **kwargs):
+    class _FakeClient:
+        async def post(self, path, **kwargs):
             calls["n"] += 1
             raise _RateLimited("slow down")
-
-    class _FakeClient:
-        messages = _FakeMessages()
 
     monkeypatch.setattr(llm, "AVAILABLE", True)
     monkeypatch.setattr(llm, "_get_client", lambda: _FakeClient())
@@ -67,25 +61,59 @@ async def test_complete_retries_once_on_rate_limit_then_gives_up(monkeypatch):
 
 
 async def test_complete_succeeds_with_fake_client(monkeypatch):
-    class _TextBlock:
-        type = "text"
-        text = "hello from claude"
+    """The fake mirrors OpenAI's /v1/chat/completions reply: the text lives at
+    choices[0].message.content. It also pins the request body llm.py sends,
+    since a wrong field name there would 400 on a real key and silently drop
+    every call to the template."""
+    sent = {}
 
     class _Resp:
-        content = [_TextBlock()]
+        def raise_for_status(self):
+            return None
 
-    class _FakeMessages:
-        async def create(self, **kwargs):
-            return _Resp()
+        def json(self):
+            return {"choices": [{"message": {"role": "assistant",
+                                             "content": "hello from openai"}}]}
 
     class _FakeClient:
-        messages = _FakeMessages()
+        async def post(self, path, **kwargs):
+            sent["path"] = path
+            sent["json"] = kwargs["json"]
+            return _Resp()
 
     monkeypatch.setattr(llm, "AVAILABLE", True)
     monkeypatch.setattr(llm, "_get_client", lambda: _FakeClient())
 
-    result = await llm.complete("system prompt", "user prompt")
-    assert result == "hello from claude"
+    result = await llm.complete("system prompt", "user prompt", max_tokens=123)
+    assert result == "hello from openai"
+    assert sent["path"] == "/chat/completions"
+    assert sent["json"]["model"] == llm.MODEL
+    assert sent["json"]["max_completion_tokens"] == 123
+    assert "max_tokens" not in sent["json"]  # deprecated name, rejected by reasoning models
+    assert sent["json"]["messages"] == [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": "user prompt"},
+    ]
+
+
+async def test_complete_returns_none_on_empty_reply(monkeypatch):
+    """An empty or null `content` must read as "no answer" so the caller takes
+    its template, not an empty chat bubble."""
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"role": "assistant", "content": ""}}]}
+
+    class _FakeClient:
+        async def post(self, path, **kwargs):
+            return _Resp()
+
+    monkeypatch.setattr(llm, "AVAILABLE", True)
+    monkeypatch.setattr(llm, "_get_client", lambda: _FakeClient())
+
+    assert await llm.complete("system prompt", "user prompt") is None
 
 
 # ---------------------------------------------------------------------------

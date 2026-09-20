@@ -29,5 +29,5 @@ calls).
 
 `frontend/` → family demo → Settings → "Her care file" → "Use an example discharge
 summary" (works with no API key), or paste/photograph a real one with
-`EXPO_PUBLIC_ANTHROPIC_API_KEY` set. Then Settings → "Rehearse a fall alert" to see
+`EXPO_PUBLIC_OPENAI_API_KEY` set. Then Settings → "Rehearse a fall alert" to see
 the emergency card on the takeover. Deep link for the stage: `dhyaan://carefile?demo=1`.

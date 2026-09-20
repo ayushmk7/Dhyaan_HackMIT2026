@@ -87,11 +87,10 @@ export default function CareFileScreen() {
     <Screen native keyboard>
       {(empty || adding) && (
         <View>
+          {/* One sentence, and then the field. The note about where the
+              reading stays used to sit under it and read as small print. */}
           {empty && (
-            <View style={{ marginBottom: sp(3) }}>
-              <Txt kind="body">{copy.intro}</Txt>
-              <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{copy.introNote}</Txt>
-            </View>
+            <Txt kind="body" style={{ marginBottom: sp(4) }}>{copy.intro}</Txt>
           )}
           {/* The sentence above names the field, so it carries no label of its own. */}
           <Field
@@ -103,7 +102,7 @@ export default function CareFileScreen() {
             minHeight={120}
             maxHeight={220}
           />
-          <View style={{ gap: sp(2), marginTop: sp(3) }}>
+          <View style={{ gap: sp(2), marginTop: sp(4) }}>
             <Btn label={copy.readIt} onPress={addText} busy={file.busy} disabled={!draft.trim()} />
             <Btn label={copy.addPhoto} kind="quiet" onPress={addPhoto} busy={file.busy} />
             {!draft && (
@@ -131,22 +130,22 @@ export default function CareFileScreen() {
       )}
 
       {file.medications.length > 0 && (
-        <>
+        <View style={{ marginTop: sp(4) }}>
           <SectionTitle>{copy.medications}</SectionTitle>
           <RowGroup>
             {file.medications.map((m) => (
-              <Row key={m.name} style={{ justifyContent: 'space-between', paddingVertical: sp(2.5) }}>
+              <Row key={m.name} style={{ justifyContent: 'space-between', paddingVertical: sp(3.5) }}>
                 {/* Name and dose are the document's own values, joined, not a sentence. */}
                 <Txt kind="label">{m.name}{m.dose ? ` · ${m.dose}` : ''}</Txt>
                 <Txt kind="caption" tone="muted">{m.timing ?? ''}</Txt>
               </Row>
             ))}
           </RowGroup>
-        </>
+        </View>
       )}
 
       {file.appointments.length > 0 && (
-        <>
+        <View style={{ marginTop: sp(4) }}>
           <SectionTitle>{copy.comingUp}</SectionTitle>
           {file.appointments.map((a) => (
             <Card key={`${a.title}${a.when}`} style={{ marginBottom: sp(2) }}>
@@ -170,11 +169,11 @@ export default function CareFileScreen() {
               )}
             </Card>
           ))}
-        </>
+        </View>
       )}
 
       {(file.emergency.allergies.length > 0 || file.emergency.conditions.length > 0 || file.emergency.doctor) && (
-        <>
+        <View style={{ marginTop: sp(4) }}>
           {/* The one thing on this screen a paramedic would need, on the
               screen's one hard plate. Inversion, not a colour. */}
           <SectionTitle>{copy.inEmergency}</SectionTitle>
@@ -194,11 +193,11 @@ export default function CareFileScreen() {
               </Txt>
             )}
           </Slab>
-        </>
+        </View>
       )}
 
       {file.sources.length > 0 && (
-        <>
+        <View style={{ marginTop: sp(4) }}>
           <SectionTitle>{copy.documentsRead}</SectionTitle>
           {file.sources.map((s) => (
             <Row key={s.id} style={{ paddingVertical: sp(1.5), justifyContent: 'space-between' }}>
@@ -209,9 +208,9 @@ export default function CareFileScreen() {
             </Row>
           ))}
           {!adding && (
-            <Btn label={copy.addAnother} kind="quiet" onPress={() => setAdding(true)} style={{ marginTop: sp(3) }} />
+            <Btn label={copy.addAnother} kind="quiet" onPress={() => setAdding(true)} style={{ marginTop: sp(4) }} />
           )}
-        </>
+        </View>
       )}
     </Screen>
   );

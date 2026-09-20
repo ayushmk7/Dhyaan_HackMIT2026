@@ -11,13 +11,17 @@
 // row because the number is the point. The reorder and remove controls are
 // filled 40pt circles with a 44pt hit area, so they look like what they are.
 // The add form is the same column of fields on the paper, not a box.
+//
+// Decluttered: the avatar beside a name that already names the person, the
+// contact count in the heading, the empty-state paragraph (the question and
+// the button say it), the "use the arrows" hint and the "name and phone are
+// needed" caption under a button that is grey until they are.
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 import {
   Btn, Entrance, ErrorState, Field, IconBtn, Row, Rule, Screen, Txt,
 } from '@/components';
-import { Avatar, avatarTone } from '@/components/avatar';
 import { api } from '@/lib/api';
 import { onboard } from '@/lib/copy/staff';
 import { size as S, sp } from '@/theme/tokens';
@@ -85,34 +89,25 @@ export default function Contacts() {
           step="contacts"
           grants={grants}
           title={copy.title}
-          meta={contacts.length ? copy.meta(contacts.length) : undefined}
           purpose={copy.calledInOrder(residentName)}
         />
       </Entrance>
 
       {contacts.length === 0 && !adding && (
-        <Entrance index={1} style={{ marginTop: sp(6) }}>
-          <Txt kind="body">{/* voice-ok */}
-            {copy.emptyBody}
-          </Txt>
-          <Btn
-            label={copy.addFirst}
-            style={{ marginTop: sp(5) }}
-            onPress={() => setAdding(true)}
-          />
+        <Entrance index={1} style={{ marginTop: sp(8) }}>
+          <Btn label={copy.addFirst} onPress={() => setAdding(true)} />
         </Entrance>
       )}
 
-      <View style={{ marginTop: contacts.length ? sp(4) : 0 }}>
+      <View style={{ marginTop: contacts.length ? sp(8) : 0 }}>
         {contacts.map((c, i) => (
           <Entrance key={`${c.name}-${i}`} index={1 + i}>
             {i > 0 && <Rule weight="hair" />}
-            <Row style={{ justifyContent: 'space-between', paddingVertical: sp(3) }} gap={3}>
-              <Row gap={3} style={{ flex: 1 }}>
+            <Row style={{ justifyContent: 'space-between', paddingVertical: sp(4) }} gap={3}>
+              <Row gap={4} style={{ flex: 1 }}>
                 {/* Numbered because this list is genuinely sequential: the
                     one place in the app where a number means an order. */}
                 <Txt kind="title" style={{ minWidth: sp(6) }}>{i + 1}</Txt>
-                <Avatar name={c.name} size={34} tone={avatarTone(i)} />
                 <View style={{ flex: 1 }}>
                   <Txt kind="label">{c.name}</Txt>
                   <Txt kind="caption" tone="muted">{copy.contactLine(c.relationship, c.phone)}</Txt>
@@ -146,37 +141,31 @@ export default function Contacts() {
             </Row>
           </Entrance>
         ))}
-        {contacts.length > 1 && (
-          <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>{copy.orderHint}</Txt>
-        )}
       </View>
 
       {adding ? (
-        <View style={{ marginTop: sp(6) }}>
+        <View style={{ marginTop: sp(8) }}>
           <Field
-            label={copy.name} placeholder={copy.namePlaceholder}
+            label={copy.name}
             value={draft.name} onChangeText={(name) => setDraft((d) => ({ ...d, name }))}
           />
           <Field
             label={copy.phone} placeholder={copy.phonePlaceholder} keyboardType="phone-pad"
-            style={{ marginTop: sp(3) }}
+            style={{ marginTop: sp(4) }}
             value={draft.phone} onChangeText={(phone) => setDraft((d) => ({ ...d, phone }))}
           />
           <Field
             label={copy.relationship} placeholder={copy.relationshipPlaceholder}
-            style={{ marginTop: sp(3) }}
+            style={{ marginTop: sp(4) }}
             value={draft.relationship} onChangeText={(relationship) => setDraft((d) => ({ ...d, relationship }))}
           />
-          {!draftReady && (
-            <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{copy.needNameAndPhone}</Txt>
-          )}
-          <Row gap={3} style={{ marginTop: sp(4) }}>
+          <Row gap={3} style={{ marginTop: sp(6) }}>
             <Btn kind="quiet" label={copy.cancel} onPress={() => { setAdding(false); setDraft(emptyDraft); }} style={{ flex: 1 }} />
             <Btn label={copy.add} onPress={addDraft} disabled={!draftReady} style={{ flex: 1 }} />
           </Row>
         </View>
       ) : contacts.length > 0 ? (
-        <Btn kind="quiet" label={copy.addAnother} onPress={() => setAdding(true)} style={{ marginTop: sp(5) }} />
+        <Btn kind="quiet" label={copy.addAnother} onPress={() => setAdding(true)} style={{ marginTop: sp(6) }} />
       ) : null}
 
       {!!error && <ErrorState inline message={error} onRetry={finish} style={{ marginTop: sp(6) }} />}

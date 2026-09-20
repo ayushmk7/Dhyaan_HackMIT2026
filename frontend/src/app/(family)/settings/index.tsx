@@ -25,10 +25,9 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Pressable, Share, View } from 'react-native';
 import {
-  Btn, Card, DataLabel, EmptyState, Entrance, ErrorState, FactRow, Field, KeyValue,
-  LoadingState, Marquee, MetricRow, Row, RowGroup, Rule, Screen, Txt,
+  Btn, Card, Chevron, DataLabel, EmptyState, Entrance, ErrorState, FactRow, Field, KeyValue,
+  LoadingState, Marquee, Row, RowGroup, Rule, Screen, Txt,
 } from '@/components';
-import { Avatar } from '@/components/avatar';
 import { api } from '@/lib/api';
 import { API_BASE, USE_MOCKS } from '@/lib/config';
 import { family } from '@/lib/copy/family';
@@ -169,6 +168,38 @@ function DebugPanel() {
 
 /** A row that opens in place: the collapsed one-liner, or its full body. */
 type Opened = 'none' | 'camera' | 'happens' | 'consent';
+
+/**
+ * One quiet row: a small label, the sentence under it, a reading on the right
+ * when there is one. No glyph beside the label; the label names the thing. A
+ * chevron only where the row leaves this screen. A row that opens in place
+ * announces itself to VoiceOver and otherwise stays plain.
+ */
+function QuietRow({ label, sentence, time, lines = 1, onPress, expanded, navigates = false }: {
+  label: string; sentence?: string; time?: string; lines?: number;
+  onPress?: () => void; expanded?: boolean; navigates?: boolean;
+}) {
+  return (
+    <Pressable
+      disabled={!onPress}
+      onPress={onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityState={expanded === undefined ? undefined : { expanded }}
+      style={({ pressed }) => [{ paddingVertical: sp(3.5) }, pressed && onPress ? { opacity: 0.55 } : null]}
+    >
+      <Row style={{ justifyContent: 'space-between' }} gap={3}>
+        <Txt kind="tag" tone="muted">{label}</Txt>
+        <Row gap={1.5}>
+          {!!time && <Txt kind="stamp" tone="muted">{time}</Txt>}
+          {navigates && <Chevron size={11} />}
+        </Row>
+      </Row>
+      {!!sentence && (
+        <Txt kind="body" numberOfLines={lines} style={{ marginTop: sp(1) }}>{sentence}</Txt>
+      )}
+    </Pressable>
+  );
+}
 
 export default function Settings() {
   const qc = useQueryClient();
@@ -383,20 +414,15 @@ export default function Settings() {
 
   return (
     <Screen native wash>
-      {/* Beat 0. Her. The one large thing on the screen, on bare paper. */}
+      {/* Beat 0. Her name. The one large thing on the screen, on bare paper,
+          with nothing beside it and nothing under it. */}
       <Entrance index={0} distance={26}>
-        <Row gap={3}>
-          <Avatar name={name} size={56} />
-          <Txt kind="display" numberOfLines={2} style={{ flex: 1 }}>{name}</Txt>
-        </Row>
-        <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>
-          {copy.profile.livesAtHome(name)}
-        </Txt>
+        <Txt kind="display" numberOfLines={2}>{name}</Txt>
       </Entrance>
 
       {/* Beat 1. What Dhyaan was told: the one list on the screen, and the
           only heading, because it is the only thing here that is a list. */}
-      <Entrance index={1}>
+      <Entrance index={1} style={{ marginTop: sp(4) }}>
         <Pressable onLongPress={() => setDebugOpen((v) => !v)} delayLongPress={600}>
           <Marquee
             title={copy.told.title}
@@ -515,7 +541,7 @@ export default function Settings() {
 
       {/* Beat 2. Everything else, one line each. A row that has more to say
           opens in place; a row that goes somewhere carries a chevron. */}
-      <Entrance index={2} style={{ marginTop: sp(4) }}>
+      <Entrance index={2} style={{ marginTop: sp(10) }}>
         <RowGroup>
           {/* Her camera. The only room name on a family screen, and it is
               allowed: this is where the FAMILY installed the camera (they
@@ -523,8 +549,7 @@ export default function Settings() {
               "installed in" so it cannot be misread as whereabouts (D-001
               bans her location, not the hardware's). */}
           <View>
-            <MetricRow
-              icon="video"
+            <QuietRow
               label={copy.camera.title}
               time={cameraState}
               sentence={
@@ -558,19 +583,18 @@ export default function Settings() {
             <ErrorState message={copy.ladder.loadError} onRetry={refetchContacts} />
           )}
           {!!contacts && (
-            <MetricRow
-              icon="phone"
+            <QuietRow
               label={copy.ladder.title}
               sentence={ladderNames.length ? copy.ladder.inOrder(ladderNames) : copy.ladder.empty}
               lines={ladderNames.length ? 2 : 4}
             />
           )}
 
-          <MetricRow
-            icon="doc.text"
+          <QuietRow
             label={copy.careFile.title}
             sentence={sources.length ? copy.careFile.summary(medications.length, appointments.length) : copy.careFile.intro}
             lines={sources.length ? 1 : 3}
+            navigates
             onPress={() => router.push('/(family)/settings/carefile')}
           />
 
@@ -578,8 +602,7 @@ export default function Settings() {
               preferences, so this states what Dhyaan does today rather than
               offering switches that would forget themselves on unmount. */}
           <View>
-            <MetricRow
-              icon="bell"
+            <QuietRow
               label={copy.happens.title}
               sentence={opened === 'happens' ? undefined : copy.happens.short}
               lines={1}
@@ -598,17 +621,15 @@ export default function Settings() {
           </View>
 
           <View>
-            <MetricRow
-              icon="checkmark.seal"
+            <QuietRow
               label={copy.consent.title}
-              sentence={opened === 'consent' ? undefined : consentLine}
-              lines={1}
+              sentence={consentLine}
+              lines={opened === 'consent' ? 3 : 1}
               onPress={() => toggle('consent')}
               expanded={opened === 'consent'}
             />
             {opened === 'consent' && (
               <View style={{ paddingBottom: sp(3), gap: sp(1.5) }}>
-                <Txt kind="caption" tone="muted">{consentLine}</Txt>
                 {([
                   [copy.consent.falls, profile?.consent.falls],
                   [copy.consent.camera, profile?.consent.camera],
@@ -625,22 +646,12 @@ export default function Settings() {
             )}
           </View>
 
-          {/* No buttons into /onboard/pair or /onboard/survey. Those screens
-              have no header and no way back; their only visible exit is
-              Continue, which walks the whole setup again and ends by
-              re-saving her consent from this session's blank answers,
-              switching everything off. Until setup can be re-entered safely,
-              this says what is true. */}
-          <MetricRow
-            icon="dot.radiowaves.left.and.right"
-            label={copy.band.title}
-            sentence={copy.band.body}
-            lines={3}
-          />
+          {/* No row for her band. There is nothing to do to it from here
+              (no way back into /onboard/pair), and a row that only says so
+              is a row nobody acts on. */}
 
           <View>
-            <MetricRow
-              icon="square.and.arrow.up"
+            <QuietRow
               label={copy.profile.shareJson}
               sentence={copy.profile.shareJsonNote}
               lines={2}
@@ -662,7 +673,7 @@ export default function Settings() {
       {/* Beat 3. Apart from everything, under a hard rule: the two things
           that cannot be undone. Position and wording carry it; each one still
           makes you type her name (DESIGN rule 8). */}
-      <Entrance index={3} style={{ marginTop: sp(12) }}>
+      <Entrance index={3} style={{ marginTop: sp(16) }}>
         <Rule weight="heavy" />
         <Txt kind="label" style={{ marginTop: sp(3) }}>{copy.profile.cannotUndo}</Txt>
         {!!forgetResult && (

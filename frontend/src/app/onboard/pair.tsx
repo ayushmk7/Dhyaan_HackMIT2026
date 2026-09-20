@@ -9,9 +9,9 @@
 // as connected the moment the band sends its first reading.
 //
 // The code field owns the screen until the hub answers; then the recorded
-// band id does, on the one tinted plate this screen ever draws. While the
-// code is short the screen says how many digits are still to come, so a grey
-// button is never a mystery.
+// band id does, on the one tinted plate this screen ever draws. The "N more
+// digits" counter and the second explanatory paragraph are gone: the field
+// has six places and the button greys until they are full.
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
@@ -62,11 +62,10 @@ export default function Pair() {
       }
     >
       <Entrance index={0}>
-        <StepHeader step="pair" grants={grants} title={copy.title(residentName)} purpose={copy.purpose} />
+        <StepHeader step="pair" grants={grants} title={copy.title(residentName)} purpose={copy.intro} />
       </Entrance>
 
       <Entrance index={1}>
-        <Txt kind="label" style={{ marginTop: sp(6) }}>{copy.intro}</Txt>
         {/* The code is a machine reading, so the field wears the machine face. */}
         <Field
           code
@@ -77,18 +76,13 @@ export default function Pair() {
           placeholder={copy.codePlaceholder}
           editable={!paired}
           accessibilityLabel={copy.codeA11y}
-          style={{ marginTop: sp(3) }}
+          style={{ marginTop: sp(8) }}
         />
-        {!paired && missing > 0 && (
-          <Txt kind="caption" tone="muted" accessibilityLiveRegion="polite" style={{ marginTop: sp(2) }}>
-            {copy.needDigits(missing)}
-          </Txt>
-        )}
       </Entrance>
 
       {!!error && (
         <Entrance index={2}>
-          <ErrorState inline message={error} onRetry={pair} style={{ marginTop: sp(3) }} />
+          <ErrorState inline message={error} onRetry={pair} style={{ marginTop: sp(4) }} />
         </Entrance>
       )}
 
@@ -96,8 +90,8 @@ export default function Pair() {
         <Entrance index={2}>
           <View
             style={{
-              marginTop: sp(6),
-              padding: sp(4.5),
+              marginTop: sp(8),
+              padding: sp(5),
               borderRadius: radius.glass,
               backgroundColor: t.accentWash,
             }}
@@ -107,14 +101,14 @@ export default function Pair() {
               {copy.recorded(residentName)}
             </Txt>
           </View>
-          <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>{/* voice-ok */}
+          <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>{/* voice-ok */}
             {copy.checkDigits}
           </Txt>
           <Btn
             kind="quiet"
             size="small"
             label={copy.differentCode}
-            style={{ marginTop: sp(3), alignSelf: 'flex-start' }}
+            style={{ marginTop: sp(4), alignSelf: 'flex-start' }}
             onPress={() => { setPaired(null); setCode(''); }}
           />
         </Entrance>

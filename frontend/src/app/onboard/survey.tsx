@@ -23,6 +23,11 @@
 // countdown is set in the readout face. Every other row ends in a real
 // button, because "Map this room" is the thing to do here and a line of text
 // did not look like it.
+//
+// Decluttered: the progress counter in the heading (the button says how many
+// rooms are left), the "walking now" caption under the countdown, the
+// "stored" caption under a row that already shows its readings, and the
+// three-sentence footer about the phone's radio are gone.
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
@@ -121,12 +126,11 @@ export default function Survey() {
           step="survey"
           grants={grants}
           title={copy.title}
-          meta={copy.progress(doneCount, ROOMS_NEEDED)}
           purpose={copy.intro(residentName)}
         />
       </Entrance>
 
-      <View style={{ marginTop: sp(4) }}>
+      <View style={{ marginTop: sp(8) }}>
         {ZONES.map((z, i) => {
           const s = rooms[z];
           const live = s.kind === 'surveying';
@@ -135,22 +139,18 @@ export default function Survey() {
               {i > 0 && !live && <Rule weight="hair" />}
               <View
                 style={live ? {
-                  marginVertical: sp(2),
-                  padding: sp(4.5),
+                  marginVertical: sp(3),
+                  padding: sp(5),
                   borderRadius: radius.glass,
                   backgroundColor: t.accentWash,
-                } : { paddingVertical: sp(3) }}
+                } : { paddingVertical: sp(4) }}
               >
                 <Row style={{ justifyContent: 'space-between', alignItems: 'center' }} gap={3}>
                   <View style={{ flex: 1 }}>
                     <Txt kind={live ? 'title' : 'label'}>{copy.rooms[z]}</Txt>
-                    {s.kind === 'done' && (
-                      <Txt
-                        kind="caption"
-                        tone={s.warning ? 'warn' : 'muted'}
-                        style={{ marginTop: sp(0.5) }}
-                      >
-                        {s.warning ?? copy.stored}
+                    {s.kind === 'done' && !!s.warning && (
+                      <Txt kind="caption" tone="warn" style={{ marginTop: sp(0.5) }}>
+                        {s.warning}
                       </Txt>
                     )}
                     {s.kind === 'failed' && (
@@ -174,30 +174,13 @@ export default function Survey() {
                 </Row>
 
                 {live && (
-                  <>
-                    <Txt kind="readout" style={{ marginTop: sp(3) }}>{copy.secondsLeft(s.left)}</Txt>
-                    <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
-                      {copy.walking}
-                    </Txt>
-                  </>
+                  <Txt kind="readout" style={{ marginTop: sp(3) }}>{copy.secondsLeft(s.left)}</Txt>
                 )}
               </View>
             </Entrance>
           );
         })}
       </View>
-
-      <Entrance index={1 + ZONES.length} style={{ marginTop: sp(6), gap: sp(3) }}>
-        {/* Why the button is still grey, or why the other rooms are. */}
-        {surveying ? (
-          <Txt kind="body" accessibilityLiveRegion="polite">{copy.oneAtATime}</Txt>
-        ) : remaining > 0 ? (
-          <Txt kind="body" accessibilityLiveRegion="polite">{copy.needMore(remaining)}</Txt>
-        ) : null}
-        <Txt kind="caption" tone="muted">{/* voice-ok */}
-          {copy.honesty}
-        </Txt>
-      </Entrance>
     </Screen>
   );
 }

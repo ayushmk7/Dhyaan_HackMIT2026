@@ -19,7 +19,7 @@ to the rare frames that matter. Marginal token cost of continuous observation:
   leaves the house (the privacy story and the cost story are the same story).
 - Embeddings: `nomic-embed-text` locally — the RAG index costs nothing to
   build or refresh.
-- Cloud models are reserved for judgment: Claude Haiku on the voice path
+- Cloud models are reserved for judgment: OpenAI gpt-4.1-mini on the voice path
   (cheapest tier, ~3 short turns per call), a frontier model only for weekly
   narrative polish and care-document extraction — single-digit calls per day.
 

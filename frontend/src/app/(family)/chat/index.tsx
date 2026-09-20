@@ -3,30 +3,37 @@
 // name their kind, because a family must always be able to tell observed from
 // assumed.
 //
-// The conversation is the screen. Her answers sit straight on the paper; your
-// questions are the one plate, a light blue bubble on the right. Nothing else
-// is boxed. Before the first question, one big sentence and the openers.
+// The shape is a chat assistant's: one scrolling column of turns, generously
+// spaced, with the composer pinned at the bottom. Her answers are prose
+// straight on the paper, no bubble, no card. Your questions are the one
+// container, a light blue plate on the right. Turns are separated by air, not
+// by rules. Before the first question, a quiet line and the openers as chips.
 //
 // A refusal is not an error. It renders as a quiet raised hand and a plain
-// sentence — no red, no warning icon, no retry — because the questions Dhyaan
-// won't answer, it won't answer for anyone, and being told so calmly is the
-// product working, not failing.
+// sentence in the answer's own place — no red, no warning icon, no retry —
+// because the questions Dhyaan won't answer, it won't answer for anyone, and
+// being told so calmly is the product working, not failing.
 //
 // Every sentence this screen says lives in lib/copy/family.ts under `chat`.
 import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
-import { ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, ScrollView, TextInput, View } from 'react-native';
 import {
-  Btn, CitationChip, Entrance, ErrorState, IconBtn, LoadingState, Refusal, Row, Rule, Screen, Txt,
+  Btn, Chip, CitationChip, Entrance, ErrorState, IconBtn, Refusal, Row, Screen, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { family } from '@/lib/copy/family';
 import { scrubRooms } from '@/lib/format';
 import type { ChatMessage, RefusalKind } from '@/lib/types';
 import { useSession } from '@/store/session';
-import { radius, sp, type, useTheme } from '@/theme';
+import { radius, scale, sp, type, useTheme } from '@/theme';
 
 const copy = family.chat;
+
+// Prose measure. An answer can run to a paragraph or three; body type at
+// 1.35x line height is right for a row and tight for a page of reading, so
+// the answer alone takes 1.5x. Same size, more air.
+const PROSE_LINE = Math.round(scale.body * 1.5);
 
 /** One line naming why an answer was withheld, above the answer itself. */
 const refusalLabel = (kind: RefusalKind | undefined): string =>
@@ -64,10 +71,13 @@ export default function Ask() {
     }
   };
 
+  const canSend = !!draft.trim() && !thinking;
+
   // The composer floats and the conversation travels under it. The input is
-  // hand-rolled on purpose: Field's white plate is wrong inside glass.
+  // hand-rolled on purpose: Field's white plate is wrong inside glass. It
+  // grows to about five lines, and the send button rides its bottom edge.
   const composer = (
-    <Row gap={2}>
+    <Row gap={2} style={{ alignItems: 'flex-end' }}>
       <TextInput
         accessibilityLabel={copy.askAbout(residentName)}
         value={draft}
@@ -75,19 +85,19 @@ export default function Ask() {
         placeholder={copy.placeholder(residentName)}
         placeholderTextColor={t.inkMuted}
         style={{
-          flex: 1, minHeight: 44, maxHeight: 110,
-          paddingHorizontal: sp(3), paddingVertical: sp(2),
+          flex: 1, minHeight: 44, maxHeight: 132,
+          paddingHorizontal: sp(3), paddingVertical: sp(2.5),
           ...type.body, color: t.ink,
         }}
         multiline
-        onSubmitEditing={() => send(draft)}
+        editable={!thinking}
       />
       <IconBtn
         name="arrow.up"
         label={copy.ask}
         kind="primary"
         size={44}
-        disabled={!draft.trim() || thinking}
+        disabled={!canSend}
         onPress={() => send(draft)}
       />
     </Row>
@@ -106,47 +116,45 @@ export default function Ask() {
       floatingBar={composer}
     >
       {messages.length === 0 && (
-        <>
-          {/* Before the first question: the one big sentence, the law under
-              it in a caption, then the openers. No plate, no legend. */}
+        <View style={{ paddingTop: sp(10) }}>
+          {/* Before the first question: one quiet line, the law under it, and
+              the openers as chips. Tapping one is the first turn. */}
           <Entrance index={0} distance={26}>
-            <Txt kind="display">{copy.hero(residentName)}</Txt>
-            <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>{copy.everyAnswer}</Txt>
+            <Txt kind="title">{copy.hero(residentName)}</Txt>
+            <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{copy.everyAnswer}</Txt>
           </Entrance>
 
           <Entrance index={1}>
-            {/* Openers are 44pt tonal buttons, not 30pt chips: at this hour
-                a question should be hard to miss and easy to hit. */}
-            <View style={{ marginTop: sp(7), gap: sp(2), alignItems: 'flex-start' }}>
+            <View style={{ marginTop: sp(6), flexDirection: 'row', flexWrap: 'wrap', gap: sp(2) }}>
               {copy.suggestions.map((s) => (
-                <Btn key={s} kind="quiet" size="small" label={s} onPress={() => send(s)} />
+                <Chip key={s} label={s} onPress={() => send(s)} />
               ))}
-              <Btn
-                kind="quiet"
-                size="small"
-                label={copy.planFromChat}
-                style={{ marginTop: sp(2) }}
-                onPress={() => router.push('/(family)/chat/plan')}
-              />
             </View>
+            <Btn
+              kind="link"
+              label={copy.planFromChat}
+              style={{ marginTop: sp(6), alignSelf: 'flex-start' }}
+              onPress={() => router.push('/(family)/chat/plan')}
+            />
           </Entrance>
-        </>
+        </View>
       )}
 
-      {/* The conversation. A question is the one plate; an answer is prose
-          on the paper with its sources under a hairline. */}
-      <View style={{ gap: sp(5) }}>
+      {/* The conversation. One column of turns with real whitespace between
+          them. A question is the one plate; an answer is prose on the paper
+          with its sources, as chips, directly under it. */}
+      <View style={{ gap: sp(8), paddingTop: messages.length ? sp(2) : 0 }}>
         {messages.map((m) =>
           m.role === 'user' ? (
             <View key={m.id} style={{
-              alignSelf: 'flex-end', maxWidth: '85%',
+              alignSelf: 'flex-end', maxWidth: '82%',
               backgroundColor: t.accentWash,
-              borderRadius: radius.bubble, paddingHorizontal: sp(3.5), paddingVertical: sp(2.5),
+              borderRadius: radius.bubble, paddingHorizontal: sp(4), paddingVertical: sp(2.5),
             }}>
               <Txt kind="body">{m.text}</Txt>
             </View>
           ) : (
-            <View key={m.id} style={{ alignSelf: 'stretch', paddingRight: sp(4) }}>
+            <View key={m.id} style={{ alignSelf: 'stretch', paddingRight: sp(2) }}>
               {m.refused ? (
                 <Refusal label={refusalLabel(m.refusal_kind)}>
                   {m.text}
@@ -154,32 +162,44 @@ export default function Ask() {
               ) : (
                 // Family surface: the answer is stitched from raw records, so
                 // it gets the same room scrub the activity feed gets (D-001).
-                <Txt kind="body">{scrubRooms(m.text)}</Txt>
+                <Txt kind="body" style={{ lineHeight: PROSE_LINE }}>{scrubRooms(m.text)}</Txt>
               )}
               {!!m.citations?.length && (
-                <View style={{ marginTop: sp(3), gap: sp(2) }}>
-                  <Rule weight="hair" color={t.line} />
-                  {m.citations.map((c) => (
-                    <CitationChip
-                      key={`${c.kind}_${c.id}`}
-                      citation={c}
-                      onPress={
-                        c.event_ids[0]
-                          ? () => router.push({
-                            pathname: '/(family)/timeline/[eventId]',
-                            params: { eventId: c.event_ids[0] },
-                          })
-                          : undefined
-                      }
-                    />
-                  ))}
+                <View style={{ marginTop: sp(4), gap: sp(2) }}>
+                  <Txt kind="tag" tone="muted">{copy.sources}</Txt>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: sp(2) }}>
+                    {m.citations.map((c) => (
+                      <CitationChip
+                        key={`${c.kind}_${c.id}`}
+                        citation={c}
+                        onPress={
+                          c.event_ids[0]
+                            ? () => router.push({
+                              pathname: '/(family)/timeline/[eventId]',
+                              params: { eventId: c.event_ids[0] },
+                            })
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </View>
                 </View>
               )}
             </View>
           ),
         )}
 
-        {thinking && <LoadingState label={copy.thinking} />}
+        {/* While Dhyaan reads her day, the pending mark sits exactly where the
+            answer will land: left-aligned, small, muted, no card. */}
+        {thinking && (
+          <View
+            accessibilityLiveRegion="polite"
+            style={{ flexDirection: 'row', alignItems: 'center', gap: sp(2), alignSelf: 'flex-start', minHeight: 44 }}
+          >
+            <ActivityIndicator size="small" color={t.inkMuted} />
+            <Txt kind="caption" tone="muted">{copy.thinking}</Txt>
+          </View>
+        )}
 
         {sendError && !thinking && (
           <ErrorState

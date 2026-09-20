@@ -3,10 +3,17 @@
 // can actually leave behind.
 //
 // The identity block is the focal point: the name at the hero size, the
-// where-line under it, telemetry on a heavy rule. It is drawn on paper unless
+// where-line under it, the room on a heavy rule. It is drawn on paper unless
 // this resident is alerting, in which case the same block is the inverted
 // plate. Inversion is alarm and nothing else, so a resident who is fine is
 // never shown on a black slab.
+//
+// Decluttered: the seen/battery readings under the name (the where-line
+// already says when she was last heard), the per-section counts, the
+// "now in" caption that repeated the where-line, and the obs/baseline/updated
+// footer under every sparkline are gone. The deviation summary now opens the
+// Routine section rather than floating above it, so it lands with the
+// baselines it is derived from and nothing above it moves when they resolve.
 //
 // Fixed here:
 //   · "Add a note" wrote to useState and evaporated on unmount. It now POSTs
@@ -65,7 +72,7 @@ function BaselineRow({ b }: { b: BaselineFeature }) {
   const last = lastReading(b);
   const deviating = isDeviating(b);
   return (
-    <View style={{ paddingVertical: sp(3) }}>
+    <View style={{ paddingVertical: sp(3.5) }}>
       <Row style={{ justifyContent: 'space-between' }}>
         <Txt kind="label" tone={deviating ? 'warn' : 'ink'} numberOfLines={1} style={{ flex: 1 }}>
           {b.label}
@@ -90,12 +97,6 @@ function BaselineRow({ b }: { b: BaselineFeature }) {
           </Row>
         )}
       </View>
-
-      <Row gap={3} style={{ marginTop: sp(2), flexWrap: 'wrap' }}>
-        <DataLabel value={String(b.n_obs)}>{copy.routine.obs}</DataLabel>
-        {b.cold_start && <DataLabel value={readout.coldBaseline}>{copy.routine.baseline}</DataLabel>}
-        {!!b.updated_at && <DataLabel value={timeOf(b.updated_at)}>{copy.routine.updated}</DataLabel>}
-      </Row>
     </View>
   );
 }
@@ -209,16 +210,9 @@ export default function ResidentDetail() {
         <Txt kind="body" tone="muted" style={{ flex: 1 }} numberOfLines={2}>{whereLine}</Txt>
         <StateChip state={state} />
       </Row>
-      <Rule weight={state === 'alerting' ? 'hair' : 'heavy'} style={{ marginTop: sp(3.5) }} />
-      <Row gap={3} style={{ marginTop: sp(2.5), flexWrap: 'wrap' }}>
-        <DataLabel value={resident.room ?? readout.none}>{copy.slab.room}</DataLabel>
-        <DataLabel value={resident.last_seen ? timeOf(resident.last_seen) : readout.noTime}>
-          {copy.slab.seen}
-        </DataLabel>
-        {resident.band_battery_pct != null && (
-          <DataLabel value={`${resident.band_battery_pct}%`}>{copy.slab.band}</DataLabel>
-        )}
-      </Row>
+      <Rule weight={state === 'alerting' ? 'hair' : 'heavy'} style={{ marginTop: sp(4) }} />
+      {/* Staff-only whereabouts, D-001. */}
+      <DataLabel value={resident.room ?? readout.none} style={{ marginTop: sp(3) }}>{copy.slab.room}</DataLabel>
     </>
   );
 
@@ -240,37 +234,32 @@ export default function ResidentDetail() {
       <Stagger>
         {state === 'alerting' ? <Slab>{identity}</Slab> : <View>{identity}</View>}
 
-        {deviations.length > 0 ? (
-          // "Worth a look" is a state, not a card background: the plate stays
-          // plain and the meaning rides on the chip.
-          <Card style={{ marginTop: sp(5) }}>
-            <StateChip state="attention" />
-            <Txt kind="body" style={{ marginTop: sp(2.5) }}>
-              {copy.deviation.summary(
-                firstName,
-                deviations.map((b) => ({
-                  label: b.label, value: fmt(lastReading(b)!), unit: b.unit, usual: fmt(b.mu),
-                })),
-              )}
-            </Txt>
-          </Card>
-        ) : null}
-
         <View>
           {/* Room-level history is staff-only by decision, not by omission. */}
-          <Marquee title={copy.whereToday.title} meta={copy.whereToday.meta((segments ?? []).length)} />
+          <Marquee title={copy.whereToday.title} style={{ marginTop: sp(12) }} />
           <Card>
             <RoomTimeBar segments={segments ?? []} />
-            <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>{/* voice-ok: a reading, not prose */}
-              {location
-                ? copy.whereToday.nowIn(location.label, location.since ? timeOf(location.since) : null)
-                : copy.whereToday.noZone}
-            </Txt>
           </Card>
         </View>
 
         <View>
-          <Marquee title={copy.routine.title} meta={copy.routine.meta((baselines ?? []).length)} />
+          <Marquee title={copy.routine.title} style={{ marginTop: sp(12) }} />
+          {deviations.length > 0 ? (
+            // "Worth a look" is a state, not a card background: the plate stays
+            // plain and the meaning rides on the chip. It opens the section it
+            // is derived from, so it arrives with the baselines, not above them.
+            <Card style={{ marginBottom: sp(4) }}>
+              <StateChip state="attention" />
+              <Txt kind="body" style={{ marginTop: sp(2.5) }}>
+                {copy.deviation.summary(
+                  firstName,
+                  deviations.map((b) => ({
+                    label: b.label, value: fmt(lastReading(b)!), unit: b.unit, usual: fmt(b.mu),
+                  })),
+                )}
+              </Txt>
+            </Card>
+          ) : null}
           <RowGroup>
             {(baselines ?? []).map((b) => <BaselineRow key={b.feature} b={b} />)}
             {(baselines ?? []).length === 0 && (
@@ -280,7 +269,7 @@ export default function ResidentDetail() {
         </View>
 
         <View>
-          <Marquee title={copy.today.title} meta={copy.today.meta(today.length)} />
+          <Marquee title={copy.today.title} style={{ marginTop: sp(12) }} />
           <RowGroup>
             {today.length === 0 && !pendingNote && (
               <EmptyState>{copy.today.empty}</EmptyState>
@@ -320,18 +309,18 @@ export default function ResidentDetail() {
               label={copy.note.add}
               kind="quiet"
               onPress={() => setNoteOpen(true)}
-              style={{ marginTop: sp(3) }}
+              style={{ marginTop: sp(4) }}
             />
           )}
           {!!noteError && <ErrorState inline message={noteError} style={{ marginTop: sp(2) }} />}
         </View>
 
         <View>
-          <Marquee title={copy.ask.title(firstName)} />
+          <Marquee title={copy.ask.title(firstName)} style={{ marginTop: sp(12) }} />
           <Row gap={2} style={{ alignItems: 'flex-end' }}>
             <View style={{ flex: 1 }}>
               <Field
-                label={copy.ask.label}
+                accessibilityLabel={copy.ask.title(firstName)}
                 value={question}
                 onChangeText={setQuestion}
                 placeholder={copy.ask.placeholder(firstName)}

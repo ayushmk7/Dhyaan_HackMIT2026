@@ -65,12 +65,12 @@ if anyone adds one. It is a structural promise, not a convention.
 
 | Edge | What crosses | What never crosses |
 |---|---|---|
-| **Anthropic** (`claude-opus-5`, `backend/app/llm.py`) | The day's already-anonymised event sentences, for the daily narrative and the family's questions | Pixels, audio, room names |
+| **OpenAI** (`gpt-5.6-terra`, `backend/app/llm.py`) | The day's already-anonymised event sentences, for the daily narrative and the family's questions | Pixels, audio, room names |
 | **Twilio + Deepgram** (`dhyaan/voice/`) | The disclosed phone call, during the call only | Nothing is stored: we keep the transcript, never the audio (D-004) |
 
 Both are text-only, both are on the escalation path rather than the sensing
 path, and pulling the API keys degrades the system instead of breaking it —
-`AVAILABLE = bool(ANTHROPIC_API_KEY)` and the voice bridge only mounts when
+`AVAILABLE = bool(OPENAI_API_KEY)` and the voice bridge only mounts when
 Twilio credentials exist, so `./dev.sh` runs zero-config with neither.
 
 ---
@@ -94,7 +94,7 @@ flowchart LR
     end
 
     subgraph Out["Off-box, text only"]
-        CLAUDE["claude-opus-5<br/>narratives + answers"]
+        OPENAI["gpt-5.6-terra<br/>narratives + answers"]
         PHONE["Twilio + Deepgram<br/>the actual call"]
     end
 
@@ -105,7 +105,7 @@ flowchart LR
     VIS -->|"sentences, never frames"| API
     API --> LOC
     API --> RAG
-    RAG --> CLAUDE
+    RAG --> OPENAI
     API --> PHONE
     API -->|"WebSocket + push"| APP["Expo app<br/>family · staff"]
 ```

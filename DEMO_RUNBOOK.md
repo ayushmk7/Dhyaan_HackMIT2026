@@ -75,10 +75,11 @@ Set in the environment before `./dev.sh`.
 
 ## ⚠ Human items before 11 AM
 
-1. `EXPO_PUBLIC_ANTHROPIC_API_KEY` in `frontend/.env` — without it the
-   conversation openers, Sunday letter, and chat-plan beats silently vanish.
-   (Muse key instead, if obtained — strengthens the Meta track; needs a small
-   provider swap in `frontend/src/lib/ai.ts`, ask the agent.)
+1. `EXPO_PUBLIC_OPENAI_API_KEY` in `frontend/.env`, and `OPENAI_API_KEY` for
+   the backend. Without them the conversation openers, Sunday letter and
+   chat-plan beats degrade to their mocks, and the backend's written narratives
+   and chat answers fall through to the local Ollama model. Everything still
+   runs; it is just less good prose.
 2. Board on venue WiFi (step above).
 3. Vision lane on Ayush's machine: `uv pip install -e ".[vision]"` once, then
    `make -C backend vision-demo`; needs `ollama` + `qwen2.5vl:3b` pulled.

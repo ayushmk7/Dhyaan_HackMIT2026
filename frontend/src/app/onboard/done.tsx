@@ -16,18 +16,19 @@
 // the mock both merge a partial consent, so even a failed read cannot turn
 // anything off.
 //
-// The hero owns the screen. What follows is a short quiet column: what to
-// expect, and one machine line for how many notes are about to be saved.
+// The hero owns the screen. Under it, one sentence and one machine line for
+// how many notes are about to be saved. The step counter above the hero, the
+// three-line "what to expect" list and the caption under the note count are
+// gone: the last step of a sequence is a full stop, not another page to read.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
-import { View } from 'react-native';
-import { Btn, DataLabel, Entrance, ErrorState, Rule, Screen, Txt } from '@/components';
+
+import { Btn, DataLabel, Entrance, ErrorState, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
 import { onboard } from '@/lib/copy/staff';
 import type { Profile } from '@/lib/types';
 import { sp } from '@/theme/tokens';
 import { useSession, type Grants } from '@/store/session';
-import { stepOf } from './_layout';
 
 const copy = onboard.done;
 
@@ -110,39 +111,21 @@ export default function Done() {
         />
       }
     >
-      <Entrance index={0} style={{ marginTop: sp(2) }}>
-        <DataLabel value={stepOf('done', session.grants)}>{onboard.step.label}</DataLabel>
-        <Txt kind="hero" accessibilityRole="header" style={{ marginTop: sp(4) }}>
+      <Entrance index={0} style={{ marginTop: sp(6) }}>
+        <Txt kind="hero" accessibilityRole="header">
           {copy.hero}
         </Txt>
-        <Txt kind="body" tone="muted" style={{ marginTop: sp(4) }}>
+        <Txt kind="body" tone="muted" style={{ marginTop: sp(5) }}>
           {copy.getToKnow(session.residentName)}
         </Txt>
       </Entrance>
 
-      <Entrance index={1} style={{ marginTop: sp(10) }}>
-        <Txt kind="label">{copy.expectTitle}</Txt>
-        {copy.expect.map((line, i) => (
-          <React.Fragment key={line.slice(0, 20)}>
-            {i > 0 && <Rule weight="hair" />}
-            <Txt kind="caption" tone="muted" style={{ paddingVertical: sp(2.5) }}>
-              {line}
-            </Txt>
-          </React.Fragment>
-        ))}
-      </Entrance>
-
-      <Entrance index={2}>
-        <View style={{ marginTop: sp(6) }}>
-          <DataLabel value={String(facts.length)}>{copy.notesToSave}</DataLabel>
-          <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{/* voice-ok */}
-            {facts.length === 0 ? copy.noNotes : copy.notesEditable}
-          </Txt>
-        </View>
+      <Entrance index={1} style={{ marginTop: sp(12) }}>
+        <DataLabel value={String(facts.length)}>{copy.notesToSave}</DataLabel>
       </Entrance>
 
       {!!error && (
-        <Entrance index={3} style={{ marginTop: sp(4), gap: sp(2) }}>
+        <Entrance index={2} style={{ marginTop: sp(8), gap: sp(2) }}>
           <ErrorState inline message={error} onRetry={save} />
           <Txt kind="caption" tone="muted">{/* voice-ok */}
             {copy.nothingSaved}

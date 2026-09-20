@@ -13,7 +13,7 @@ import { Row, Txt } from '@/components/ui';
 import { useReducedMotion } from '@/components/entrance';
 import type { ChatCitation, Fact, SourceKind } from '@/lib/types';
 import { useTheme } from '@/theme/theme';
-import { cardShadow, radius, sp, type } from '@/theme/tokens';
+import { radius, sp, type } from '@/theme/tokens';
 import { useSurfaceColors } from './text';
 
 // ---- KindTag -----------------------------------------------------------------
@@ -68,11 +68,11 @@ export function CitationChip({ citation, onPress }: {
   const tappable = !!onPress && citation.event_ids.length > 0;
   const body = (
     <View
-      style={[
-        styles.citation,
-        { backgroundColor: t.raised },
-        t.isDark ? { borderWidth: 1, borderColor: t.line } : cardShadow,
-      ]}
+      // Flat, not a raised card. A citation sits under bubble-free prose on the
+      // Ask screen, and a white plate with a shadow there reads heavier than
+      // the answer it is annotating. A tinted fill and a hairline carry the
+      // grouping without competing.
+      style={[styles.citation, { backgroundColor: t.accentWash, borderColor: t.line }]}
     >
       <KindTag kind={citation.kind} detail={detailOf(citation.label)} />
       {!!citation.text && (
@@ -190,6 +190,7 @@ const styles = StyleSheet.create({
   // where a shadow on black is invisible.
   citation: {
     borderRadius: radius.tile,
+    borderWidth: StyleSheet.hairlineWidth,
     padding: sp(2.5),
   },
   fact: {

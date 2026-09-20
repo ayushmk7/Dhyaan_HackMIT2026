@@ -14,8 +14,8 @@ from app.events import emit
 
 @pytest.fixture
 def no_llm(monkeypatch):
-    """Fail loudly if anything reaches a model. Both paths: Claude and the
-    local Ollama fallback."""
+    """Fail loudly if anything reaches a model. Both paths: OpenAI (app/llm.py)
+    and the local Ollama fallback."""
     called = {"hit": False}
 
     async def fake_complete(system, user, max_tokens=600):

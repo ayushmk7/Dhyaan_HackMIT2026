@@ -96,7 +96,7 @@ Write these on the whiteboard. Say them out loud to the judges.
 
 ## 2. System architecture
 
-Everything except Twilio, Deepgram and the Anthropic API runs on **one MacBook Pro M5 Pro**. There is no
+Everything except Twilio, Deepgram and the OpenAI API runs on **one MacBook Pro M5 Pro**. There is no
 cloud, no Docker, no Kubernetes, no message broker. One Python process hosts the API, the websocket, the
 FSM and the event bus; three sibling worker processes do the things that must not block it.
 
@@ -127,7 +127,7 @@ graph TB
     subgraph CLOUD["External"]
         TW["Twilio<br/>Voice + Media Streams"]
         DG["Deepgram Voice Agent<br/>Flux STT · Aura-2 TTS"]
-        ANT["Anthropic API<br/>claude-opus-5"]
+        OAI["OpenAI API<br/>gpt-5.6-terra"]
         EXPO["Expo Push (APNs)"]
     end
 
@@ -171,8 +171,8 @@ graph TB
 | `vision-worker` | Python, one process **per camera** | RTSP/UVC ingest, MOG2 motion, YOLO11n person detect (MPS), ByteTrack, keyframe selection | `vlm-worker` queue, `dhyaan-api` |
 | `vlm-worker` | Python, **exactly one** | Serialised VLM inference, ADL JSON, observation→event dedup (§6.5) | Ollama, `dhyaan-api` |
 | `localizer` | Python, in-process asyncio task | k-NN over RSSI fingerprints, HMM over room adjacency, commit hysteresis, camera fusion (§7) | SQLite, `dhyaan-api` |
-| `baseline-learner` | Python, APScheduler + live rules | Nightly 03:30 rollup, robust-z / Poisson scoring, live inactivity + bathroom rules, feedback weighting | SQLite, Anthropic (daily narratives) |
-| `rag-service` | Python, in-process | Query planning, hybrid retrieval (sqlite-vec + FTS5 + RRF), answer generation, citation check | SQLite, Ollama, Anthropic |
+| `baseline-learner` | Python, APScheduler + live rules | Nightly 03:30 rollup, robust-z / Poisson scoring, live inactivity + bathroom rules, feedback weighting | SQLite, OpenAI (daily narratives) |
+| `rag-service` | Python, in-process | Query planning, hybrid retrieval (sqlite-vec + FTS5 + RRF), answer generation, citation check | SQLite, Ollama, OpenAI |
 | `ollama` | Go binary, `:11434` | Serves `qwen3-vl:8b` (vision) and `nomic-embed-text` (embeddings), both resident | `vlm-worker`, `rag-service` |
 | `dhyaan.db` | SQLite 3.45 WAL + `sqlite-vec` 0.1.9 + FTS5 | **The only persistent state.** Events, alerts, calls, baselines, fingerprints, vectors | everything |
 | `cloudflared` | Go binary | Public `https://` + `wss://` for Twilio callbacks, media streams, and the phone | Twilio, RN app |
@@ -907,8 +907,8 @@ audio ([Voice Agent getting started](https://developers.deepgram.com/docs/voice-
     },
     "think": {
       "provider": {
-        "type": "anthropic",
-        "model": "claude-haiku-4-5",
+        "type": "open_ai",
+        "model": "gpt-4.1-mini",
         "temperature": 0.2
       },
       "prompt": "<SYSTEM PROMPT, see 5.5>",
@@ -924,7 +924,7 @@ audio ([Voice Agent getting started](https://developers.deepgram.com/docs/voice-
 | Choice | Why | Source |
 |---|---|---|
 | `listen.model: flux-general-en` | Flux is Deepgram's conversational STT with **model-integrated end-of-turn detection (~260 ms)** and native barge-in. On a call with a slow-speaking 81-year-old, VAD-based turn detection cuts her off; Flux is built for exactly this. Fallback to `nova-3` if Flux misbehaves. | [Flux quickstart](https://developers.deepgram.com/docs/flux/quickstart) |
-| `think.provider.type: anthropic` | Deepgram supports `anthropic` as a first-class think provider. Model IDs documented: `claude-sonnet-5`, `claude-haiku-4-5`, `claude-3-5-haiku-latest`, `claude-sonnet-4-6`. **`claude-opus-5` is not on Deepgram's supported list** — inside the voice agent we are limited to what Deepgram routes. We use `claude-haiku-4-5` for turn latency; Opus 5 does the hard reasoning elsewhere (§11). | [Voice Agent LLM models](https://developers.deepgram.com/docs/voice-agent-llm-models) |
+| `think.provider.type: open_ai` | Deepgram supports `open_ai` (underscore — not `openai`) as a first-class, Deepgram-managed think provider: no OpenAI key is sent from our side. Model IDs documented include `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.4-mini`, `gpt-4.1-mini`, `gpt-4.1`, `gpt-4o-mini`. We use `gpt-4.1-mini`: it is a non-reasoning model, so there are no hidden thinking tokens before the first spoken word, and Deepgram exposes no reasoning-effort field to turn that off on the 5.x family. `gpt-5.6-terra` does the prose elsewhere (§11). | [Voice Agent LLM models](https://developers.deepgram.com/docs/voice-agent-llm-models) |
 | `speak.model: aura-2-thalia-en` | Aura-2, `aura-2-<voice>-<lang>` naming, mulaw output supported. Thalia is warm and slow-ish. | [Voices and languages](https://developers.deepgram.com/docs/tts-models) |
 | `temperature: 0.2` | This agent should be boring and consistent. | — |
 
@@ -2384,7 +2384,7 @@ the band runs the §6.4 defaults and nothing else changes.
 
 ### 9.1 What gets embedded — and why not raw rows
 
-**We embed Claude-written daily narratives, not raw event rows.** This is the single biggest quality
+**We embed LLM-written daily narratives, not raw event rows.** This is the single biggest quality
 decision in the RAG layer and it is worth defending.
 
 A raw event row embeds as *"On Friday 19 September at 12:41 PM, Eleanor was observed eating lunch in
@@ -2399,7 +2399,7 @@ is no meal sensor, so the honest answer to "has mum been eating?" is rule 3's "I
 observations for that" — D-010. The same absence problem applies to home questions like "has she been
 out this week?")
 
-So we add a second layer. Once per day (and on demand in the demo), a Claude Opus 5 call reads **all**
+So we add a second layer. Once per day (and on demand in the demo), a `gpt-5.6-terra` call reads **all**
 of a resident's events for that local day plus her baseline state and writes a 120–200 word narrative
 that explicitly states what happened *and what did not*:
 
@@ -2416,7 +2416,7 @@ layer for "when exactly did dad last go outside?" — but narratives carry the r
 
 | Chunk kind | Source | Cardinality | Answers |
 |---|---|---|---|
-| `daily_summary` | Claude Opus 5 over one resident-day of events | 1/resident/day | trends, absences, "how has she been" |
+| `daily_summary` | `gpt-5.6-terra` over one resident-day of events | 1/resident/day | trends, absences, "how has she been" |
 | `event` | `events.embedding_text`, written at insert time (§3) | ~50–300/resident/day; **only alertable + β types indexed** | precise "when did X happen" |
 | `note` | `staff_note`, `family_note` | rare | human context |
 | `baseline` | one sentence per feature, regenerated on change | ~13/resident | "what's normal for her" |
@@ -2508,16 +2508,16 @@ Also: default distance is L2; we declare `distance_metric=cosine` in the DDL (§
 
 ### 9.5 Retrieval: hybrid, time-aware
 
-Three stages. Claude does the query planning because "has she been eating *this week*" requires
+Three stages. The model does the query planning because "has she been eating *this week*" requires
 resolving a relative date against the resident's timezone, and a regex will get that wrong.
 
-**Stage 1 — plan.** One Opus 5 call with structured output turns the question into a retrieval plan:
+**Stage 1 — plan.** One `gpt-5.6-terra` call with structured output turns the question into a retrieval plan (sketch against the `openai` SDK; the shipped client is the plain-httpx `backend/app/llm.py`):
 
 ```python
 # dhyaan/rag/plan.py
 from pydantic import BaseModel
 from typing import Literal
-import anthropic, datetime as dt
+import openai, datetime as dt
 
 class RetrievalPlan(BaseModel):
     search_text: str                       # rewritten, self-contained query
@@ -2528,20 +2528,22 @@ class RetrievalPlan(BaseModel):
     needs_aggregate: bool                  # "how many times" -> run SQL COUNT, not vector search
     refuses: bool                          # medical / out-of-scope -> short-circuit, see 8.7
 
-client = anthropic.Anthropic()
+client = openai.OpenAI()
 
 def plan(question: str, resident, now: dt.datetime) -> RetrievalPlan:
-    return client.messages.parse(
-        model="claude-opus-5",
-        max_tokens=2000,
-        output_config={"effort": "low"},           # this is a cheap, well-specified task
-        system=[{"type": "text", "text": PLANNER_SYSTEM + TAXONOMY_DOC,
-                 "cache_control": {"type": "ephemeral"}}],   # stable prefix -> cache hit every turn
-        messages=[{"role": "user", "content":
-                   f"Resident: {resident.display_name} (tz {resident.timezone})\n"
-                   f"Local now: {now.isoformat()}\nQuestion: {question}"}],
-        output_format=RetrievalPlan,
-    ).parsed_output
+    return client.chat.completions.parse(
+        model="gpt-5.6-terra",
+        max_completion_tokens=2000,
+        reasoning_effort="low",                    # this is a cheap, well-specified task
+        messages=[
+            # stable prefix first -> OpenAI's automatic prompt cache hits every turn
+            {"role": "system", "content": PLANNER_SYSTEM + TAXONOMY_DOC},
+            {"role": "user", "content":
+                f"Resident: {resident.display_name} (tz {resident.timezone})\n"
+                f"Local now: {now.isoformat()}\nQuestion: {question}"},
+        ],
+        response_format=RetrievalPlan,
+    ).choices[0].message.parsed
 ```
 
 **Stage 2 — retrieve, hybrid.** Vector KNN (sqlite-vec) ∪ BM25 (FTS5), merged with **Reciprocal Rank
@@ -2604,14 +2606,17 @@ def answer(question, chunks, agg_table, resident):
     ctx = "\n\n".join(
         f"[{c['chunk_id']}] ({c['kind']}, {fmt_local(c['ts_epoch'], resident.timezone)})\n{c['text']}"
         for c in chunks)
-    return client.messages.create(
-        model="claude-opus-5",
-        max_tokens=1200,
-        system=[{"type": "text", "text": ANSWER_SYSTEM, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content":
-            f"Question: {question}\n\nComputed counts:\n{agg_table}\n\nObservations:\n{ctx}"}],
+    return client.chat.completions.create(
+        model="gpt-5.6-terra",
+        max_completion_tokens=1200,
+        reasoning_effort="none",
+        messages=[
+            {"role": "system", "content": ANSWER_SYSTEM},
+            {"role": "user", "content":
+                f"Question: {question}\n\nComputed counts:\n{agg_table}\n\nObservations:\n{ctx}"},
+        ],
         stream=False,
-    )
+    ).choices[0].message.content
 ```
 
 ### 9.6 The answer prompt
@@ -2658,12 +2663,12 @@ Sample output, with the citations the UI turns into tappable chips that deep-lin
 | Never fabricate absence of data | Answer prompt rule 3 + we pass the retrieval window explicitly so the model can see what it was given | Weakest link. Watch for it in eval |
 | Rate limit | 20 questions/user/hour, in-process token bucket | — |
 
-**Cost.** Planner at `effort: low` ≈ 1.5K in / 200 out. Answer ≈ 4K in / 300 out. At Opus 5's
-$5/MTok in, $25/MTok out ([pricing](https://platform.claude.com/docs/en/about-claude/pricing)) that is
-**≈ $0.04 per question**. The stable system prefix carries `cache_control: {"type": "ephemeral"}`, so
-repeat questions in a session read cache at ~0.1× ([prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)).
-Daily summaries are the real spend: one Opus 5 call per resident per day over ~200 events ≈ 8K in /
-400 out ≈ $0.05. Ten residents × 14 days of backfill ≈ **$7**. Budget $40 for the whole hackathon.
+**Cost.** Planner at `reasoning_effort: low` ≈ 1.5K in / 200 out. Answer ≈ 4K in / 300 out. At
+gpt-5.6-terra's $2/MTok in, $12/MTok out ([pricing](https://developers.openai.com/api/docs/pricing))
+that is **≈ $0.02 per question**. The stable system prefix is the same bytes every turn, so repeat
+questions in a session hit OpenAI's automatic prompt cache (no opt-in field on chat completions).
+Daily summaries are the real spend: one terra call per resident per day over ~200 events ≈ 8K in /
+400 out ≈ $0.02. Ten residents × 14 days of backfill ≈ **$3**. Budget $40 for the whole hackathon.
 
 ---
 
@@ -3023,7 +3028,7 @@ Kept so the gap is visible. None of the following is in the code:
 ## 11. Local vs cloud inference decision table
 
 The principle: **anything that touches a video frame stays on the Mac, permanently and by design
-(§12). Anything that requires judgement, prose, or being right about a nuance goes to Claude.**
+(§12). Anything that requires judgement, prose, or being right about a nuance goes to OpenAI.**
 Latency-critical speech is a third case — it goes to Deepgram because a 1.5-second round trip to a
 local LLM makes an 81-year-old think the line has gone dead.
 
@@ -3032,25 +3037,25 @@ local LLM makes an 81-year-old think the line has gone dead.
 | Fall detection from IMU | Threshold cascade on STM32 | — | **Local (MCU)** | Must work with the Wi-Fi down. 208 Hz, sub-ms. No model needed; the per-wearer threshold arrives from the hub (§8.7) and the band keeps the last one offline |
 | Motion gate | OpenCV MOG2 | — | **Local** | Per-pixel op, 1.3 M frames/day. Cloud is absurd |
 | Person detect + track | YOLO11n (MPS) / CoreML ANE | Cloud detection API | **Local** | Privacy (§12) + cost. Frames never leave the Mac |
-| **ADL understanding from frames** | **Qwen3-VL-8B-4bit** via Ollama, schema-constrained | Claude Opus 5 vision | **Local** | **Non-negotiable.** Uploading video of elderly residents is the thing that makes this product unsellable. ~2–4 s/batch (§6.7) is fast enough for ADL, which is not a real-time problem |
+| **ADL understanding from frames** | **Qwen3-VL-8B-4bit** via Ollama, schema-constrained | gpt-5.6-terra vision | **Local** | **Non-negotiable.** Uploading video of elderly residents is the thing that makes this product unsellable. ~2–4 s/batch (§6.7) is fast enough for ADL, which is not a real-time problem |
 | Room localization | k-NN + HMM, numpy | — | **Local** | 50 fingerprints, microseconds. There is nothing to send |
 | Baseline statistics | median/MAD, Poisson, pure Python | — | **Local** | 60 floats. An LLM here would be strictly worse and non-deterministic |
 | Embeddings | `nomic-embed-text` via Ollama | Voyage / OpenAI embeddings | **Local** | Free, 768-d, 8192 ctx, offline-capable. Embeddings are a solved commodity |
 | Vector search | sqlite-vec brute force | Managed vector DB | **Local** | ~5K vectors. Linear scan is sub-ms (§9.4) |
 | **STT on the call** | whisper.cpp on the Mac | **Deepgram Flux** | **Cloud (Deepgram)** | Flux has model-integrated end-of-turn at ~260 ms and native barge-in ([Flux](https://developers.deepgram.com/docs/flux/quickstart)). Local Whisper + a VAD would cut Eleanor off mid-sentence. This is a UX cliff, not a preference |
 | **TTS on the call** | Piper / Kokoro locally | **Deepgram Aura-2** | **Cloud (Deepgram)** | Must be mulaw/8k, streaming, low first-byte. Already in the Voice Agent socket at no extra integration cost |
-| **Conversation logic on the call** | Local 8B | **`claude-haiku-4-5` via Deepgram's `anthropic` think provider** | **Cloud** | Deepgram routes it; `claude-opus-5` is not on their supported list ([LLM models](https://developers.deepgram.com/docs/voice-agent-llm-models)). Haiku's latency is right for a phone turn, and the decision is constrained to four tools |
-| **Daily narrative summarization** | Local 8B text | **`claude-opus-5`** | **Cloud** | This prose is read by a worried daughter. It must correctly say *what did not happen* (§9.1), which is the hardest thing to get from a small model. ~$0.05/resident-day |
-| **RAG query planning** | Regex + dateparser | **`claude-opus-5`**, `effort: low`, structured output | **Cloud** | "this week" in her timezone, plus mapping to event types. A regex gets it wrong in a way nobody notices until a judge asks |
-| **RAG answering + citation** | Local 8B | **`claude-opus-5`** | **Cloud** | Citation discipline and refusing medical questions (§9.7) are exactly where small models fail |
-| Alert copy / push text | Templates | Claude | **Local templates** | Deterministic, instant, reviewable. An LLM writing an alert headline is a liability |
+| **Conversation logic on the call** | Local 8B | **`gpt-4.1-mini` via Deepgram's `open_ai` think provider** | **Cloud** | Deepgram routes it through its managed LLM ([LLM models](https://developers.deepgram.com/docs/voice-agent-llm-models)). A non-reasoning mini model's latency is right for a phone turn, and the decision is constrained to four tools |
+| **Daily narrative summarization** | Local 8B text | **`gpt-5.6-terra`** | **Cloud** | This prose is read by a worried daughter. It must correctly say *what did not happen* (§9.1), which is the hardest thing to get from a small model. ~$0.05/resident-day |
+| **RAG query planning** | Regex + dateparser | **`gpt-5.6-terra`**, `reasoning_effort: low`, structured output | **Cloud** | "this week" in her timezone, plus mapping to event types. A regex gets it wrong in a way nobody notices until a judge asks |
+| **RAG answering + citation** | Local 8B | **`gpt-5.6-terra`** | **Cloud** | Citation discipline and refusing medical questions (§9.7) are exactly where small models fail |
+| Alert copy / push text | Templates | An LLM | **Local templates** | Deterministic, instant, reviewable. An LLM writing an alert headline is a liability |
 | Voice transcript classification | — | Tool call from the agent | **Cloud (tool call)** | The classification *is* the tool call (§4.4). No second pass |
 
 **Cost of the cloud column for the whole hackathon:** Deepgram ~$0.075/min × ~60 demo-minutes ≈ **$5**;
-Anthropic ≈ **$40** (§9.7); Twilio `[UNVERIFIED — check pricing in hour 0]`, budget **$20**. Under $70.
+OpenAI ≈ **$40** (§9.7); Twilio `[UNVERIFIED — check pricing in hour 0]`, budget **$20**. Under $70.
 
 **The one-line version for the judges:** *"Every frame of video stays on this laptop. Nothing that
-could identify what someone's home looks like ever goes to a server. What goes to Claude is sentences."*
+could identify what someone's home looks like ever goes to a server. What goes to OpenAI is sentences."*
 
 ---
 
@@ -3108,8 +3113,8 @@ This is the claim the product lives or dies on, so it is enforced in four indepe
    file paths — after ~10 minutes the id resolves to nothing, and the UI shows "evidence expired".
 2. **No frame crosses a process boundary except to `localhost:11434`.** The VLM worker talks to Ollama
    over loopback. That is the only socket a frame touches.
-3. **No image content block is ever constructed for the Anthropic API.** There is exactly one Anthropic
-   client wrapper (`dhyaan/llm.py`) and it asserts no `{"type": "image"}` block is present. `[The
+3. **No image content part is ever constructed for the OpenAI API.** There is exactly one OpenAI
+   client wrapper (`backend/app/llm.py`) and it only ever sends plain-string message content, never an `image_url` part. `[The
    assert is 3 lines. Write it in hour 2, not hour 20.]`
 4. **Events carry sentences, never pixels.** `evidence` is capped at 180 chars of text (§6.4) and the
    VLM prompt forbids describing appearance, clothing, race or age.
@@ -3195,7 +3200,7 @@ The only three hours where serialisation kills you, so the long-lead items go **
 | Who | Task | Done = |
 |---|---|---|
 | **All, first 20 min** | Whiteboard the event taxonomy. Agree on §3.2. Write `taxonomy.yaml` | One file everyone imports |
-| **B — do this before anything else** | Twilio: sign up, **upgrade with $20**, buy a number, **verify all 4 team phones as caller IDs**. Deepgram key. Anthropic key. `cloudflared tunnel --url http://localhost:8000`, pin the hostname | A real outbound call rings a real phone with a hardcoded `<Say>` |
+| **B — do this before anything else** | Twilio: sign up, **upgrade with $20**, buy a number, **verify all 4 team phones as caller IDs**. Deepgram key. OpenAI key. `cloudflared tunnel --url http://localhost:8000`, pin the hostname | A real outbound call rings a real phone with a hardcoded `<Say>` |
 | **D — in parallel, because it takes 25 min of waiting** | `npx create-expo-app`, expo-router, **kick off the EAS dev build immediately** (push does not work in Expo Go), Apple dev account, APNs key | A dev build installs on a real iPhone and logs an Expo push token |
 | **A** | `dhyaan.db` + full DDL (§3.3). `events.emit()` (§3.4). FastAPI skeleton, JWT, `/admin/health`. `seed_history.py` | `POST /ingest/band` writes an event; `GET /events` returns it |
 | **C** | `ollama pull qwen3-vl:8b` + `nomic-embed-text` (**several GB — start the download now**). `pip install ultralytics mlx-vlm sqlite-vec bleak`. **Benchmark YOLO11n on MPS and one VLM batch. Write the numbers on the whiteboard.** | Real tok/s and ms/frame replace §6.7's estimates |
@@ -3274,7 +3279,7 @@ test the whole demo on it** — venue Wi-Fi will be a 1000-person disaster at ju
 | RF localization | Real BLE, real RSSI, real k-NN + HMM | "Eleanor's home" is a taped-out floor plan with 4 beacons 3–8 m apart | Yes, loudly |
 | Walking profile | Real step detection, real learner | The "before" state is a profile reset to the floor; calibration mode compresses days into 60 s | Yes |
 | 14 days of history | Real learner running on it | **The history itself is generated by `seed_history.py`** | **Yes — this is the one people try to hide. Say it first.** |
-| RAG | Real embeddings, real retrieval, real Claude | Nothing | — |
+| RAG | Real embeddings, real retrieval, real OpenAI | Nothing | — |
 | App | Real screens and websocket | Until integration, the app runs on a mock backend whose ladder is 6× faster than real — never quote a timing from it | Yes |
 | Facility | 3 residents | Not 40 | Yes |
 
@@ -3325,9 +3330,9 @@ because a mitigation you start at hour 18 is not a mitigation.
 | **R10** | **Baseline learner has no data.** 14 days of history do not exist at hour 12 | Med | "Learns her pattern" becomes a slide | `seed_history.py` is an **hour-0 task for A**, not an hour-18 task. Real learner, synthetic history, stated out loud (§13) |
 | **R11** | **Event schema churn.** Someone adds a field at hour 16 and three consumers break | Med | Hours lost to debugging serialisation at the worst time | **Freeze §3 at T+2:00.** `schema_version` on every event. `emit()` asserts the type is in `taxonomy.yaml` — an unknown type fails loudly at write time, not silently at read time |
 | **R12** | **Cloudflared tunnel hostname changes on restart**, silently breaking every Twilio callback | Low | Voice dies mid-demo with no error anyone can see | Pin the hostname at T+0:20. `/admin/health` shows the current public URL and **compares it to what Twilio is configured with** — 6 lines, catches the silent case |
-| **R13** | **Claude API spend / rate limits** during backfill | Low | Cost, or a 429 mid-demo | Backfill daily narratives **once**, at hour 12, and cache them in SQLite. Prompt caching on the stable prefix (§9.5). Budget $40. Demo answers come from pre-warmed chunks |
+| **R13** | **OpenAI API spend / rate limits** during backfill | Low | Cost, or a 429 mid-demo | Backfill daily narratives **once**, at hour 12, and cache them in SQLite. Prompt caching on the stable prefix (§9.5). Budget $40. Demo answers come from pre-warmed chunks |
 | **R14** | **Beacon batteries die** during the 24 hours | Low | §7 demo dies | Fresh cells at T+0:30, **spares in the bag**, `beacon_offline` event visible on `/admin/health`. Check at T+20:00 |
-| **R15** | **Someone demos a privacy hole** — a frame path, a leaked image, another resident's data | Low | **Reputational total.** This is the one risk where the blast radius exceeds the hackathon | Write the three asserts at **hour 2**: no frame to disk, no image block to Anthropic, `resident_id` from JWT only (§12.3). They are ten lines total and they are the cheapest insurance in the document |
+| **R15** | **Someone demos a privacy hole** — a frame path, a leaked image, another resident's data | Low | **Reputational total.** This is the one risk where the blast radius exceeds the hackathon | Write the three asserts at **hour 2**: no frame to disk, no image part to OpenAI, `resident_id` from JWT only (§12.3). They are ten lines total and they are the cheapest insurance in the document |
 
 ---
 

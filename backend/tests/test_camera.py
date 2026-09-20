@@ -515,3 +515,37 @@ async def test_simulate_needs_a_camera_before_it_can_pretend_to_be_one(client, r
     r = await client.post("/v1/admin/simulate",
                           json={"resident_id": "res_eleanor", "kind": "meal"})
     assert r.status_code == 422
+
+
+async def test_presence_is_pushed_only_when_it_changes(client, camera, db, monkeypatch):
+    """A live camera posts two or three observations a second. Pushing presence
+    on every one made the home screen re-render at that rate and visibly
+    reformat itself while nobody was touching it."""
+    from app.routers import camera as cam_router
+
+    sent: list[dict] = []
+
+    async def fake_broadcast(msg, resident_id=None):
+        sent.append(msg)
+
+    monkeypatch.setattr("app.routers.live.broadcast", fake_broadcast)
+    cam_router._LAST_PRESENCE.clear()
+
+    body = {
+        "camera_id": camera, "resident_id": "res_eleanor",
+        "ts": datetime.now(timezone.utc).isoformat(), "span_s": 4, "n_frames": 2,
+        "person_count": 1, "activity": "sitting", "confidence": 0.8,
+    }
+    for _ in range(4):
+        body["ts"] = datetime.now(timezone.utc).isoformat()
+        r = await client.post("/v1/ingest/camera", json=body)
+        assert r.status_code == 201
+
+    pushes = [m for m in sent if m.get("t") == "presence.update"]
+    assert len(pushes) == 1, f"presence pushed {len(pushes)} times for one unchanged state"
+
+    # A real change still gets through.
+    body["activity"] = "walking"
+    body["ts"] = datetime.now(timezone.utc).isoformat()
+    assert (await client.post("/v1/ingest/camera", json=body)).status_code == 201
+    assert len([m for m in sent if m.get("t") == "presence.update"]) == 2

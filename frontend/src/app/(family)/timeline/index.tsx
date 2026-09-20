@@ -24,10 +24,10 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { Pressable, RefreshControl, Share, View } from 'react-native';
+import { Pressable, RefreshControl, Share } from 'react-native';
 import {
-  Btn, Card, Chevron, Chip, DataLabel, EmptyState, Entrance, ErrorState, Glass, IconBtn, KindTag,
-  LoadingState, Marquee, Row, RowGroup, Screen, Slab, Txt,
+  Btn, Card, Chip, EmptyState, Entrance, ErrorState, Glass, IconBtn, KindTag, LoadingState, Marquee,
+  Row, RowGroup, Screen, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { hasAI } from '@/lib/ai';
@@ -87,16 +87,17 @@ function ItemRow({ item, onPress }: { item: ActivityItem; onPress?: () => void }
       }
       onPress={onPress}
       disabled={!onPress}
-      style={({ pressed }) => ({ paddingVertical: sp(3.5), opacity: pressed ? 0.6 : 1 })}
+      style={({ pressed }) => ({ paddingVertical: sp(4), opacity: pressed ? 0.6 : 1 })}
     >
       <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={3}>
         <Txt kind="body" style={{ flex: 1 }}>{familySentence(item)}</Txt>
         {/* Tabular, so a column of times reads as a column and not as ragged prose. */}
         <Txt kind="stamp" tone="muted">{timeOf(item.ts)}</Txt>
       </Row>
-      <Row gap={2} style={{ marginTop: sp(2), justifyContent: 'space-between' }}>
+      {/* The kind is the one mark a row keeps: it is the category in a dense
+          list, and it is the only thing that tells a sighting from a pattern. */}
+      <Row style={{ marginTop: sp(2) }}>
         <KindTag kind={item.kind} />
-        {!!onPress && <Chevron size={13} tone="ink" />}
       </Row>
     </Pressable>
   );
@@ -223,18 +224,12 @@ export default function HerDay() {
     }
     return true;
   });
-  // The plate counts what Dhyaan noticed, which is what it saw: a line worked
-  // out from her pattern is not a sighting, and the ends of the day are the
-  // first and last time it saw something.
-  const observed = rows.filter((i) => i.kind === 'observed');
   const total = rows.length;
-  const firstAt = observed.length ? observed[observed.length - 1].ts : null;
-  const lastAt = observed.length ? observed[0].ts : null;
 
   const pager = (
     <Entrance index={0}>
-      {/* The day switcher floats; the day's own figures sit on a hard plate
-          under it. Glass for the chrome you touch, ink for the record. */}
+      {/* The day switcher floats. Nothing else sits up here: the day's count
+          used to have its own plate, and it said what the list already says. */}
       <Glass radius={radius.bar} lift="float" interactive style={{ paddingHorizontal: sp(2) }}>
         <Row style={{ justifyContent: 'space-between' }}>
           <IconBtn
@@ -253,23 +248,6 @@ export default function HerDay() {
           />
         </Row>
       </Glass>
-
-      {observed.length > 0 && (
-        <Slab style={{ marginTop: sp(3) }}>
-          {/* One big number: how much it saw. The ends of the day sit small
-              beside it, as the record they are. */}
-          <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }} gap={3}>
-            <View>
-              <Txt kind="readout">{String(observed.length)}</Txt>
-              <DataLabel style={{ marginTop: sp(1) }}>{copy.noticed}</DataLabel>
-            </View>
-            <View style={{ alignItems: 'flex-end', gap: sp(1) }}>
-              {!!firstAt && <DataLabel value={timeOf(firstAt)}>{copy.first}</DataLabel>}
-              {!!lastAt && <DataLabel value={timeOf(lastAt)}>{copy.last}</DataLabel>}
-            </View>
-          </Row>
-        </Slab>
-      )}
 
       {!!shareError && (
         <ErrorState
@@ -311,19 +289,21 @@ export default function HerDay() {
       {pager}
 
       <Entrance index={1}>
-        <Row style={{ marginTop: sp(4), flexWrap: 'wrap' }} gap={2}>
+        <Row style={{ marginTop: sp(6), flexWrap: 'wrap' }} gap={2}>
           {FILTERS.map((f, i) => (
             <Chip key={f.label} label={f.label} selected={i === filterIdx} onPress={() => setFilterIdx(i)} />
           ))}
         </Row>
       </Entrance>
 
-      <Entrance index={2}>
-        <Marquee title={copy.story} meta={dayLabel} />
+      {/* The story leads: the one paragraph on the screen, on its own card,
+          with the heading and nothing else around it. The day is already
+          named in the pager, and the story is a pattern by definition. */}
+      <Entrance index={2} style={{ marginTop: sp(4) }}>
+        <Marquee title={copy.story} />
         {summary ? (
           <Card>
-            <KindTag kind="pattern" detail={summary.at ? copy.storyWritten(timeOf(summary.at)) : copy.storyDetail} />
-            <Txt kind="body" style={{ marginTop: sp(2.5) }}>{summary.narrative}</Txt>
+            <Txt kind="body">{summary.narrative}</Txt>
           </Card>
         ) : (
           <Card>
@@ -339,9 +319,6 @@ export default function HerDay() {
             >
               {wroteFor === date ? copy.nothingToWrite(isToday) : copy.notWritten(isToday)}
             </EmptyState>
-            <Txt kind="caption" tone="muted">
-              {copy.writeNote}
-            </Txt>
             {writeError?.date === date && (
               <ErrorState
                 inline
@@ -355,10 +332,12 @@ export default function HerDay() {
         )}
       </Entrance>
 
-      <Entrance index={3}>
+      <Entrance index={3} style={{ marginTop: sp(4) }}>
+        {/* The count only appears when a filter is hiding something; a bare
+            total was a figure nobody acted on. */}
         <Marquee
           title={copy.whatItNoticed}
-          meta={shown.length === total ? String(total) : copy.shownOf(shown.length, total)}
+          meta={shown.length === total ? undefined : copy.shownOf(shown.length, total)}
         />
         {shown.length === 0 ? (
           <EmptyState

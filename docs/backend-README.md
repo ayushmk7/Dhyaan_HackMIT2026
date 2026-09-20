@@ -28,7 +28,7 @@ vision model already resident in Ollama, with no key and no extra download).
 `DEMO_FAST=0 ./dev.sh` restores the real thresholds.
 
 Config is env vars, all with working defaults — see `.env.example`. Nothing here
-needs an API key: with no `ANTHROPIC_API_KEY` the narrative and chat layers fall
+needs an API key: with no `OPENAI_API_KEY` the narrative and chat layers fall
 back to the local Ollama model if `CHAT_FALLBACK_MODEL` is set and to plain
 templates if it is not, and the whole demo runs offline.
 

@@ -13,6 +13,11 @@
 // equal boxes and nothing owned the page. Now they sit on the paper, separated
 // by hairlines, and the chosen answer is the only filled shape in each.
 //
+// Decluttered: the intro paragraph, the "what a no means" caption under every
+// grant (it now sits inside "How it works", after the script, for whoever
+// asks), the chevron glyph beside that link, and the "Who is agreeing" group
+// label above two fields that already carry their own labels.
+//
 // ponytail: answers are held in the session; the whole profile is PUT once in
 // done.tsx. Quitting mid-onboarding loses the draft.
 import { router } from 'expo-router';
@@ -21,7 +26,6 @@ import { Pressable, View } from 'react-native';
 import {
   Btn, Entrance, Field, Row, Rule, Screen, Stagger, Txt,
 } from '@/components';
-import { Icon } from '@/components/icon';
 import { onboard } from '@/lib/copy/staff';
 import { sp, radius, useTheme } from '@/theme';
 import { useSession, type Grants } from '@/store/session';
@@ -67,12 +71,11 @@ function YesNo({ value, onChange, label }: {
 function Grant({ g, value, onChange }: {
   g: (typeof GRANTS)[number]; value: boolean | null; onChange: (v: boolean) => void;
 }) {
-  const t = useTheme();
   const [open, setOpen] = useState(false);
   return (
-    <View style={{ paddingVertical: sp(4) }}>
+    <View style={{ paddingVertical: sp(6) }}>
       <Txt kind="title">{g.title}</Txt>
-      <Txt kind="body" tone="muted" style={{ marginTop: sp(1) }}>{g.line}</Txt>
+      <Txt kind="body" tone="muted" style={{ marginTop: sp(1.5) }}>{g.line}</Txt>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
@@ -84,10 +87,7 @@ function Grant({ g, value, onChange }: {
           opacity: pressed ? 0.55 : 1,
         })}
       >
-        <Row gap={1.5}>
-          <Icon name={open ? 'chevron.down' : 'chevron.right'} size={12} color={t.accent} weight="semibold" />
-          <Txt kind="label" tone="accent">{copy.howItWorks}</Txt>
-        </Row>
+        <Txt kind="label" tone="accent">{copy.howItWorks}</Txt>
       </Pressable>
       {open && (
         <View style={{ marginTop: sp(1) }}>
@@ -96,13 +96,13 @@ function Grant({ g, value, onChange }: {
               {para}
             </Txt>
           ))}
+          {/* What a no means: design copy, after the script, never mixed into it. */}
+          <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{/* voice-ok */}
+            {copy.ifNo[g.key]}
+          </Txt>
         </View>
       )}
       <YesNo label={g.title} value={value} onChange={onChange} />
-      {/* What a no means, said before it is chosen, so no one has to guess. */}
-      <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{/* voice-ok */}
-        {copy.ifNo[g.key]}
-      </Txt>
     </View>
   );
 }
@@ -146,17 +146,16 @@ export default function Consent() {
     >
       <Stagger>
         {/* The step total follows the answers: each no shortens the setup. */}
-        <StepHeader step="consent" grants={grants} title={copy.title} purpose={copy.intro} />
+        <StepHeader step="consent" grants={grants} title={copy.title} />
 
         <Field
           label={copy.herName}
           value={resident}
           onChangeText={setResident}
-          placeholder={copy.herNamePlaceholder}
-          style={{ marginTop: sp(5) }}
+          style={{ marginTop: sp(8) }}
         />
 
-        <View style={{ marginTop: sp(4) }}>
+        <View style={{ marginTop: sp(8) }}>
           {GRANTS.map((g, i) => (
             <React.Fragment key={g.key}>
               {i > 0 && <Rule weight="hair" />}
@@ -169,21 +168,19 @@ export default function Consent() {
           ))}
         </View>
 
-        <View style={{ marginTop: sp(4) }}>
-          <Txt kind="label">{copy.whoIsAgreeing}</Txt>
+        <View style={{ marginTop: sp(8) }}>
           <Field
             label={copy.yourName}
             value={signer}
             onChangeText={setSigner}
             placeholder={copy.yourNamePlaceholder}
-            style={{ marginTop: sp(3) }}
           />
           <Field
             label={copy.relationship}
             value={relationship}
             onChangeText={setRelationship}
             placeholder={copy.relationshipPlaceholder}
-            style={{ marginTop: sp(3) }}
+            style={{ marginTop: sp(4) }}
           />
         </View>
       </Stagger>
@@ -191,7 +188,7 @@ export default function Consent() {
       {!ready && (
         // Why the button below is still grey, in ink, not a whisper.
         <Entrance index={5}>
-          <Txt kind="body" accessibilityLiveRegion="polite" style={{ marginTop: sp(5) }}>{/* voice-ok */}
+          <Txt kind="body" accessibilityLiveRegion="polite" style={{ marginTop: sp(8) }}>{/* voice-ok */}
             {!answeredAll
               ? copy.needAnswers
               : !anyYes

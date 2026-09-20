@@ -65,7 +65,6 @@ export const family = {
     },
 
     call: (name: string) => `Call ${name}`,
-    noPhoneFor: (name: string) => `No phone number saved for ${name}, so there is nothing to dial from here`,
 
     todayError: 'Couldn’t load today’s figures. The rest of the screen is still current.',
     tryAgain: 'Try again',
@@ -80,13 +79,12 @@ export const family = {
       timesOut: 'Went out',
     },
 
-    // The collapsed rows under the plate. Each is one line and a tap.
+    // The rows under the plate. Each is one line and, sometimes, a tap.
     lastNoticed: 'Last noticed',
     fromHer: (name: string) => `From ${name}`,
     replyBody: 'Got your message. ',
     replyByText: 'Reply by text',
     whenYouCall: 'When you call',
-    whenYouCallNote: 'Drafted from what Dhyaan saw today, not from things she has said.',
     appointment: 'Appointment',
   },
 
@@ -111,16 +109,11 @@ export const family = {
 
     previousDay: 'Previous day',
     nextDay: 'Next day',
-    noticed: 'Noticed',
-    first: 'First',
-    last: 'Last',
 
     loading: 'Reading her day…',
     loadError: 'Couldn’t load her day.',
 
     story: 'The day’s story',
-    storyWritten: (time: string) => `written ${time}`,
-    storyDetail: 'the day’s story',
     writeStory: (isToday: boolean) => isToday ? 'Write today’s story now' : 'Write this day’s story now',
     nothingToWrite: (isToday: boolean) =>
       `Dhyaan went back through ${isToday ? 'today' : 'that day'} and didn’t have enough yet to write about.`,
@@ -128,7 +121,6 @@ export const family = {
       isToday
         ? 'Dhyaan writes the day’s story each evening. Today’s isn’t written yet.'
         : 'Dhyaan writes the day’s story each evening. There isn’t one for this day.',
-    writeNote: 'It takes a few seconds. Dhyaan normally does this overnight.',
     writeError: 'Dhyaan couldn’t write it just now. Nothing was lost.',
 
     whatItNoticed: 'What it noticed',
@@ -165,10 +157,6 @@ export const family = {
           ? 'It is fairly sure about this one. Tell it below if it got this wrong.'
           : 'It is not certain about this one. Tell it below if it got this wrong.',
 
-    recorded: 'Recorded',
-    sourceLabel: 'Source',
-    confidence: 'Confidence',
-
     didItGetThisRight: 'Did Dhyaan get this right?',
     feedbackSaved: 'Got it. That’s recorded against this observation.',
     feedbackError: 'Couldn’t save that. Nothing was recorded.',
@@ -193,6 +181,8 @@ export const family = {
     hero: (name: string) => `Ask anything about ${name}’s week.`,
     everyAnswer: 'Every answer says where it came from.',
     openCitation: (label: string) => `Open ${label}`,
+    // The small line above an answer's citation chips.
+    sources: 'Where this came from',
 
     // Why an answer was withheld, above the answer itself.
     refusal: {
@@ -206,7 +196,7 @@ export const family = {
     placeholder: (name: string) => `A question about ${name}`,
     ask: 'Ask',
     thinking: 'Reading her day…',
-    sendError: 'Couldn’t reach Dhyaan, so your question wasn’t answered. It is still typed below the answer.',
+    sendError: 'Couldn’t reach Dhyaan, so that question wasn’t answered. Asking again is safe.',
     tryAgain: 'Ask again',
   },
 
@@ -328,7 +318,6 @@ export const family = {
 
     profile: {
       title: 'Her profile',
-      livesAtHome: (name: string) => `Everything Dhyaan keeps about ${name} lives on the computer in her home. No frame of video was ever kept.`,
       shareJson: 'Share her data as JSON',
       shareJsonNote: 'Opens the share sheet with JSON text: her daily summaries, the last seven days of her timeline, and the notes you typed. It is not a printable report.',
       exportTitle: (name: string) => `${name} export`,
@@ -353,12 +342,6 @@ export const family = {
         `Deleted ${count(notes, 'note', 'notes')}, ${count(observations, 'observation', 'observations')} and ${count(cameraEvents, 'camera event', 'camera events')}, but Dhyaan is still running: ${why}. Try again.`,
       hubNoAnswer: 'the hub did not answer',
     },
-
-    band: {
-      title: 'Her band',
-      body: 'Her band was paired during setup, and the rooms were walked then. There isn’t a way to pair a new band or walk the rooms again from here yet.',
-    },
-
 
     // Behind a long-press. Demo and diagnostics, never visible chrome.
     debug: {
@@ -391,7 +374,6 @@ export const family = {
   // ---- Care file ------------------------------------------------------------
   carefile: {
     intro: 'Paste or photograph a care document.',
-    introNote: 'What it finds stays on this phone until the app is closed. It is not sent to her home hub.',
     placeholder: 'Paste a document here',
     fieldLabel: 'The care document',
     readIt: 'Read this document',
@@ -440,12 +422,11 @@ export const family = {
 
     // Uppercase machine meta under an empty state.
     meta: {
-      camera: (id: string) => `CAMERA ${id}`,
       lastHeartbeat: (ago: string) => `LAST HEARTBEAT ${ago}`,
       noHeartbeat: 'NO HEARTBEAT YET',
     },
 
-    // The one heading under the pane: the cascade and the readings together.
+    // The one heading under the pane: the worker's four readings.
     worker: 'The worker',
 
     simulate: 'Simulate',
@@ -520,6 +501,8 @@ export const family = {
     noNumberCalling: (name: string) =>
       `Dhyaan doesn’t have a number for ${name}, only for her contacts, so it can’t hand you one to dial. Dhyaan is calling her itself.`,
     call911: 'Call 911',
+    // Under the 911 button. On the takeover, only once nobody has answered;
+    // on the closed screen, whenever the ladder ran out.
     dialerNote: 'Opens your dialer. Dhyaan never calls 911 itself.',
     dialerNoteFinal: 'Dhyaan does not dial 911 for you. If you can’t reach her, this button opens your dialer.',
 
@@ -551,23 +534,18 @@ export const family = {
     youHaveGotHer: 'You’ve got her. The ladder has stopped.',
 
     whatDone: 'What Dhyaan has done',
-    state: 'State',
-    opened: 'Opened',
-    noHistory: 'Dhyaan isn’t sending the step-by-step history for this alert. This is where it has got to, and it is updating as it goes.',
 
     hearing: 'What the call is hearing',
     heard: 'What the call heard',
     speakerDhyaan: 'Dhyaan: ',
     speakerHer: (name: string) => `${name}: `,
 
-    ratherYourself: 'If you’d rather do it yourself',
     resolvedChecked: 'Resolved, checked on her',
     resolvedNote: 'Resolved. Noted on her record.',
     falseAlarm: 'False alarm',
     falseAlarmNote: 'Marked as a false alarm. Nothing else will happen.',
 
     paramedics: 'For the paramedics',
-    fromCareFile: 'From her care file',
   },
 
   // ---- Rehearsal (deep link) ------------------------------------------------

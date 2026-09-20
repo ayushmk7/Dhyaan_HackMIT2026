@@ -12,8 +12,9 @@
 // The takeover is the `alarm` tone, resolved by the theme; this file names no
 // colour of its own. What makes it unmistakable is not the ground but the
 // shape: her name at the top step of the scale, one heavy accent rule under
-// it, and one action pinned at the bottom. The mono state readout is the
-// counterweight: under the noise, this is a machine you can audit.
+// it, the phase line, the two ways to reach her, and one action pinned at the
+// bottom. The record (ladder, transcript, care file) comes after the actions,
+// so a step arriving late moves nothing a person is about to tap.
 //
 // Every sentence this screen says lives in lib/copy/family.ts under `alert`,
 // including the two state-to-sentence tables (how it closed, why she didn't
@@ -24,13 +25,12 @@ import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Vibration, View } from 'react-native';
 import {
-  Btn, DataLabel, Entrance, ErrorState, LadderTimeline, LoadingState, Marquee, Rule, Screen, Slab,
-  Stagger, Txt,
+  Btn, Entrance, ErrorState, LadderTimeline, LoadingState, Marquee, Rule, Screen, Slab, Stagger, Txt,
 } from '@/components';
 import { CancelCountdownRing, ElapsedStat, RingingPulse } from '@/components/alert-extras';
 import { api } from '@/lib/api';
 import { family } from '@/lib/copy/family';
-import { residentNumber, timeOf } from '@/lib/format';
+import { residentNumber } from '@/lib/format';
 import { useAlert, useContacts, useResident } from '@/lib/hooks';
 import { emergencyLine, useCareFile } from '@/store/carefile';
 import { useLive } from '@/store/live';
@@ -354,50 +354,20 @@ export default function AlertTakeover() {
     <Screen tone="alarm" wash floatingBar={bar} style={{ paddingHorizontal: sp(5) }}>
       {/* Beat 0 — the sentence, and nothing above it. Ten seconds to read
           that someone has fallen: the top step of the scale, then the one
-          heavy rule in the accent, then the machine's own header under it.
-          Uppercase mono is correct there and nowhere else on this screen. */}
+          heavy rule in the accent. The kind and the time used to sit under
+          the rule in mono; the sentence already says the kind. */}
       <Entrance index={0}>
         <Txt kind="hero" style={{ marginTop: sp(2) }}>
           {copy.headline(alert?.kind ?? 'fall', name)}
         </Txt>
         <Rule weight="heavy" color={t.accent} style={{ marginTop: sp(4) }} />
-        <DataLabel value={alert ? timeOf(alert.opened_at) : ''} style={{ marginTop: sp(2.5) }}>
-          {copy.kind[alert?.kind ?? 'fall'] ?? copy.kind.fall}
-        </DataLabel>
       </Entrance>
 
       <Entrance index={1}>{middle}</Entrance>
 
-      <Entrance index={2}>
-        <Marquee title={copy.whatDone} />
-        {ladder.length > 0 ? (
-          <LadderTimeline steps={ladder} />
-        ) : (
-          // No ladder history over REST (lib/http.ts sends []). Show the
-          // machine's real position instead of an empty timeline. On the
-          // ground, not on a plate: the one plate on this screen is the
-          // paramedics' card, which is the thing that matters.
-          <View style={{ gap: sp(2.5) }}>
-            <DataLabel value={alert?.state ?? '—'}>{copy.state}</DataLabel>
-            <DataLabel value={alert ? timeOf(alert.opened_at) : '—'}>{copy.opened}</DataLabel>
-            <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>
-              {copy.noHistory}
-            </Txt>
-          </View>
-        )}
-      </Entrance>
-
-      {transcript.length > 0 && (
-        <Entrance index={3}>
-          <Marquee title={copy.hearing} />
-          <TranscriptLines transcript={transcript} name={name} />
-        </Entrance>
-      )}
-
-      {/* Beat 4 — everything that is not the one commitment. The floating bar
-          below holds that, and only that. */}
-      <Entrance index={4}>
-        <Marquee title={copy.ratherYourself} />
+      {/* Beat 2 — the two ways to reach her, with nothing between them and
+          the phase line. The floating bar below holds the one commitment. */}
+      <Entrance index={2} style={{ marginTop: sp(10) }}>
         <View style={{ gap: sp(2.5) }}>
           {role === 'staff' ? (
             <>
@@ -420,20 +390,40 @@ export default function AlertTakeover() {
                 <Txt kind="caption" tone="muted">{copy.noNumberCalling(name)}</Txt>
               )}
               <Btn kind="outline" label={copy.call911} onPress={call911} />
-              <Txt kind="caption" tone="muted" style={{ textAlign: 'center' }}>
-                {phase === 'final' ? copy.dialerNoteFinal : copy.dialerNote}
-              </Txt>
+              {/* Only once the ladder has run out does the button need a
+                  sentence under it; before that it says what it does. */}
+              {phase === 'final' && (
+                <Txt kind="caption" tone="muted" style={{ textAlign: 'center' }}>
+                  {copy.dialerNoteFinal}
+                </Txt>
+              )}
             </>
           )}
         </View>
       </Entrance>
 
+      {/* Beat 3 — the record, after the actions. The ladder only appears when
+          a backend sends one (lib/http.ts sends []); an empty timeline said
+          nothing the phase line above had not. */}
+      {ladder.length > 0 && (
+        <Entrance index={3} style={{ marginTop: sp(6) }}>
+          <Marquee title={copy.whatDone} />
+          <LadderTimeline steps={ladder} />
+        </Entrance>
+      )}
+
+      {transcript.length > 0 && (
+        <Entrance index={4} style={{ marginTop: sp(6) }}>
+          <Marquee title={copy.hearing} />
+          <TranscriptLines transcript={transcript} name={name} />
+        </Entrance>
+      )}
+
       {emsLine && (
-        <Entrance index={5}>
+        <Entrance index={5} style={{ marginTop: sp(6) }}>
           <Marquee title={copy.paramedics} />
           <Slab tone="alarm">
-            <DataLabel>{copy.fromCareFile}</DataLabel>
-            <Txt kind="body" style={{ marginTop: sp(2) }}>{emsLine}</Txt>
+            <Txt kind="body">{emsLine}</Txt>
           </Slab>
         </Entrance>
       )}

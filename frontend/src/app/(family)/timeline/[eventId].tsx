@@ -1,21 +1,20 @@
 // Event detail: the evidence sentence, plainly. Never an image (§12.4).
 //
-// The sentence is the hero; everything underneath it is the machine's own
-// record of how it got there, set in the machine's voice. That split is the
-// whole screen: a human sentence you can read out loud, and a readout you can
-// audit it against.
+// The sentence is the hero; under it, two plain lines say who noticed it and
+// how sure it is, and then the one question the screen asks. The mono readout
+// that used to sit between them (recorded, source, confidence) said the same
+// three things a second time, so it is gone.
 //
 // Every sentence this screen says lives in lib/copy/family.ts under `event`.
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
 import {
-  Btn, DataLabel, EmptyState, ErrorState, KindTag, LoadingState, Marquee, Rule, Screen, Slab, Stagger,
-  Txt,
+  Btn, EmptyState, ErrorState, KindTag, LoadingState, Marquee, Screen, Stagger, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { family } from '@/lib/copy/family';
-import { dayOf, displaySentence, eventTitle, scrubRooms, timeOf } from '@/lib/format';
+import { displaySentence, eventTitle, scrubRooms, timeOf } from '@/lib/format';
 import { useEvent } from '@/lib/hooks';
 import type { KEvent, SourceKind } from '@/lib/types';
 import { sp } from '@/theme/tokens';
@@ -92,23 +91,13 @@ export default function EventDetail() {
 
   return (
     <Screen native>
-      <Stagger gap={6}>
+      <Stagger gap={9}>
         <View>
           <KindTag kind={kindOf(event)} detail={timeOf(event.ts)} />
-          {/* The sentence is the screen. Hero size, so the record below is
+          {/* The sentence is the screen. Hero size, so everything below is
               plainly the small print. */}
-          <Txt kind="hero" style={{ marginTop: sp(3) }}>{familySentence(event)}</Txt>
+          <Txt kind="hero" style={{ marginTop: sp(4) }}>{familySentence(event)}</Txt>
         </View>
-
-        {/* The screen's one uncompromising surface: paper on ink, every figure
-            tabular, nothing softened. This is the record, not the reassurance. */}
-        <Slab style={{ gap: sp(3) }}>
-          <DataLabel value={`${dayOf(event.ts)} · ${timeOf(event.ts)}`}>{copy.recorded}</DataLabel>
-          <Rule weight="hair" />
-          <DataLabel value={event.source.toUpperCase()}>{copy.sourceLabel}</DataLabel>
-          <Rule weight="hair" />
-          <DataLabel value={event.confidence.toFixed(2)}>{copy.confidence}</DataLabel>
-        </Slab>
 
         <View>
           <Txt kind="body">

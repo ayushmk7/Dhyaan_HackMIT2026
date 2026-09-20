@@ -47,7 +47,8 @@ export const API_BASE =
 const wsBase = API_BASE.replace(/^http/, 'ws'); // http->ws, https->wss
 export const WS_URL = `${wsBase}/live`;
 
-// Client-side Claude key for the connection layer (demo only — see src/lib/ai.ts).
-export const ANTHROPIC_KEY = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '';
+// The one client-side LLM key. Demo only: it ships in the bundle, so these
+// calls belong behind the backend at integration. See src/lib/ai.ts.
+// `EXPO_PUBLIC_ANTHROPIC_API_KEY` is gone; everything routes through OpenAI.
 export const OPENAI_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY ?? '';
 export const OPENAI_MODEL = process.env.EXPO_PUBLIC_OPENAI_MODEL ?? 'gpt-5-mini';

@@ -22,7 +22,7 @@ Verified against vendor docs as of **2026-09-19**. Anything unconfirmed is tagge
 
 | Part | What it does here | Source | Price |
 |---|---|---|---|
-| MacBook Pro, M5 Pro, 48 GB unified | Hub + local VLM + Deepgram/Twilio/Claude egress. 48 GB unified fits a 7–13 B VLM at 4-bit with room for the video pipeline. | own | — |
+| MacBook Pro, M5 Pro, 48 GB unified | Hub + local VLM + Deepgram/Twilio/OpenAI egress. 48 GB unified fits a 7–13 B VLM at 4-bit with room for the video pipeline. | own | — |
 | iPhone (iOS 16+) | Fallback accel source (§12.1). Also the "adult child" phone Twilio rings. **Not** a beacon scanner: iOS hides iBeacon adverts from ordinary Bluetooth scanning and Safari has no Web Bluetooth (§12.3, `DECISIONS.md` D-013). | own | — |
 | Wi-Fi hotspot (phone) | Band → hub transport. **Bring one. See §11 gate H2.** | own | — |
 
@@ -140,7 +140,7 @@ flowchart TB
 
     subgraph CLOUD["CLOUD"]
         TW["Twilio Voice<br/>(no SMS)"]
-        DG["Deepgram Voice Agent<br/>Claude Haiku as think provider"]
+        DG["Deepgram Voice Agent<br/>OpenAI gpt-4.1-mini as think provider"]
     end
 
     FSM -->|"1· call the resident"| TW
@@ -1434,7 +1434,7 @@ Log every run as a row: `case, peak_g, ff_min_g, ff_dur_ms, orient_deg, std_g, g
 > in this spec (A, B and the beacon half of D); the hour-by-hour plan below is the original 24 h
 > build plan, kept for history. The hour gates below still apply.
 
-Team of 4 (original plan): **A** = firmware (sketch) · **B** = band Linux, BLE scan + uplink · **C** = hub, Deepgram/Twilio/Claude · **D** = beacons, VLM/CCTV, demo/deck. A and B pair on the board until it enumerates; nobody else touches it.
+Team of 4 (original plan): **A** = firmware (sketch) · **B** = band Linux, BLE scan + uplink · **C** = hub, Deepgram/Twilio/OpenAI · **D** = beacons, VLM/CCTV, demo/deck. A and B pair on the board until it enumerates; nobody else touches it.
 
 ### H0–H1 · Unbox, power, and the radio check
 
@@ -1587,7 +1587,7 @@ Team of 4 (original plan): **A** = firmware (sketch) · **B** = band Linux, BLE 
 
 ## 12. Fallback Plan
 
-**The whole system is designed so every sensor is a replaceable event source.** The hub, escalation FSM, localizer, Deepgram, Claude, Twilio, VLM and dashboard consume `fallband.event.v1` and `fallband.rfscan.v1` over HTTP. Swap the producer, change nothing else.
+**The whole system is designed so every sensor is a replaceable event source.** The hub, escalation FSM, localizer, Deepgram, OpenAI, Twilio, VLM and dashboard consume `fallband.event.v1` and `fallband.rfscan.v1` over HTTP. Swap the producer, change nothing else.
 
 ### 12.1 Fall fallback, Tier 1 — iPhone (best, ~25 min)
 

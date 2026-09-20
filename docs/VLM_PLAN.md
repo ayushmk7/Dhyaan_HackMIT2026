@@ -85,7 +85,7 @@ chat questions (one contrast answer, one useful visitor answer, one refusal); an
  │                       └► events.emit()  ─► subscribers: rag embed, live WS     │
  │  memory.py: residents.appearance/usual_spots, profile_facts (embedded)         │
  │  rag.py: pool = events ∪ profile_facts, quota by kind, surveillance guard      │
- │  llm.py (Claude, None on failure) ─► rag falls back to Ollama text ─► template │
+ │  llm.py (OpenAI, None on failure) ─► rag falls back to Ollama text ─► template │
  └───────────────┬────────────────────────────────────────────────────────────────┘
                  │ REST + WS /v1/live  (presence.update, event.new, camera.monitor)
                  │ LAN, no auth of any kind (§6.1)
@@ -980,7 +980,7 @@ so `baseline.py::_family_text` also writes `payload.narrative`, one plain senten
 feature slug, no z-score and no number a daughter would have to convert out of seconds (*"Asha
 went about 4 hours without moving. She usually settles for about 2 hours."*), and `/activity`,
 `/summaries` and chat citations all prefer `payload.narrative` over `embedding_text`. The daily
-narrative template (`rag._template_narrative`, used with no Claude key) is prose: no leading date
+narrative template (`rag._template_narrative`, used with no OpenAI key) is prose: no leading date
 stamp, no *"had 33 recorded events"*, no *"3 meal(s)"*; meals are named rather than counted
 because *"she ate breakfast and dinner"* is something a search for *has she been eating* can
 match. Both are written without em dashes, which `docs/frontend-DESIGN.md` bans in user-facing

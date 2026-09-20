@@ -7,10 +7,11 @@
 // One question per screen, skippable. An unanswered question is simply no
 // fact. Dhyaan says it wasn't told, rather than guessing.
 //
-// The question owns the screen. The step and the question counter are one
-// small machine line above it; the chips and the field sit straight on the
-// paper under it, with no card, because a box around the answer made the
-// answer look like a form.
+// The question owns the screen. One machine line above it (which question),
+// the chips and the field straight on the paper under it. The field's label
+// and its "stored as a sentence" hint are gone: the chips name the thing and
+// the placeholder shows the shape. A hint appears only on the four questions
+// that genuinely need one; the rest get nothing but air.
 //
 // The questions, hints, placeholders and chip sentences are
 // `onboard.about.questions` in `lib/copy/staff.ts`; the keys are §4.2's.
@@ -21,7 +22,7 @@ import { Btn, DataLabel, Entrance, Field, Row, Screen, Txt } from '@/components'
 import { onboard } from '@/lib/copy/staff';
 import { sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
-import { ChoiceChip, stepOf } from './_layout';
+import { ChoiceChip } from './_layout';
 
 const copy = onboard.about;
 const QUESTIONS = copy.questions;
@@ -64,38 +65,34 @@ export default function About() {
       }
     >
       <Entrance index={0}>
-        {/* The machine line: which step this is, and which question. */}
-        <Row gap={4}>
-          <DataLabel value={stepOf('about', grants)}>{onboard.step.label}</DataLabel>
-          <DataLabel value={`${idx + 1}/${QUESTIONS.length}`}>{copy.questionCounter}</DataLabel>
-        </Row>
+        {/* The machine line: which question of how many. */}
+        <DataLabel value={`${idx + 1} of ${QUESTIONS.length}`}>{copy.questionCounter}</DataLabel>
         <Txt kind="display" style={{ marginTop: sp(3) }} accessibilityRole="header">
           {q.prompt}
         </Txt>
-        <Txt kind="body" tone="muted" style={{ marginTop: sp(3) }}>
-          {q.hint ?? copy.purpose}
-        </Txt>
+        {!!q.hint && (
+          <Txt kind="body" tone="muted" style={{ marginTop: sp(3) }}>{q.hint}</Txt>
+        )}
       </Entrance>
 
       <Entrance index={1}>
-        <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(6) }}>
+        <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(8) }}>
           {q.chips(residentName).map((c) => (
             <ChoiceChip key={c.label} label={c.label} selected={text === c.text} onPress={() => setText(c.text)} />
           ))}
         </Row>
         <Field
-          label={copy.fieldLabel}
+          accessibilityLabel={copy.fieldA11y}
           value={text}
           onChangeText={setText}
           placeholder={q.placeholder}
           multiline
           maxLength={q.maxLength ?? 300}
-          hint={q.maxLength ? copy.charCount(text.length, q.maxLength) : copy.storedAsSentence}
-          style={{ marginTop: sp(4) }}
+          style={{ marginTop: sp(5) }}
         />
       </Entrance>
 
-      <Entrance index={2} style={{ marginTop: sp(5) }}>
+      <Entrance index={2} style={{ marginTop: sp(8) }}>
         {/* Two real buttons. As text links they were the smallest things on
             the screen and the ones a hurried thumb missed. */}
         <Row gap={3}>
