@@ -1,42 +1,50 @@
-// Consent. Three separate grants, her name, and who is signing. The grant copy
-// is VLM_PLAN §5.4 verbatim — it is the product's defence, so it is not
-// paraphrased, shortened or softened to fit a layout. (Consent content is one
-// of the three places voice is allowed — DESIGN.md rule 1.)
+// Consent, permission-sheet grammar: icon, four-word title, one line, Yes/No.
+// The full §5.4 text (the product's legal defence, verbatim) lives behind a
+// collapsed "How it works" per grant — complete, but never a wall.
 //
-// ponytail: this screen records the answers in the session and does not PUT
-// on its own. The whole profile — consent, appearance, facts, camera — is
-// written once at the end of onboarding (`done.tsx`), so there is exactly one
-// place that can fail and exactly one retry to build. Ceiling: quitting
-// mid-onboarding loses the answers. Upgrade: PUT each step as it is answered.
+// ponytail: answers are held in the session; the whole profile is PUT once in
+// done.tsx. Quitting mid-onboarding loses the draft.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Btn, Card, Field, Hairline, Row, Screen, Txt } from '@/components';
+import { Icon, IconBadge } from '@/components/icon';
 import { sp, palette, radius } from '@/theme/tokens';
 import { useSession, type Grants } from '@/store/session';
 
 type GrantKey = keyof Grants;
 
-const GRANTS: { key: GrantKey; title: string; body: string[] }[] = [
+const GRANTS: {
+  key: GrantKey; icon: string; color: string; title: string; line: string; detail: string[];
+}[] = [
   {
     key: 'falls',
-    title: 'A band on her wrist, watching for a fall.',
-    body: [
+    icon: 'figure.fall',
+    color: palette.slate,
+    title: 'Fall detection',
+    line: 'Detects falls and calls her, then her contacts.',
+    detail: [
       'Her band notices movement, stillness, and a fall. If it thinks she has fallen, it gives her thirty seconds to cancel, then Dhyaan calls her. If she does not answer, it calls the people on her list, in order.',
       'It does not record audio or video. It does not call 911.',
     ],
   },
   {
     key: 'camera',
-    title: 'A camera in one room, and a description instead of a video.',
-    body: [
-      'One camera in the room she spends her day in, never a bedroom or bathroom. It notices whether she is up, whether she has eaten, whether she is settled or moving about, and whether someone is visiting. It turns that into a sentence, on the computer in her home, and throws the picture away. No video is stored. No video is ever shown to family, and there is no way to turn that on. It cannot hear anything. If someone else is alone in the room, Dhyaan may mistake them for her. She can pause it for two hours from the computer, and pausing never affects fall detection.',
+    icon: 'eye',
+    color: palette.ochre,
+    title: 'One room camera',
+    line: 'Describes her day in text. No video is saved.',
+    detail: [
+      'One camera in the room she spends her day in. It is never put in a bedroom or bathroom. It notices whether she is up, whether she has eaten, whether she is settled or moving about, and whether someone is visiting. It turns that into a sentence, on the computer in her home, and throws the picture away. No video is stored. No video is ever shown to family, and there is no way to turn that on. It cannot hear anything. If someone else is alone in the room, Dhyaan may mistake them for her. She can pause it for two hours from the computer, and pausing never affects fall detection.',
     ],
   },
   {
     key: 'memory',
-    title: 'Notes about her, kept at home, deleted when you say.',
-    body: [
+    icon: 'lock',
+    color: palette.moss,
+    title: 'Remembers her routine',
+    line: 'Saves her routine on the computer at her house.',
+    detail: [
       'To make sense of what it sees, Dhyaan keeps what you tell us about her routine, a few words describing her, and where she usually sits at different times of day. None of this leaves her home, none of it is a face or a photograph, and Forget her profile in Settings removes all of it at once.',
     ],
   },
@@ -56,7 +64,7 @@ function YesNo({ value, onChange, label }: {
         onPress={() => onChange(v)}
         style={({ pressed }) => ({
           flex: 1,
-          minHeight: 48,
+          minHeight: 44,
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: radius.card,
@@ -68,6 +76,39 @@ function YesNo({ value, onChange, label }: {
     );
   };
   return <Row gap={2} style={{ marginTop: sp(3) }}>{[opt(true, 'Yes'), opt(false, 'No')]}</Row>;
+}
+
+function GrantCard({ g, value, onChange }: {
+  g: (typeof GRANTS)[number]; value: boolean | null; onChange: (v: boolean) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Card style={{ marginTop: sp(3) }}>
+      <Row gap={3}>
+        <IconBadge name={g.icon} color={g.color} size={32} />
+        <View style={{ flex: 1 }}>
+          <Txt kind="label">{g.title}</Txt>
+          <Txt kind="caption" style={{ marginTop: 1, color: palette.ink }}>{g.line}</Txt>
+        </View>
+      </Row>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => setOpen((v) => !v)}
+        style={{ marginTop: sp(2.5), alignSelf: 'flex-start' }}
+      >
+        <Row gap={1}>
+          <Icon name={open ? 'chevron.down' : 'chevron.right'} size={11} color={palette.slate} />
+          <Txt kind="caption" tone="slate" style={{ fontWeight: '600' }}>How it works</Txt>
+        </Row>
+      </Pressable>
+      {open && g.detail.map((para) => (
+        <Txt key={para.slice(0, 24)} kind="caption" style={{ marginTop: sp(2), color: palette.ink }}>
+          {para}
+        </Txt>
+      ))}
+      <YesNo label={g.title} value={value} onChange={onChange} />
+    </Card>
+  );
 }
 
 /** Next step, respecting the grants: no falls grant means no band to pair. */
@@ -93,11 +134,9 @@ export default function Consent() {
 
   return (
     <Screen>
-      <Txt kind="title" accessibilityRole="header">Dhyaan looks out for one person.</Txt>
-      <Txt kind="body" style={{ marginTop: sp(3) }}>
-        She, or the person legally able to decide with her, agrees to each part
-        separately. Yes to one and no to another is fine, and any of them can change
-        later. Nothing here can be switched back on by family without her.
+      <Txt kind="title" accessibilityRole="header">Permissions</Txt>
+      <Txt kind="body" style={{ marginTop: sp(2) }}>
+        She can change these anytime in Settings.
       </Txt>
 
       <Field
@@ -105,26 +144,21 @@ export default function Consent() {
         value={resident}
         onChangeText={setResident}
         placeholder="Her name"
-        style={{ marginTop: sp(6) }}
+        style={{ marginTop: sp(5) }}
       />
 
-      {GRANTS.map((g) => (
-        <Card key={g.key} style={{ marginTop: sp(4) }}>
-          <Txt kind="label">{g.title}</Txt>
-          {g.body.map((para) => (
-            <Txt key={para.slice(0, 24)} kind="body" style={{ marginTop: sp(2) }}>
-              {para}
-            </Txt>
-          ))}
-          <YesNo
-            label={g.title}
+      <View style={{ marginTop: sp(2) }}>
+        {GRANTS.map((g) => (
+          <GrantCard
+            key={g.key}
+            g={g}
             value={grants[g.key]}
             onChange={(v) => setGrants((s) => ({ ...s, [g.key]: v }))}
           />
-        </Card>
-      ))}
+        ))}
+      </View>
 
-      <Hairline style={{ marginVertical: sp(6) }} />
+      <Hairline style={{ marginVertical: sp(5) }} />
 
       <Field
         label="Your name"
@@ -143,10 +177,10 @@ export default function Consent() {
       {!ready && (
         <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>{/* voice-ok */}
           {!answeredAll
-            ? 'Answer each of the three above, yes or no.'
+            ? 'Answer all three.'
             : !anyYes
-              ? 'Dhyaan can’t watch over her with all three declined. Say yes to at least one.'
-              : 'Fill in her name, your name, and your relationship.'}
+              ? 'Say yes to at least one.'
+              : 'Add her name, your name, and your relationship.'}
         </Txt>
       )}
 

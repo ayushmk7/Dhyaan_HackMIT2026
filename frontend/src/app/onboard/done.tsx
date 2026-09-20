@@ -15,7 +15,7 @@ import { sp, type } from '@/theme/tokens';
 import { useSession } from '@/store/session';
 
 const EXPECT = [
-  'For the first few days Dhyaan mostly repeats what you told it. It says what it was told, and what it saw, separately.',
+  'For the first few days it mostly repeats what you told it.',
   'It learns where she usually sits at each time of day from what it sees, and starts calling it "her usual spot" once it is sure.',
   'You will never see a room name for where she is, and there is no video to see. Ask it anything in the Ask tab.',
 ];

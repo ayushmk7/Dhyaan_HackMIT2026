@@ -92,7 +92,7 @@ const QUESTIONS: Question[] = [
   {
     key: 'afternoon',
     prompt: 'Where does she usually spend her afternoons?',
-    hint: 'The spot, not the room: "her armchair by the window".',
+    hint: 'For example: her armchair by the window.',
     placeholder: 'In the armchair by the window, reading.',
     chips: () => [
       { label: 'Her armchair', text: 'In the armchair by the window, reading.' },
@@ -103,7 +103,7 @@ const QUESTIONS: Question[] = [
   {
     key: 'visitors',
     prompt: 'Who visits, and when?',
-    hint: 'Dhyaan notes that someone visited, never who.',
+    hint: 'It only records that someone visited.',
     placeholder: 'Her neighbour comes on Tuesdays.',
     chips: () => [
       { label: 'Neighbour, Tuesdays', text: 'Her neighbour comes on Tuesdays.' },
@@ -114,7 +114,7 @@ const QUESTIONS: Question[] = [
   {
     key: 'appearance',
     prompt: 'How would you describe her to someone meeting her?',
-    hint: 'Words only, never a photo. Not face recognition.',
+    hint: 'A text description. No photos.',
     placeholder: 'Short grey hair, glasses, usually a blue cardigan.',
     maxLength: 200,
     chips: () => [
@@ -124,7 +124,7 @@ const QUESTIONS: Question[] = [
   {
     key: 'private',
     prompt: 'Anything Dhyaan should never note?',
-    hint: 'A rule, not a preference. Dhyaan refuses these for everyone.',
+    hint: 'These are always off.',
     placeholder: 'Never note bathroom trips.',
     chips: () => [
       { label: 'Bathroom trips', text: 'Never note bathroom trips.' },

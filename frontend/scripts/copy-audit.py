@@ -32,6 +32,8 @@ for path in glob.glob('src/**/*.ts*', recursive=True):
         code = l.split('//')[0]
         if '—' in code and re.search(r'''['"`][^'"`]*—''', code):
             violations.append((path, i, f'em dash: {stripped[:60]}'))
+        if re.search(r'''['"`][^'"`]*, never ''', code):
+            violations.append((path, i, f'rhetoric (", never"): {stripped[:60]}'))
 
 if violations:
     for p, ln, msg in violations:

@@ -55,7 +55,7 @@ export default function Welcome() {
           Dhyaan
         </Text>
         <Txt kind="body" style={{ textAlign: 'center', marginTop: sp(3), maxWidth: 300 }}>
-          Looks after your mother, so calls can be just calls.
+          Keeps an eye on your mom and calls you if something’s wrong.
         </Txt>
       </View>
 

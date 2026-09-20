@@ -25,7 +25,7 @@ const ROOMS: { zone: CameraZone; label: string }[] = [
 const CHECKLIST = [
   'It cannot see into a bedroom or bathroom, even through an open doorway.',
   'If a private door is in view, mask it on the computer first. Masked pixels never reach the detector.',
-  'It is pointed at where she actually sits, not at the whole room.',
+  'Point it at where she usually sits.',
   'She knows it is there, and knows she can pause it for two hours from the computer.',
 ];
 
@@ -71,10 +71,6 @@ export default function Camera() {
   return (
     <Screen>
       <Txt kind="display" accessibilityRole="header">Which room is the camera in?</Txt>
-      <Txt kind="body" style={{ marginTop: sp(3) }}>
-        One camera, in the room she spends her day in.
-      </Txt>
-
       <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(5) }}>
         {ROOMS.map((r) => (
           <Chip
@@ -85,9 +81,6 @@ export default function Camera() {
           />
         ))}
       </Row>
-      <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>
-        Bedrooms and bathrooms are never options.
-      </Txt>
 
       <Field
         label="How is the room laid out?"

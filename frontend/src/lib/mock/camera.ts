@@ -379,7 +379,7 @@ class MockCamera {
     // 2. Hard surveillance, by sub-kind (§5.5).
     if (/photo|picture|image|video|footage|camera feed|show me|watch her|look at her|screenshot/.test(q)) {
       return reply(
-        'There is no video to show, not to you, not to anyone. I can tell you what she’s been doing.',
+        'There’s no video to show. I can tell you what she’s been doing instead.',
         [], true, 'surveillance',
       );
     }
@@ -410,7 +410,7 @@ class MockCamera {
     // 3. Soft surveillance: visitors answer, but only count and duration.
     if (/visitor|visit|who came|who was there|guest|company/.test(q)) {
       return reply(
-        'Dhyaan only notes that someone visited, and for how long, never who or what was said. Someone visited on Tuesday for about 40 minutes.',
+        'Dhyaan only records that someone visited and for how long. Someone visited on Tuesday for about 40 minutes.',
         [itemCite('visitor_present'), factCite('visitors')],
       );
     }
@@ -469,7 +469,7 @@ class MockCamera {
       return reply(
         exit
           ? 'She went out of view around her usual walk time. Dhyaan can’t see the front door, so it won’t claim she went for a walk, only that she is out of view, and that you told us she usually walks about then.'
-          : 'Dhyaan hasn’t seen her go out of view yet today. It can only tell you she’s at home or out of view, never where in the house.',
+          : 'Dhyaan hasn’t seen her go out of view today. It can only tell whether she’s home or out of view.',
         [exit, factCite('walk')],
       );
     }

@@ -19,7 +19,11 @@ text, saturated committed brand color, mute chrome.
    primary label is ink. A gray paragraph is an instant fail.
 4. **SF only in chrome.** Native large-title headers own screen titles. The serif
    (Fraunces) is allowed for exactly one thing: Eleanor's own quoted words.
-5. **Every screen has a visual anchor** — an Avatar, an IconBadge rail, the day
+5. **No rhetoric.** UI copy is a plain label or one functional, spoken sentence
+   ("Detects falls and calls her, then her contacts."). Banned: parallel
+   fragments ("X. It Y."), "X, never Y", taglines, poetic inversion. If it
+   sounds quotable, rewrite it or delete it.
+6. **Every screen has a visual anchor** — an Avatar, an IconBadge rail, the day
    bar, the alert gradient. A screen that is only text is unfinished.
 
 ## System

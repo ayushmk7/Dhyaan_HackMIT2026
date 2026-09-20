@@ -180,7 +180,7 @@ class MockDhyaan {
       out.push('Suggest Sunday dinner together');
     }
     if (evs.find((e) => e.type === 'night_activity')) {
-      out.push('A gentle “sleeping okay?”');
+      out.push('Ask how she’s sleeping');
     }
     out.push('Afternoons are a good time to call');
     return out.slice(0, 3);
