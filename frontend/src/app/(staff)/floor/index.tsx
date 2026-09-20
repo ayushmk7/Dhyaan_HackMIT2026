@@ -1,10 +1,14 @@
-// Floor view: room tiles, colour = state. A glance answers "which rooms tonight?"
+// Floor view: room tiles. A glance answers "which rooms tonight?"
+//
+// Weight, not hue, does the ranking. The count of rooms that need someone is
+// the one large number on the screen; an alerting room is the one inverted
+// tile; every other room is a plain plate whose state rides on the dot's form.
 //
 // The `res_eleanor` filter is gone for the same reason it is gone from triage:
 // she is the only resident the real backend seeds, so excluding her left this
 // grid permanently empty. A resident with no `room` (mock Eleanor, the B2C
 // side of the world) now renders as a tile keyed on their name instead of a
-// blank one. Whereabouts are legal here and only here — staff see rooms,
+// blank one. Whereabouts are legal here and only here: staff see rooms,
 // family never do (DECISIONS.md D-001, TECHNICAL_PRD §12.4).
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
@@ -57,10 +61,10 @@ function RoomTile({ r, onPress }: { r: Tile; onPress: () => void }) {
 
   const a11y = copy.tile.a11y(r.room, r.display_name, t.stateColor[r.state].word);
 
-  // Rust is the alarm colour and nothing else, so exactly one kind of tile may
-  // wear it, and that tile is this screen's high-contrast moment: an alarm
+  // Alarm is inversion and nothing else, so exactly one kind of tile is
+  // inverted, and that tile is this screen's high-contrast moment: an alarm
   // slab, which hands its children their colours. The normal tile is an
-  // opaque plate at the raised tier, so it takes the raised radius.
+  // opaque plate at the raised tier.
   if (alarm) {
     return (
       <Slab
@@ -87,7 +91,7 @@ function RoomTile({ r, onPress }: { r: Tile; onPress: () => void }) {
             borderRadius: radius.card,
             padding: sp(3.5),
             minHeight: 132,
-            ...elevation.raised,
+            ...(t.isDark ? { borderWidth: 1, borderColor: t.line } : elevation.raised),
           },
           pressed && { opacity: 0.7 },
         ]}
@@ -142,9 +146,9 @@ export default function Floor() {
 
   const needing = rooms.filter((r) => NEEDS_EYES.includes(r.state)).length;
 
-  // Chrome the grid scrolls under: the colour key, which is the only way to
-  // read a tile at a glance. Handed to Screen so the clearance is its contract,
-  // and it rides the safe-area inset the floating tab bar raises.
+  // Chrome the grid scrolls under: the key to the dot forms, which is the only
+  // way to read a tile at a glance. Handed to Screen so the clearance is its
+  // contract, and it rides the safe-area inset the floating tab bar raises.
   const key = (
     <Row gap={3} style={{ justifyContent: 'center', flexWrap: 'wrap', paddingVertical: sp(1) }}>
       {(['alerting', 'attention', 'offline', 'ok'] as ResidentState[]).map((s) => (
@@ -159,18 +163,24 @@ export default function Floor() {
   return (
     <Screen native wash refreshControl={refreshControl} floatingBar={key}>
       <Stagger>
-        {/* The screen's one instrument reading, in the machine face. */}
-        <Slab style={{ paddingVertical: sp(3.5) }}>
-          <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-            <DataLabel value={pad2(rooms.length)}>{copy.slab.rooms}</DataLabel>
-            <DataLabel value={pad2(needing)}>{copy.slab.needSomeone}</DataLabel>
-            <DataLabel value={dataUpdatedAt ? timeOf(new Date(dataUpdatedAt).toISOString()) : readout.noTime}>
-              {copy.slab.updated}
-            </DataLabel>
+        {/* The screen's one instrument reading: how many rooms need someone. */}
+        <View>
+          <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }} gap={4}>
+            <View>
+              <Txt kind="readout">{pad2(needing)}</Txt>
+              <DataLabel style={{ marginTop: sp(1) }}>{copy.slab.needSomeone}</DataLabel>
+            </View>
+            <View style={{ alignItems: 'flex-end', gap: sp(1.5), paddingBottom: sp(0.5) }}>
+              <DataLabel value={pad2(rooms.length)}>{copy.slab.rooms}</DataLabel>
+              <DataLabel value={dataUpdatedAt ? timeOf(new Date(dataUpdatedAt).toISOString()) : readout.noTime}>
+                {copy.slab.updated}
+              </DataLabel>
+            </View>
           </Row>
-        </Slab>
+          <Rule weight="heavy" style={{ marginTop: sp(3) }} />
+        </View>
 
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: sp(3), marginTop: sp(4) }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: sp(3), marginTop: sp(5) }}>
           {rooms.map((r) => (
             <RoomTile
               key={r.id}
@@ -181,7 +191,7 @@ export default function Floor() {
         </View>
 
         {rooms.length === 0 && (
-          <EmptyState style={{ marginTop: sp(6) }}>{copy.empty}</EmptyState>
+          <EmptyState style={{ marginTop: sp(4) }}>{copy.empty}</EmptyState>
         )}
       </Stagger>
     </Screen>

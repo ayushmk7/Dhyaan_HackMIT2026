@@ -21,6 +21,12 @@
 // the honest face for it. The one human line on the screen is the privacy line
 // under the pane, and it is a claim, not an apology.
 //
+// Colour: the pane is the screen's one plate, and it is the accent wash, not a
+// night ground. Nothing here names a dark colour; every fill and every text
+// colour comes from the theme or from the surface the text rests on, so the
+// console follows the scheme instead of being the one black thing on a light
+// screen.
+//
 // What a person reads lives in lib/copy/family.ts under `camera`. The
 // telemetry keys and readings (FPS, MODEL, REC, PERSON 01, the gate names) are
 // the machine's own and stay here on purpose.
@@ -33,7 +39,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import {
   Btn, Card, Chip, CornerTicks, DataLabel, EmptyState, ErrorState,
-  Glass, LoadingState, Marquee, Rule, Stagger, Screen, Txt, useReducedMotion,
+  LoadingState, Marquee, Rule, Stagger, Screen, Txt, useReducedMotion,
 } from '@/components';
 import { family } from '@/lib/copy/family';
 import { ago, timeOf } from '@/lib/format';
@@ -115,7 +121,7 @@ function useStamp(): string {
 
 const clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
-/** Fill the parent. Written once; four overlays in this file need it. */
+/** Fill the parent: the sentence layers stack absolutely inside their track. */
 const FILL: ViewStyle = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
 
 /**
@@ -171,31 +177,15 @@ function BoxFrame({
         style={{
           flex: 1,
           borderWidth: rule.ink,
-          borderColor: t.amber,
-          backgroundColor: t.amberGhost,
+          borderColor: t.accent,
+          backgroundColor: t.accentGhost,
         }}
       />
-      <View style={[styles.boxTag, { backgroundColor: t.amber }]}>
+      <View style={[styles.boxTag, { backgroundColor: t.accent }]}>
         {/* Telemetry: the box's own index, not a word. */}
-        <Txt kind="micro" style={{ color: t.night }}>{`PERSON ${pad(index + 1)}`}</Txt>
+        <Txt kind="micro" style={{ color: t.onAccent }}>{`PERSON ${pad(index + 1)}`}</Txt>
       </View>
     </Animated.View>
-  );
-}
-
-/** Rule-of-thirds guides. Faint on purpose: a grid you notice is a grid in the way. */
-function Grid() {
-  const t = useTheme();
-  const line = (s: ViewStyle) => (
-    <View style={[{ position: 'absolute', backgroundColor: t.nightLine, opacity: 0.55 }, s]} />
-  );
-  return (
-    <View pointerEvents="none" style={FILL}>
-      {line({ left: '33.33%', top: 0, bottom: 0, width: 1 })}
-      {line({ left: '66.66%', top: 0, bottom: 0, width: 1 })}
-      {line({ top: '33.33%', left: 0, right: 0, height: 1 })}
-      {line({ top: '66.66%', left: 0, right: 0, height: 1 })}
-    </View>
   );
 }
 
@@ -220,7 +210,7 @@ function SentenceTrack({ text }: { text: string }) {
         exiting={reduced ? undefined : FadeOut.duration(dur)}
         style={[FILL, styles.captionPad]}
       >
-        <Txt kind="body" tone="nightInk" accessibilityLiveRegion="polite" numberOfLines={2}>
+        <Txt kind="label" accessibilityLiveRegion="polite" numberOfLines={2}>
           {text}
         </Txt>
       </Animated.View>
@@ -238,46 +228,47 @@ function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
   );
   const people = tick.person_count;
   const live = !tick.simulated;
-  const recColor = live ? t.moss : t.ochre;
+  // A live feed is ink (a fact); a simulated one is the accent (Dhyaan
+  // pointing out that it is not the camera). Neither is a hue.
+  const recColor = live ? t.ink : t.accent;
 
+  // The one plate on the screen: the accent wash, framed by the ticks. No
+  // glass around it and no scrim over it; the geometry and the sentence sit
+  // straight on the wash and read in the surface's own ink.
   return (
-    <Glass tone="night" radius={radius.glass} lift="float" style={{ padding: sp(1.5) }}>
-      <View
-        accessibilityRole="image"
-        accessibilityLabel={copy.paneLabel(people, tick.sentence)}
-        onLayout={(e) => {
-          const { width, height } = e.nativeEvent.layout;
-          setSize({ w: width, h: height });
-        }}
-        style={[styles.pane, { backgroundColor: t.night }]}
-      >
-        <Grid />
+    <View
+      accessibilityRole="image"
+      accessibilityLabel={copy.paneLabel(people, tick.sentence)}
+      onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+        setSize({ w: width, h: height });
+      }}
+      style={[styles.pane, { backgroundColor: t.accentWash }]}
+    >
+      {size.w > 0 && slots.map((b, i) => (
+        <BoxFrame key={i} box={b} index={i} paneW={size.w} paneH={size.h} />
+      ))}
 
-        {size.w > 0 && slots.map((b, i) => (
-          <BoxFrame key={i} box={b} index={i} paneW={size.w} paneH={size.h} />
-        ))}
+      <CornerTicks color={t.accent} size={16} inset={sp(2.5)} weight={rule.ink} />
 
-        <CornerTicks color={t.amber} size={16} inset={sp(2.5)} weight={rule.ink} />
-
-        {/* Top chrome: the REC light left, the burned-in clock right. Both
-            readings are telemetry, not words. */}
-        <View style={[styles.paneRow, { top: sp(3) }]}>
-          <View style={styles.recPill}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: recColor }} />
-            <Txt kind="micro" style={{ color: recColor }}>
-              {live ? 'REC' : 'SIMULATED'}
-            </Txt>
-          </View>
-          <Txt kind="stamp" tone="nightMuted">{stamp}</Txt>
+      {/* Top chrome: the REC light left, the burned-in clock right. Both
+          readings are telemetry, not words. */}
+      <View style={[styles.paneRow, { top: sp(3) }]}>
+        <View style={styles.recPill}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: recColor }} />
+          <Txt kind="micro" style={{ color: recColor }}>
+            {live ? 'REC' : 'SIMULATED'}
+          </Txt>
         </View>
-
-        {/* Bottom chrome: the sentence track burned across the pane. */}
-        <View style={[styles.captionBar, { backgroundColor: t.nightScrim }]}>
-          <Rule color={t.amber} style={{ opacity: 0.5 }} />
-          <SentenceTrack text={tick.sentence?.trim() || copy.noSentence} />
-        </View>
+        <Txt kind="stamp" tone="muted">{stamp}</Txt>
       </View>
-    </Glass>
+
+      {/* Bottom chrome: the sentence track, under one accent rule. */}
+      <View style={styles.captionBar}>
+        <Rule color={t.accent} />
+        <SentenceTrack text={tick.sentence?.trim() || copy.noSentence} />
+      </View>
+    </View>
   );
 }
 
@@ -301,12 +292,12 @@ function GateCascade({ gate }: { gate: GateState }) {
       {GATES.map((g, i) => {
         const on = i === active;
         const passed = active > i;
-        const fg = on ? t.amber : passed ? t.ink : t.inkMuted;
+        const fg = on ? t.accent : passed ? t.ink : t.inkMuted;
         return (
           <View key={g.key} style={{ flex: 1 }}>
             <Rule
               weight={on ? 'heavy' : 'ink'}
-              color={on ? t.amber : passed ? t.ink : t.line}
+              color={on ? t.accent : passed ? t.ink : t.line}
             />
             <View style={{ paddingTop: sp(2) }}>
               <Txt kind="micro" style={{ color: fg }}>{g.label}</Txt>
@@ -328,33 +319,27 @@ function Cell({ label, value, ruled }: { label: string; value: string; ruled: bo
   return (
     <View style={[styles.cell, ruled && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }]}>
       <Txt kind="micro" tone="muted">{label}</Txt>
-      <Txt
-        kind="mono"
-        numberOfLines={1}
-        style={{ marginTop: sp(1), fontSize: 15, lineHeight: 20 }}
-      >
+      <Txt kind="data" numberOfLines={1} style={{ marginTop: sp(1) }}>
         {value}
       </Txt>
     </View>
   );
 }
 
-// Keys and readings are the worker's own. Not copy.
+// Keys and readings are the worker's own. Not copy. Six, not nine: the gate
+// is the cascade above, the head count is the boxes on the pane, and the
+// source is the REC pill, so printing them again here was decoration.
 function Telemetry({ tick }: { tick: CameraMonitorTick }) {
   const cells: { label: string; value: string }[] = [
     { label: 'FPS', value: tick.fps.toFixed(1) },
     { label: 'LATENCY', value: tick.latency_ms == null ? '—' : `${tick.latency_ms} ms` },
-    { label: 'BATCH', value: `${tick.batch_frames} f` },
-    { label: 'PEOPLE', value: `${tick.person_count}` },
-    { label: 'GATE', value: tick.gate.toUpperCase() },
-    { label: 'CONF', value: tick.confidence == null ? '—' : tick.confidence.toFixed(2) },
-    { label: 'ACTIVITY', value: (tick.activity ?? '—').replace(/_/g, ' ').toUpperCase() },
-    { label: 'SOURCE', value: tick.simulated ? 'SIMULATED' : 'CAMERA' },
     { label: 'MODEL', value: tick.model || '—' },
+    { label: 'ACTIVITY', value: (tick.activity ?? '—').replace(/_/g, ' ').toUpperCase() },
+    { label: 'CONF', value: tick.confidence == null ? '—' : tick.confidence.toFixed(2) },
+    { label: 'BATCH', value: `${tick.batch_frames} f` },
   ];
   return (
     <View>
-      <Rule />
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
         {cells.map((c, i) => (
           <Cell key={c.label} label={c.label} value={c.value} ruled={i < cells.length - 3} />
@@ -507,14 +492,14 @@ export default function CameraConsole() {
           </Txt>
         </View>
 
+        {/* One section for the machine: the cascade says where the worker
+            is, the readings say how it is doing. Two headings said less. */}
         <View>
-          <Marquee title={copy.pipeline} meta={tick.gate} first />
+          <Marquee title={copy.worker} meta={copy.meta.camera(cam.id)} first />
           <GateCascade gate={tick.gate} />
-        </View>
-
-        <View>
-          <Marquee title={copy.telemetry} meta={cam.id} first />
-          <Telemetry tick={tick} />
+          <View style={{ marginTop: sp(4) }}>
+            <Telemetry tick={tick} />
+          </View>
         </View>
       </Stagger>
     );

@@ -1,10 +1,15 @@
-// Consent, permission-sheet grammar: mark, four-word title, one line, Yes/No.
-// The full §5.4 text (the product's legal defence, VERBATIM) lives behind a
-// collapsed "How it works" per grant — complete, but never a wall.
+// Consent, permission-sheet grammar: title, one quiet line, three grants, each
+// a question with Yes/No. The full §5.4 text (the product's legal defence,
+// VERBATIM) lives behind a collapsed "How it works" per grant: complete, but
+// never a wall.
 //
 // The grant copy itself is `onboard.consent.grants` in `lib/copy/staff.ts`,
 // where it is marked verbatim from the spec. Nothing in a grant's `title`,
 // `line` or `detail` may be reworded. Only the surface around it is design.
+//
+// The three grants are the screen. They are not cards: a card each made three
+// equal boxes and nothing owned the page. Now they sit on the paper, separated
+// by hairlines, and the chosen answer is the only filled shape in each.
 //
 // ponytail: answers are held in the session; the whole profile is PUT once in
 // done.tsx. Quitting mid-onboarding loses the draft.
@@ -12,9 +17,9 @@ import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import {
-  Btn, Card, Entrance, Field, Marquee, Row, Rule, Screen, Stagger, Txt,
+  Btn, Entrance, Field, Marquee, Row, Rule, Screen, Stagger, Txt,
 } from '@/components';
-import { Icon, IconBadge } from '@/components/icon';
+import { Icon } from '@/components/icon';
 import { onboard } from '@/lib/copy/staff';
 import { sp, radius, useTheme } from '@/theme';
 import { useSession, type Grants } from '@/store/session';
@@ -41,32 +46,29 @@ function YesNo({ value, onChange, label }: {
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: radius.card,
-          backgroundColor: on ? t.ink : pressed ? t.line : t.slateWash,
+          // The answer is the one filled shape: the accent wash when chosen,
+          // nothing at all when not, so an unanswered grant is visibly open.
+          backgroundColor: on ? t.accentWash : pressed ? t.line : 'transparent',
+          borderWidth: 1,
+          borderColor: on ? t.accent : t.line,
         })}
       >
-        <Txt kind="label" tone={on ? 'paper' : 'muted'}>{word}</Txt>
+        <Txt kind="label" tone={on ? 'accent' : 'muted'}>{word}</Txt>
       </Pressable>
     );
   };
   return <Row gap={2} style={{ marginTop: sp(3) }}>{[opt(true, copy.yes), opt(false, copy.no)]}</Row>;
 }
 
-function GrantCard({ g, value, onChange }: {
+function Grant({ g, value, onChange }: {
   g: (typeof GRANTS)[number]; value: boolean | null; onChange: (v: boolean) => void;
 }) {
   const t = useTheme();
   const [open, setOpen] = useState(false);
   return (
-    <Card style={{ marginTop: sp(3) }}>
-      <Row gap={3}>
-        {/* Ink, not a hue: chrome carries no colour, and none of the three
-            grants is more or less alarming than another. */}
-        <IconBadge name={g.icon} color={t.ink} size={34} />
-        <View style={{ flex: 1 }}>
-          <Txt kind="label">{g.title}</Txt>
-          <Txt kind="caption" style={{ marginTop: 1 }}>{g.line}</Txt>
-        </View>
-      </Row>
+    <View style={{ paddingVertical: sp(4) }}>
+      <Txt kind="title">{g.title}</Txt>
+      <Txt kind="body" tone="muted" style={{ marginTop: sp(1) }}>{g.line}</Txt>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
@@ -75,22 +77,21 @@ function GrantCard({ g, value, onChange }: {
         style={{ marginTop: sp(1), alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' }}
       >
         <Row gap={1}>
-          <Icon name={open ? 'chevron.down' : 'chevron.right'} size={11} color={t.ink} />
-          <Txt kind="tag">{copy.howItWorks}</Txt>
+          <Icon name={open ? 'chevron.down' : 'chevron.right'} size={11} color={t.accent} />
+          <Txt kind="tag" tone="accent">{copy.howItWorks}</Txt>
         </Row>
       </Pressable>
       {open && (
-        <View style={{ marginTop: sp(2.5) }}>
-          <Rule weight="hair" color={t.line} />
+        <View style={{ marginTop: sp(1) }}>
           {g.detail.map((para) => (
-            <Txt key={para.slice(0, 24)} kind="caption" style={{ marginTop: sp(2.5) }}>
+            <Txt key={para.slice(0, 24)} kind="caption" style={{ marginTop: sp(2) }}>
               {para}
             </Txt>
           ))}
         </View>
       )}
       <YesNo label={g.title} value={value} onChange={onChange} />
-    </Card>
+    </View>
   );
 }
 
@@ -134,7 +135,7 @@ export default function Consent() {
       <Stagger>
         <View>
           <Marquee first title={copy.title} />
-          <Txt kind="body">
+          <Txt kind="caption" tone="muted">
             {copy.intro}
           </Txt>
         </View>
@@ -147,20 +148,21 @@ export default function Consent() {
           style={{ marginTop: sp(5) }}
         />
 
-        <View style={{ marginTop: sp(2) }}>
-          {GRANTS.map((g) => (
-            <GrantCard
-              key={g.key}
-              g={g}
-              value={grants[g.key]}
-              onChange={(v) => setGrants((s) => ({ ...s, [g.key]: v }))}
-            />
+        <View style={{ marginTop: sp(4) }}>
+          {GRANTS.map((g, i) => (
+            <React.Fragment key={g.key}>
+              {i > 0 && <Rule weight="hair" />}
+              <Grant
+                g={g}
+                value={grants[g.key]}
+                onChange={(v) => setGrants((s) => ({ ...s, [g.key]: v }))}
+              />
+            </React.Fragment>
           ))}
         </View>
 
-        <View style={{ marginTop: sp(6) }}>
-          <Rule weight="heavy" />
-          <Txt kind="label" style={{ marginTop: sp(3) }}>{copy.whoIsAgreeing}</Txt>
+        <View style={{ marginTop: sp(4) }}>
+          <Txt kind="caption" tone="muted">{copy.whoIsAgreeing}</Txt>
           <Field
             label={copy.yourName}
             value={signer}

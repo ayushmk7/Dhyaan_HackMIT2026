@@ -8,7 +8,8 @@
 //                          benign by design, and a fall can be cancelled)
 //   3. the call failed  -> a rejected promise, which used to leave a blank screen
 // This is machine chrome, not a family screen, so it is the one place the
-// uppercase mono voice is allowed to describe the request itself.
+// uppercase mono voice is allowed to describe the request itself. It sits on
+// the ordinary paper ground: a rehearsal is not an alarm, and it is not night.
 //
 // Every sentence this screen says lives in lib/copy/family.ts under `simulate`.
 import { router } from 'expo-router';
@@ -54,7 +55,7 @@ export default function Simulate() {
   const detail = outcome.t === 'no_alert' ? copy.recorded : outcome.t === 'failed' ? outcome.why : '';
 
   return (
-    <Screen tone="night" wash scroll={false} style={{ justifyContent: 'center' }}>
+    <Screen wash scroll={false} style={{ justifyContent: 'center' }}>
       <Entrance index={0}>
         {/* The reading is the route itself, in the machine's voice. */}
         <DataLabel value="POST /admin/simulate">{copy.rehearsal}</DataLabel>
@@ -67,12 +68,14 @@ export default function Simulate() {
         </Entrance>
       ) : (
         <Entrance index={1}>
+          {/* The outcome is the whole screen, so it takes the display step;
+              the detail under it is the machine explaining itself. */}
           <View style={{ marginTop: sp(6), gap: sp(3) }}>
-            <Txt kind="title">
+            <Txt kind="display">
               {outcome.t === 'no_alert' ? copy.wentThrough : copy.didNotGoThrough}
             </Txt>
             <Txt kind="body" tone="muted">{detail}</Txt>
-            <View style={{ gap: sp(2), marginTop: sp(4) }}>
+            <View style={{ gap: sp(2), marginTop: sp(6) }}>
               <Btn label={copy.backToToday} onPress={() => router.replace('/(family)/home')} />
               {outcome.t === 'failed' && (
                 <Btn

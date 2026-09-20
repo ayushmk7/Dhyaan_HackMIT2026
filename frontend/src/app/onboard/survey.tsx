@@ -8,18 +8,22 @@
 //   - It may NOT show an anchor count. A phone in Expo's managed workflow has
 //     no wifi or BLE scan API (see lib/http.ts's surveyRoom), so nothing on
 //     this device has heard a single beacon. The old "N anchors heard" was a
-//     function of the countdown timer — a number drawn from a clock and
+//     function of the countdown timer: a number drawn from a clock and
 //     labelled as radio.
+//
+// The rooms are rows on the paper, not cards. The room being walked right now
+// is the one thing on the screen: it lifts onto a tinted plate and the
+// countdown is set in the readout face. Everything else is a line.
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import {
-  Btn, Card, DataLabel, Entrance, Marquee, Row, Rule, Screen, Txt,
+  Btn, DataLabel, Entrance, Marquee, Row, Rule, Screen, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { onboard } from '@/lib/copy/staff';
 import { homeZones } from '@/lib/mock/data';
-import { sp } from '@/theme/tokens';
+import { radius, sp, useTheme } from '@/theme';
 import { useSession } from '@/store/session';
 
 const copy = onboard.survey;
@@ -35,6 +39,7 @@ const SURVEY_S = 30;
 const ROOMS_NEEDED = 3;
 
 export default function Survey() {
+  const t = useTheme();
   const { residentName, grants } = useSession();
   const [rooms, setRooms] = useState<Record<string, RoomState>>(
     Object.fromEntries(homeZones.map((z) => [z.id, { kind: 'idle' }])),
@@ -100,90 +105,77 @@ export default function Survey() {
     >
       <Entrance index={0}>
         <Marquee first title={copy.title} meta={copy.progress(doneCount, ROOMS_NEEDED)} />
-        <Txt kind="body">
+        <Txt kind="caption" tone="muted">
           {copy.intro(residentName)}
-        </Txt>
-        <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>{/* voice-ok */}
-          {copy.honesty}
         </Txt>
       </Entrance>
 
-      <View style={{ marginTop: sp(5), gap: sp(3) }}>
+      <View style={{ marginTop: sp(4) }}>
         {homeZones.map((z, i) => {
           const s = rooms[z.id];
+          const live = s.kind === 'surveying';
           return (
             <Entrance key={z.id} index={1 + i}>
-              <Card>
-                <Row style={{ justifyContent: 'space-between' }}>
-                  <Txt kind="label">{z.label}</Txt>
-                  {s.kind === 'surveying' && (
-                    <Txt kind="data">{copy.secondsLeft(s.left)}</Txt>
+              {i > 0 && !live && <Rule weight="hair" />}
+              <View
+                style={live ? {
+                  marginVertical: sp(2),
+                  padding: sp(4.5),
+                  borderRadius: radius.glass,
+                  backgroundColor: t.accentWash,
+                } : { paddingVertical: sp(3.5) }}
+              >
+                <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View style={{ flex: 1 }}>
+                    <Txt kind={live ? 'title' : 'label'}>{z.label}</Txt>
+                    {s.kind === 'done' && (
+                      <Txt
+                        kind="caption"
+                        tone={s.warning ? 'warn' : 'muted'}
+                        style={{ marginTop: sp(0.5) }}
+                      >
+                        {s.warning ?? copy.stored}
+                      </Txt>
+                    )}
+                    {s.kind === 'failed' && (
+                      <Txt kind="caption" tone="alert" style={{ marginTop: sp(0.5) }}>
+                        {s.message}
+                      </Txt>
+                    )}
+                  </View>
+                  {s.kind === 'idle' && (
+                    <Btn kind="link" label={copy.mapRoom} disabled={surveying} onPress={() => start(z.id)} />
                   )}
-                  {s.kind === 'done' && (
+                  {s.kind === 'done' && !s.warning && (
                     <DataLabel value={String(s.scans)}>{copy.readings}</DataLabel>
+                  )}
+                  {s.kind === 'done' && !!s.warning && (
+                    <Btn kind="link" label={copy.walkAgain} disabled={surveying} onPress={() => start(z.id)} />
+                  )}
+                  {s.kind === 'failed' && (
+                    <Btn kind="link" label={copy.tryAgain} disabled={surveying} onPress={() => start(z.id)} />
                   )}
                 </Row>
 
-                {s.kind === 'surveying' && (
+                {live && (
                   <>
-                    <Rule style={{ marginTop: sp(2.5) }} />
-                    <Txt kind="caption" style={{ marginTop: sp(2) }}>
+                    <Txt kind="readout" style={{ marginTop: sp(3) }}>{copy.secondsLeft(s.left)}</Txt>
+                    <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
                       {copy.walking}
                     </Txt>
                   </>
                 )}
-
-                {s.kind === 'done' && (
-                  <>
-                    <Rule style={{ marginTop: sp(2.5) }} />
-                    <Txt
-                      kind="caption"
-                      tone={s.warning ? 'warn' : 'ok'}
-                      style={{ marginTop: sp(2) }}
-                    >
-                      {s.warning ?? copy.stored}
-                    </Txt>
-                    {!!s.warning && (
-                      <Btn
-                        kind="quiet"
-                        label={copy.walkAgain}
-                        disabled={surveying}
-                        onPress={() => start(z.id)}
-                        style={{ marginTop: sp(3), minHeight: 44 }}
-                      />
-                    )}
-                  </>
-                )}
-
-                {s.kind === 'failed' && (
-                  <>
-                    <Txt kind="caption" tone="alert" style={{ marginTop: sp(2) }}>
-                      {s.message}
-                    </Txt>
-                    <Btn
-                      kind="quiet"
-                      label={copy.tryAgain}
-                      disabled={surveying}
-                      onPress={() => start(z.id)}
-                      style={{ marginTop: sp(3), minHeight: 44 }}
-                    />
-                  </>
-                )}
-
-                {s.kind === 'idle' && (
-                  <Btn
-                    kind="quiet"
-                    label={copy.mapRoom}
-                    disabled={surveying}
-                    onPress={() => start(z.id)}
-                    style={{ marginTop: sp(3), minHeight: 44 }}
-                  />
-                )}
-              </Card>
+              </View>
             </Entrance>
           );
         })}
       </View>
+
+      <Entrance index={1 + homeZones.length}>
+        <Txt kind="caption" tone="muted" style={{ marginTop: sp(6) }}>{/* voice-ok */}
+          {copy.honesty}
+        </Txt>
+      </Entrance>
     </Screen>
   );
 }

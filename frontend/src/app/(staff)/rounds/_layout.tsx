@@ -1,21 +1,32 @@
-// Rounds runs dark: the stack header matches the night ground.
+// Rounds runs dark: the same compact, centred, translucent bar as every other
+// stack (see `src/lib/nav.tsx`'s TabStack), but pinned to the night variant
+// whatever the scheme, because Rounds is the one always-night screen. The
+// blur follows the app's own scheme rather than the OS's, and it only takes
+// effect with `headerTransparent`.
 import React from 'react';
 import { Stack } from 'expo-router';
 import { shell } from '@/lib/copy/staff';
-import { useTheme } from '@/theme';
+import { type as typeScale, useTheme } from '@/theme';
 
 export default function RoundsStack() {
   const t = useTheme();
   return (
     <Stack
       screenOptions={{
-        headerLargeTitle: true,
-        headerLargeTitleShadowVisible: false,
-        headerLargeStyle: { backgroundColor: t.night },
-        headerStyle: { backgroundColor: t.night },
+        headerLargeTitleEnabled: false,
+        headerTitleAlign: 'center',
+        headerTransparent: true,
+        headerBlurEffect: 'systemChromeMaterialDark',
         headerShadowVisible: false,
-        headerTintColor: t.nightInk,
-        headerTitleStyle: { color: t.nightInk },
+        headerTintColor: t.accent,
+        // Off the scale, not a literal: a native header is drawn by UIKit and
+        // must be handed a number, but the number still comes from the type
+        // system so it moves when the scale does.
+        headerTitleStyle: {
+          color: t.nightInk,
+          fontSize: typeScale.label.fontSize,
+          fontWeight: typeScale.label.fontWeight,
+        },
         contentStyle: { backgroundColor: t.night },
       }}
     >

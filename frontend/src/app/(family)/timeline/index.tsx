@@ -24,7 +24,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { Pressable, RefreshControl, Share } from 'react-native';
+import { Pressable, RefreshControl, Share, View } from 'react-native';
 import {
   Btn, Card, Chevron, Chip, DataLabel, EmptyState, Entrance, ErrorState, Glass, IconBtn, KindTag,
   LoadingState, Marquee, Row, RowGroup, Screen, Slab, Txt,
@@ -251,11 +251,18 @@ export default function HerDay() {
       </Glass>
 
       {observed.length > 0 && (
-        <Slab style={{ marginTop: sp(3), paddingVertical: sp(3) }}>
-          <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap' }} gap={3}>
-            <DataLabel value={String(observed.length)}>{copy.noticed}</DataLabel>
-            {!!firstAt && <DataLabel value={timeOf(firstAt)}>{copy.first}</DataLabel>}
-            {!!lastAt && <DataLabel value={timeOf(lastAt)}>{copy.last}</DataLabel>}
+        <Slab style={{ marginTop: sp(3) }}>
+          {/* One big number: how much it saw. The ends of the day sit small
+              beside it, as the record they are. */}
+          <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }} gap={3}>
+            <View>
+              <Txt kind="readout">{String(observed.length)}</Txt>
+              <DataLabel style={{ marginTop: sp(1) }}>{copy.noticed}</DataLabel>
+            </View>
+            <View style={{ alignItems: 'flex-end', gap: sp(1) }}>
+              {!!firstAt && <DataLabel value={timeOf(firstAt)}>{copy.first}</DataLabel>}
+              {!!lastAt && <DataLabel value={timeOf(lastAt)}>{copy.last}</DataLabel>}
+            </View>
           </Row>
         </Slab>
       )}

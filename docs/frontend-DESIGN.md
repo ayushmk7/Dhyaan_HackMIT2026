@@ -12,8 +12,9 @@ padding or a text style of its own.
 Floating, translucent chrome over an atmospheric ground; opaque, quiet
 content; an occasional hard, honest gesture (a 2px ink rule, a mono reading, a
 corner tick) marking where a machine produced something. One accent, and it is
-blue. Alarm is not a colour but an inversion. There is a real dark mode, and it
-is not the light mode with the values flipped. The app watches over someone's
+blue. Alarm is not a colour but depth on the blue ramp, under a heavy rule.
+Nothing in the light app is black. There is a real dark mode, and it is not
+the light mode with the values flipped. The app watches over someone's
 mother, for her adult child, at a distance. It must read like a calm,
 competent human, never like a hospital monitor or a SaaS dashboard.
 
@@ -60,7 +61,7 @@ night, alarm); `Card` declares paper (or night); `Slab` declares ink, cream or
 alarm. Inside a `Slab`, on a `tone="night"` screen, or in dark mode you pass
 **no** tones: `Txt`, `Rule`, `Hairline`, `Marquee`, `DataLabel`, `Chip`, `Btn`
 and `IconBtn` already know. Explicit `night`, `tone` and `color` props still
-win when given. `Surface` is exported for the rare layout that owns a dark
+win when given. `Surface` is exported for the rare layout that owns a blue
 ground without going through `Screen` or `Slab`.
 
 What each surface is, in each scheme:
@@ -68,17 +69,21 @@ What each surface is, in each scheme:
 | Surface | Light | Dark |
 | --- | --- | --- |
 | `paper` (the page, a card) | near-white, ink text | near-black, near-white text |
-| `night` (Rounds) | the night ground, always dark | the same |
-| `ink` (`Slab`) | black plate, white text | **white plate, black text** |
+| `night` (Rounds, the camera pane) | `blue[100]`, ink text; white cards with a `blue[200]` edge | `blue[900]`, light text; `blue[800]` cards |
+| `ink` (`Slab`) | `blue[200]` plate, ink text | `blue[800]` plate, light text |
 | `cream` (`Slab`, Rounds counter) | white plate, always | the same |
-| `alarm` (the takeover) | black ground, white text | **white ground, black text** |
+| `alarm` (the takeover) | `blue[300]` ground, ink text, a 4px ink rule under the status bar | `blue[700]` ground, light text, the same rule |
+| `alarm` (`Slab`: the readout, the alerting Floor tile) | `blue[100]` inside a 2px ink rule | `blue[800]` inside a 2px rule |
 
-`ink` and `alarm` are the *inverse of the scheme*, which is the whole point of
-them: the screen's one contrast moment has to be the opposite of whatever the
-rest of the screen is. Text on any dark plate comes from `onDark` (seven
-alphas of white) and on any white plate from `onLight` (the same seven alphas
-of black). There is no eighth alpha. `ink`, `inkMuted`, `inkFaint`, `line` are
-the greys on paper, full stop, and each has a light and a dark value.
+No plate in the light scheme is dark. A focal plate is a *deeper step on the
+blue ramp* than whatever it sits on, with the same ink text as the page; the
+takeover is the deepest light step there is. Text on any light plate comes
+from `onLight` (seven alphas of ink) and on any deep plate (the dark scheme's
+paper and its blue plates) from `onDeep` (the same seven alphas of white).
+There is no eighth alpha. `onDark` still exists and is `onLight` by another
+name: the plates it was written for are light now. `ink`, `inkMuted`,
+`inkFaint`, `line` are the greys on paper, full stop, and each has a light and
+a dark value.
 
 ### Glass, opaque, or slab
 
@@ -106,16 +111,18 @@ Rules that keep this honest:
   on both `isGlassEffectAPIAvailable()` and `isLiquidGlassAvailable()` and
   falls back to a designed frosted plate. `opacity: 0` on any ancestor kills
   the effect; `Entrance` floors its fade at 0.01 for that reason.
-- **A shadow on black is invisible.** `Card` draws a hairline edge instead of
-  an elevation on the night ground and in dark mode. That is the one border
-  the system allows around a card, and only there.
+- **A shadow on a deep ground is invisible, and on a blue one it is lost.**
+  `Card` draws a hairline edge instead of an elevation on the night ground and
+  in dark mode. That is the one border the system allows around a card, and
+  only there.
 
 ## Colour
 
 Three colours: **blue, white, black**, and the greys between white and black.
 No yellow, cream, green, red or purple anywhere, and no yellow ground of any
 kind: the page is white or a blue-tinted near-white, and in dark mode
-near-black.
+near-black. Black is text, never a surface: the only black grounds in the app
+are the dark scheme's own paper.
 
 Blue is the one accent, and it means exactly one thing:
 
@@ -130,7 +137,8 @@ other places:
 
 | Tool | What carries it | Where you see it |
 | --- | --- | --- |
-| **Inversion** | the opposite scheme's plate: white on black in light, black on white in dark | the alarm takeover; `Slab`; the alerting tile on Floor; the alerting `StateChip`; `Btn danger` / `inverse`; `Mark` |
+| **Depth** | a deeper step on the blue ramp than the ground, with the page's own ink on it: `blue[200]` for a `Slab`, `blue[300]` for the takeover (`blue[800]` / `blue[700]` in dark) | the alarm takeover; `Slab`; the alerting tile on Floor; `Mark` |
+| **The navy plate** | `blue[800]` with white text on any light surface (`blue[200]` with ink on a deep one): the far end of the ramp, the loudest thing a control can be | the alerting `StateChip`; `Btn danger` / `inverse` |
 | **Value** | position on the blue ramp (`blue[50]` to `blue[900]`) | `zoneColor` (one band per room), `avatarGradient` (deep / mid / graphite), pressed states |
 | **Form and weight** | a ring vs a dot vs a bullseye; a filled plate vs an outline; a 2px rule vs a hairline; a heavier word | `StatusDot`, `StateChip`, `IconBadge outline`, `KindTag`, `Btn link tone="alert"`, `StatTile` |
 | **Words** | `stateColor[s].word`, `KindTag` words, a button that says what it does | everywhere a state is shown; the chip always carries the word |
@@ -153,33 +161,52 @@ pointing. Corner ticks, the person box (`accentGhost`), the live rule and the
 form: *You told us* is ink on the quiet wash (your own words, plain), *From
 her pattern* is an outline with no fill (an inference, held lightly).
 
-**Alarm** (was rust) is inversion, and it is the only thing that is. This is
-the decision that matters, so here it is in full:
+**Alarm** (was rust) used to be inversion: white on black. Black is gone from
+the light app, so alarm is now four things stacked, none of them a hue of its
+own. This is the decision that matters, so here it is in full:
 
-- The takeover (`Screen tone="alarm"`) is the **only screen** drawn in the
-  opposite scheme. Every other screen in the app is paper or the night
-  ground. Opening the alert in light mode is going from white to black; in
-  dark mode it is going from black to white. Both are the largest change the
-  system can make, and both cost no hue.
-- On a normal screen, the alerting state is the **only inverted element**: the
-  alerting Floor tile is a `Slab`, the alerting `StateChip` is the inverse
-  plate, the alerting `StatusDot` is a bullseye. Nothing else on that screen
-  is inverted, so the eye lands on it before it can read.
-- The takeover's own buttons are `inverse` (the scheme's plate, back again) and
-  `outline`. No blue on the takeover, ever: blue is Dhyaan pointing, and on the
-  takeover it is the family who acts.
-- The live ladder step **pulses**, in the surface's ink. Motion is the fourth
-  signal, and the takeover is the one place it runs unprompted.
+- The takeover (`Screen tone="alarm"`) is the **only screen whose whole ground
+  is blue**: `blue[300]`, the deepest step the light ramp has before ink stops
+  clearing AA on it (8.3:1 body, 5.0:1 for the muted metadata). Every other
+  screen is paper or the pale `blue[100]` night ground. A `Slab` is `blue[200]`;
+  the takeover is a screen-sized step past it. In dark mode it is `blue[700]`,
+  the brightest ground in that scheme, on a page that is otherwise black.
+- A **4px ink rule** is pinned across the top of the takeover, just under the
+  status bar (`rule.heavy`, `Screen` draws it). It is the brutalist gesture
+  the system already uses for a section heading, at twice the weight, and it
+  is there from the first frame, before anything scrolls.
+- The one commitment ("I've got her", "Assign to me") is `Btn kind="inverse"`:
+  the **navy plate**, `blue[800]` with white text, the only navy button on any
+  screen. The takeover's secondary actions are `outline`. No accent blue on
+  the takeover: blue[600] is Dhyaan pointing, and on the takeover it is the
+  family who acts.
+- The cancel ring **breathes** and the live ladder step **pulses**, in the
+  surface's ink. Motion is the fourth signal, and the takeover is the one
+  place it runs unprompted.
 - The words say it: "Needs someone now". Never "Alert".
 
-A failed save, a dropped connection and a form validation line are **ink**
-(`ErrorState`). They are neither pointed at nor inverted; they are sentences.
+On a normal screen, the alerting state is the **only navy element**: the
+alerting `StateChip` is the navy plate, the alerting Floor tile is a `Slab
+tone="alarm"` (a `blue[100]` plate inside a 2px ink rule, on a page of white
+tiles with no border at all), the alerting `StatusDot` is a bullseye. Nothing
+else on that screen is navy or ruled, so the eye lands on it before it can
+read.
 
-`Btn kind="danger"` is the inverse plate on a light screen: the one black
+What this costs, said plainly: inversion was louder. Black on white was the
+largest change the system could make, and a blue[300] ground with a rule and
+a navy button is a smaller one. It is still the only blue screen, the only
+heavy rule and the only navy plate, and a family opening the alert sees a
+different-coloured app with a hard line across the top. If that ever proves
+too quiet in use, the lever is the ground (`palette.alarm`), not a new hue.
+
+A failed save, a dropped connection and a form validation line are **ink**
+(`ErrorState`). They are neither pointed at nor navy; they are sentences.
+
+`Btn kind="danger"` is the navy plate on a light screen: the one `blue[800]`
 button, for the final step of a confirmed, irreversible act ("Forget
 everything about her"). The link that *opens* that confirmation is `Btn
 kind="link" tone="alert"`, which is bolder, not redder. In dark mode the same
-button is the one white button, and it reads the same way.
+button is the one light blue (`blue[200]`) button, and it reads the same way.
 
 ### Rooms and people on the ramp
 
@@ -212,28 +239,30 @@ reports dark when `app.json` sets `userInterfaceStyle` to `"automatic"` or
 `useTheme()` follows the system.
 
 **What inverts:** the ground (`paper`, `raised`), the text greys, the hairline,
-the quiet washes, the glass tint, and the two inverse surfaces (`ink`,
-`alarm`), which flip *with* the scheme so they stay the opposite of it.
+the quiet washes, the glass tint, and every blue plate, which moves to the
+deep end of the ramp: `ink` goes `blue[200]` to `blue[800]`, `alarm` goes
+`blue[300]` to `blue[700]`, `night` goes `blue[100]` to `blue[900]`, and the
+navy plate goes `blue[800]` to `blue[200]`. A light blue plate with ink text
+becomes a deep blue plate with light text; it never becomes black.
 
 **What does not invert:**
 
-- **The night ground.** Rounds is the app in dark mode, whatever the scheme.
-  `night*` has one set of values.
 - **The white plate** (`Slab tone="cream"`, `white`). White is white.
 - **The blue.** The accent moves along the ramp instead: `blue[600]` on white
   (6.6:1 with white text), `blue[300]` on black (7.9:1 with black text). Text
   on an accent plate is `onAccent`: white in light, the near-black paper in
   dark. A light blue with white text is the failure the ramp exists to avoid.
-- **Meaning.** Inversion still means alarm, the accent still means pointing,
-  a hollow ring still means OK. A dark screen is not a night screen and not an
-  alarm screen; it is the same screen with the lights off.
+- **Meaning.** The blue ground and the navy plate still mean alarm, the
+  accent still means pointing, a hollow ring still means OK. A dark screen is
+  not a night screen and not an alarm screen; it is the same screen with the
+  lights off.
 
 **A dark wash is not an inverted light wash.** `washTone.day` in dark mode is
 the night ramp, not the day ramp with its colours flipped: the warm bloom is
 halved (light pooling on black reads as glare), the bloom is blue-grey rather
 than white, and the grain is heavier (7% against 4%) because on black it is
-the only texture the eye has. `alarm` in dark mode is a white ramp with a
-faint ink corner: the takeover has to look lit, not merely pale.
+the only texture the eye has. `night` and `alarm` in light mode pool from
+white into their blue; in dark mode from a lighter blue into a deeper one.
 
 **Shadows are replaced, not dimmed.** On a dark ground `Card`, `StatTile` and
 `CitationChip` draw a 1px `line` edge instead of an elevation. `Slab
@@ -252,27 +281,49 @@ Measured (WCAG relative luminance), body text against its ground:
 | `accent` as text on `paper` | 6.1:1 | 7.9:1 |
 | `accent` as text on `accentWash` (chips, tags) | 5.7:1 | 6.1:1 |
 | `onAccent` on `accent` (primary button label) | 6.6:1 | 7.8:1 |
-| white on the takeover ground / ink on it in dark | 18.7:1 | 18.7:1 |
-| `onDark.muted` on an ink plate / `onLight.muted` on a white plate | 6.7:1 | 4.8:1 |
+| ink on `inverse` (the ink `Slab`) | 11.7:1 | 12.1:1 |
+| `onLight.muted` / `onDeep.muted` on the ink `Slab` | 6.2:1 | 7.3:1 |
+| ink on `alarm` (the takeover ground) | 8.3:1 | 8.8:1 |
+| `.soft` on the takeover (captions at 80%) | 5.5:1 | 6.8:1 |
+| `.muted` on the takeover (`DataLabel`, ladder stamps) | 5.0:1 | 5.6:1 |
+| ink on `inverseRaised` (the alarm `Slab`) | 14.9:1 | 12.1:1 |
+| `nightInk` on `night` (Rounds) | 14.9:1 | 15.0:1 |
+| `nightMuted` on `night` / on `nightRaised` | 6.2:1 / 7.8:1 | 8.2:1 / 6.6:1 |
+| `onPlate` on `plate` (`Btn inverse`, the alerting chip) | 13.4:1 | 11.7:1 |
+| the surface accent as text on the ink `Slab` | 6.1:1 | 8.3:1 |
+| the surface accent as text on the takeover | **4.3:1** | 6.1:1 |
 
-Every text pair clears AA (4.5:1); the `readout`/`data` display numbers sit on
-the same grounds and clear 3:1 by a wide margin. `inkFaint` (the chevron, a
+Every text pair clears AA (4.5:1) except the last: the accent as *small text*
+on the light takeover is 4.3:1, which is why the takeover has no accent text
+(its buttons are the navy plate and `outline`; its tags are ink). `Btn
+primary` on the takeover would be legible (white on `blue[600]`) but its edge
+would be 2.9:1 against the ground; do not put one there. `onLight.muted` moved
+from 0.62 to 0.74 alpha for this table: at 0.62 it was 3.8:1 on `blue[300]`.
+The `readout`/`data` display numbers sit on the same grounds and clear 3:1 by
+a wide margin. `inkFaint` (the chevron, a
 placeholder) is decorative and does not: 2.8:1 light, 3.3:1 dark. Adjacent
 bands of the room ramp are 1.3 to 1.5:1 apart, which is the cost named above.
 
 ## Type — SF for chrome, mono for machines, serif for her
 
-- **SF (system) is the app.** `hero` 34 (a screen's one big sentence, on a
-  screen without a native large title), `display` 30 (the alert headline and
-  a question that is the whole screen), `title` 22, `heading` 20 (Marquee),
-  `body` 17, `label` 15/600, `caption` 13, `tag` 13/600 (chips, tags, row
-  labels), `button` 17/600, `stat` 22 (tiles). Hierarchy comes from weight,
-  not size.
-- **Menlo (`mono.*`) is the machine voice.** `readout` 46 (a slab counter),
-  `data` 26, `mono` 15, `stamp` 12, `micro` 10 uppercase (`DataLabel`). Tabular
-  figures so a live number never shifts its own layout.
+- **Six sizes, no more: 11, 13, 17, 22, 30, 40.** Each step is a real jump
+  (about 1.3x). Every `type.*` and `mono.*` key is an alias onto one of them;
+  two keys at the same size differ by weight, never by a private size.
+- **SF (system) is the app.** `hero` 40/800 (a screen's one big sentence),
+  `display` 30/800 (the alert headline, a question that is the whole screen),
+  `title` 22/700 = `heading` (Marquee) = `stat` (a tile's figure), `body` 17,
+  `label` = `button` = body at 600, `caption` 13, `tag` = caption at 600.
+  Line-height and tracking are one rule each: display sizes (22 and up) take
+  1.12x and -(size/40); text sizes take 1.35x and 0.
+- **Menlo (`mono.*`) is the machine voice**, on the same six sizes. `readout`
+  40 (a slab counter; = hero), `data` 22 (= title), `mono` 13 = `stamp` 13,
+  `micro` 11 uppercase, tracked +1 (`DataLabel`). Tabular figures so a live
+  number never shifts its own layout.
+- **Screen titles are the native bar's**, compact and centred (`lib/nav.tsx`):
+  no large title, so a screen's first row starts about 60pt higher. The bar is
+  translucent; content scrolls under it.
 - **Fraunces survives for one job:** her own quoted words, `kind="quote"`.
-  Content, never chrome.
+  Content, never chrome. Set at the title size, as prose.
 
 **Uppercase and mono are for machine words only**: FPS, LATENCY, SOURCE, REC,
 a count, a timestamp, a band id, a request path. If a person would say the

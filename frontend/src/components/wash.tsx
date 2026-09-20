@@ -3,10 +3,11 @@
 // that fake a mesh gradient, and 64x64 grain at 4%.
 //
 // The ramps live in tokens (`washTone`, resolved per scheme by `useTheme`).
-// `day` is white pooling to a blue-grey corner in light mode and the night
-// ramp in dark mode; `alarm` is the takeover's ground, which is the inverse of
-// the scheme. A dark wash is not an inverted light wash: the blooms are
-// dimmer and the grain heavier, because light on black reads as glare.
+// `day` is white pooling to a blue-grey corner in light mode and the black
+// ramp in dark mode; `night` and `alarm` are the two blue grounds, pale in
+// light and deep in dark. A deep wash is not an inverted light wash: the
+// blooms are dimmer and the grain heavier, because light on a deep plate
+// reads as glare.
 //
 // ponytail: expo-linear-gradient has no radial mode, so a "bloom" is a linear
 // gradient fading to a zero-alpha copy of ITS OWN colour along a diagonal.

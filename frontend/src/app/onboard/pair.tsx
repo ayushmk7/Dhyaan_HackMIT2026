@@ -4,23 +4,27 @@
 // a band row with that id against this resident, and refuses only when the id
 // already belongs to SOMEONE ELSE. It cannot check that a band with those six
 // digits exists, because nothing has heard from it yet. So this screen does
-// not say "Band connected" — it says what is true: the hub has this id on
+// not say "Band connected". It says what is true: the hub has this id on
 // file, here is the id it recorded, check it against the band, and it counts
 // as connected the moment the band sends its first reading.
+//
+// The code field owns the screen until the hub answers; then the recorded
+// band id does, on the one tinted plate this screen ever draws.
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 import {
-  Btn, Card, DataLabel, Entrance, ErrorState, Field, Marquee, Rule, Screen, Txt,
+  Btn, DataLabel, Entrance, ErrorState, Field, Marquee, Screen, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { onboard } from '@/lib/copy/staff';
-import { sp } from '@/theme/tokens';
+import { radius, sp, useTheme } from '@/theme';
 import { useSession } from '@/store/session';
 
 const copy = onboard.pair;
 
 export default function Pair() {
+  const t = useTheme();
   const { residentName } = useSession();
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -52,7 +56,7 @@ export default function Pair() {
     >
       <Entrance index={0}>
         <Marquee first title={copy.title(residentName)} />
-        <Txt kind="body">
+        <Txt kind="caption" tone="muted">
           {copy.intro}
         </Txt>
       </Entrance>
@@ -62,13 +66,13 @@ export default function Pair() {
         <Field
           code
           value={code}
-          onChangeText={(t) => { setCode(t.replace(/\D/g, '').slice(0, 6)); setError(null); }}
+          onChangeText={(v) => { setCode(v.replace(/\D/g, '').slice(0, 6)); setError(null); }}
           keyboardType="number-pad"
           maxLength={6}
           placeholder={copy.codePlaceholder}
           editable={!paired}
           accessibilityLabel={copy.codeA11y}
-          style={{ marginTop: sp(7) }}
+          style={{ marginTop: sp(8) }}
         />
       </Entrance>
 
@@ -80,26 +84,30 @@ export default function Pair() {
 
       {!!paired && (
         <Entrance index={2}>
-          <Card style={{ marginTop: sp(6) }}>
+          <View
+            style={{
+              marginTop: sp(6),
+              padding: sp(4.5),
+              borderRadius: radius.glass,
+              backgroundColor: t.accentWash,
+            }}
+          >
             <DataLabel value={paired.bandId}>{copy.bandOnFile}</DataLabel>
-            <Rule style={{ marginTop: sp(2.5) }} />
             <Txt kind="body" style={{ marginTop: sp(3) }}>
               {copy.recorded(residentName)}
             </Txt>
-            <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>{/* voice-ok */}
-              {copy.checkDigits}
-            </Txt>
-            <Btn
-              kind="quiet"
-              label={copy.differentCode}
-              style={{ marginTop: sp(4) }}
-              onPress={() => { setPaired(null); setCode(''); }}
-            />
-          </Card>
+          </View>
+          <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>{/* voice-ok */}
+            {copy.checkDigits}
+          </Txt>
+          <Btn
+            kind="link"
+            label={copy.differentCode}
+            style={{ marginTop: sp(2), alignSelf: 'flex-start' }}
+            onPress={() => { setPaired(null); setCode(''); }}
+          />
         </Entrance>
       )}
-
-      <View style={{ height: sp(6) }} />
     </Screen>
   );
 }

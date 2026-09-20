@@ -4,9 +4,10 @@
 // black, and the greys between white and black. Blue is the ONE accent, and it
 // means one thing: Dhyaan is pointing at something (a control it offers, a
 // thing it noticed, a state worth a look). OK has no colour at all. Alarm is
-// not a colour either; it is INVERSION: the takeover, the alerting tile and
-// the alerting chip are the only surfaces drawn in the opposite scheme
-// (white on black in light mode, black on white in dark mode). Category is
+// not a colour either; it is DEPTH on the blue ramp: the focal plates (a
+// Slab, the night ground, the takeover) are light blue with ink text, and the
+// takeover is the deepest light blue there is, under a heavy rule, with the
+// one navy plate button. Nothing in the light app is black. Category is
 // carried by the SF glyph and the label word, never by a tint. See
 // docs/frontend-DESIGN.md, "Colour".
 //
@@ -59,22 +60,29 @@ export type Palette = {
   /** Text on an `accent` plate. White in light; the near-black paper in dark. */
   onAccent: string;
 
-  /** The inverse plate: the opposite scheme's ground. This is what alarm is. */
+  /**
+   * The focal plate (an ink `Slab`, `Mark`, the alerting wash). Historical
+   * name: it used to be the opposite scheme's ground. It is now a light blue
+   * plate in light mode (`blue[200]`) and a deep blue one in dark (`blue[800]`).
+   */
   inverse: string;
-  /** A plate one step back from `inverse` (the takeover's readout slab). */
+  /** The takeover's readout slab, and the alerting tile on Floor: one step lighter than the takeover. */
   inverseRaised: string;
-  /** Text on `inverse`. */
+  /** Text on `inverse`: the scheme's ink. */
   onInverse: string;
+  /** The takeover ground. The deepest light blue (`blue[300]`); `blue[700]` in dark. */
+  alarm: string;
   /** Pure white, in either scheme. Only for a plate that must stay white. */
   white: string;
 
-  // The night ground (Rounds): the app in dark mode, whatever the scheme.
+  // The night ground (Rounds, the camera monitor pane): a light blue page in
+  // light mode, a deep blue one in dark. Never black.
   night: string;
   nightRaised: string;
   nightInk: string;
   nightMuted: string;
   nightLine: string;
-  /** The burned-in caption bar over the camera pane. */
+  /** The caption bar over the camera pane. */
   nightScrim: string;
 
   // ---- Deprecated hue names -------------------------------------------------
@@ -90,7 +98,7 @@ export type Palette = {
   ochre: string;
   /** @deprecated Resolves to `accentWash`. */
   ochreWash: string;
-  /** @deprecated Alarm is inversion, not a colour. Resolves to `inverse`. */
+  /** @deprecated Alarm is not a colour. Resolves to `inverse`. */
   rust: string;
   /** @deprecated Resolves to `inverseRaised`. */
   rustDeep: string;
@@ -122,19 +130,32 @@ export const blue = {
 
 const INK = '#0B1220';
 const WHITE = '#FFFFFF';
+// The DARK SCHEME's page and its text. These are the only near-blacks left,
+// and they are the dark scheme's paper, not a device drawn on the light one.
 const NIGHT = '#0B0F16';
 const NIGHT_RAISED = '#151B24';
 const NIGHT_INK = '#F2F4F8';
 const NIGHT_MUTED = '#A3ACB9';
 const NIGHT_LINE = '#26303D';
 
-const night = {
-  night: NIGHT,
-  nightRaised: NIGHT_RAISED,
+// The night ground, per scheme. Light: a light blue page (Rounds at night is
+// still a page you can read in daylight). Dark: a deep blue page, one step
+// bluer than the dark paper, so Rounds is still its own place.
+const lightNight = {
+  night: blue[100],
+  nightRaised: WHITE,
+  nightInk: INK,
+  nightMuted: '#46536A',     // 6.2:1 on night, 7.9:1 on nightRaised
+  nightLine: blue[200],
+  nightScrim: 'rgba(220,230,249,0.88)',
+} as const;
+const darkNight = {
+  night: blue[900],
+  nightRaised: blue[800],
   nightInk: NIGHT_INK,
-  nightMuted: NIGHT_MUTED,
-  nightLine: NIGHT_LINE,
-  nightScrim: 'rgba(11,15,22,0.82)',
+  nightMuted: '#A9B7D1',     // 8.2:1 on night, 6.6:1 on nightRaised
+  nightLine: blue[700],
+  nightScrim: 'rgba(10,29,68,0.86)',
 } as const;
 
 /** The LIGHT palette. Light-only: components call `useTheme()` instead. */
@@ -158,19 +179,20 @@ export const palette: Palette = {
   accentGhost: 'rgba(31,86,194,0.06)',
   onAccent: WHITE,
 
-  inverse: INK,
-  inverseRaised: '#1A2332',
-  onInverse: WHITE,
+  inverse: blue[200],       // 11.7:1 with ink text
+  inverseRaised: blue[100], // 14.9:1 with ink text
+  onInverse: INK,
+  alarm: blue[300],         // 8.3:1 with ink text
   white: WHITE,
 
-  ...night,
+  ...lightNight,
 
   moss: INK,
   mossWash: '#E6EAF1',
   ochre: blue[600],
   ochreWash: blue[50],
-  rust: INK,
-  rustDeep: '#1A2332',
+  rust: blue[200],
+  rustDeep: blue[100],
   rustWash: '#E6EAF1',
   amber: blue[600],
   amberWash: blue[50],
@@ -198,49 +220,63 @@ export const darkPalette: Palette = {
   accentGhost: 'rgba(138,174,234,0.08)',
   onAccent: NIGHT,
 
-  inverse: WHITE,
-  inverseRaised: '#F3F5F9',
-  onInverse: INK,
+  inverse: blue[800],       // 12.1:1 with nightInk text
+  inverseRaised: blue[800], // one hairline back from the blue[700] takeover
+  onInverse: NIGHT_INK,
+  alarm: blue[700],         // 8.8:1 with nightInk text
   white: WHITE,
 
-  ...night,
+  ...darkNight,
 
   moss: NIGHT_INK,
   mossWash: '#1B2330',
   ochre: blue[300],
   ochreWash: '#182740',
-  rust: WHITE,
-  rustDeep: '#F3F5F9',
+  rust: blue[800],
+  rustDeep: blue[800],
   rustWash: '#1B2330',
   amber: blue[300],
   amberWash: '#182740',
   amberGhost: 'rgba(138,174,234,0.08)',
 };
 
-// Text and rules on a dark plate (an ink Slab in light mode, the night ground,
-// the takeover in light mode). Four alphas and no more.
-export const onDark = {
+// Ink and rules on a light plate: every plate in the light scheme (a Slab,
+// the night ground, the takeover, the white plate) and the white plate in the
+// dark scheme. Seven alphas and no more. `muted` is 0.74, not 0.62, because it
+// has to clear AA on the takeover's blue[300] (5.0:1 there; 6.2:1 on a Slab).
+export const onLight = {
+  ink: INK,
+  soft: 'rgba(11,18,32,0.78)',    // a caption, a sub-line
+  muted: 'rgba(11,18,32,0.74)',   // a DataLabel's label, metadata
+  rule: 'rgba(11,18,32,0.60)',    // a hard rule
+  line: 'rgba(11,18,32,0.26)',    // a hairline, an outline
+  wash: 'rgba(255,255,255,0.55)', // a quiet fill on a blue plate: a lighter pool
+  pressed: 'rgba(255,255,255,0.80)',
+} as const;
+
+/**
+ * Light text and rules on a DEEP plate: the dark scheme's paper and its deep
+ * blue plates (an ink Slab, the night ground, the takeover in dark mode).
+ * The mirror of `onLight`, alpha for alpha. `muted` is 0.70 so it clears AA
+ * on the dark takeover's blue[700] (5.6:1).
+ */
+export const onDeep = {
   ink: WHITE,
-  soft: 'rgba(255,255,255,0.78)',   // a caption, a sub-line
-  muted: 'rgba(255,255,255,0.62)',  // a DataLabel's label, metadata
-  rule: 'rgba(255,255,255,0.55)',   // a hard rule
-  line: 'rgba(255,255,255,0.28)',   // a hairline, an outline
-  wash: 'rgba(255,255,255,0.15)',   // a quiet fill (icon button, pulse core)
+  soft: 'rgba(255,255,255,0.80)',
+  muted: 'rgba(255,255,255,0.70)',
+  rule: 'rgba(255,255,255,0.60)',
+  line: 'rgba(255,255,255,0.28)',
+  wash: 'rgba(255,255,255,0.15)',
   pressed: 'rgba(255,255,255,0.12)',
 } as const;
 
-// Text and rules on a white plate that sits on a dark screen (the Rounds
-// counter, an ink Slab in dark mode, the takeover in dark mode). The mirror
-// of `onDark`, alpha for alpha.
-export const onLight = {
-  ink: INK,
-  soft: 'rgba(11,18,32,0.78)',
-  muted: 'rgba(11,18,32,0.62)',
-  rule: 'rgba(11,18,32,0.55)',
-  line: 'rgba(11,18,32,0.22)',
-  wash: 'rgba(11,18,32,0.08)',
-  pressed: 'rgba(11,18,32,0.12)',
-} as const;
+/**
+ * @deprecated The plates that used to be dark are light blue now, so "text on
+ * a dark plate" resolves to INK: the same values as `onLight`. It is a static
+ * light-scheme view; a component should read `useSurfaceColors()` instead,
+ * which follows the scheme (in dark mode those plates take `onDeep`).
+ */
+export const onDark = onLight;
 
 /** @deprecated The cream plate is a white plate now. Same values as `onLight`. */
 export const onCream = onLight;
@@ -255,7 +291,7 @@ export type ResidentState = 'ok' | 'learning' | 'attention' | 'alerting' | 'offl
  *   hollow   a ring, no fill: nothing is being pointed at (OK, learning)
  *   flat     a filled grey dot: no signal (offline)
  *   filled   a filled accent dot: worth a look
- *   inverse  the opposite scheme's plate: needs someone now
+ *   inverse  the gravest plate (navy on light, light blue on deep): needs someone now
  */
 export type StateForm = 'hollow' | 'flat' | 'filled' | 'inverse';
 export type StateStyle = { fg: string; wash: string; word: string; form: StateForm };
@@ -264,7 +300,7 @@ export type ZoneColor = Record<string, string>;
 export type AvatarGradient = Record<'green' | 'amber' | 'blue', readonly [string, string]>;
 export type WashRamp = {
   base: readonly [string, string, string]; warm: string; cool: string; grain: number;
-  /** A dark ramp halves its warm bloom: light pooling on black reads as glare. */
+  /** A deep ramp halves its warm bloom: light pooling on a deep plate reads as glare. */
   dark: boolean;
 };
 export type WashTones = Record<'day' | 'night' | 'alarm', WashRamp>;
@@ -288,7 +324,8 @@ export type Semantics = {
   glass: GlassTokens;
 };
 
-// The night ramp is the same in both schemes: Rounds is the app in dark mode.
+// The dark scheme's page ramp: the only ramp that goes to black, because the
+// dark paper is black.
 const NIGHT_WASH: WashRamp = {
   base: [NIGHT_RAISED, NIGHT, NIGHT], warm: '80,110,160', cool: '0,0,0', grain: 0.07, dark: true,
 };
@@ -297,6 +334,9 @@ const NIGHT_WASH: WashRamp = {
 export const buildSemantics = (p: Palette, scheme: 'light' | 'dark'): Semantics => {
   const dark = scheme === 'dark';
   return {
+    // `alerting` is the focal plate with ink on it; the StateChip draws it as
+    // the surface's navy plate (`surfaceColors().plate`), the loudest thing a
+    // chip can be without a hue of its own.
     stateColor: {
       ok: { fg: p.ink, wash: p.slateWash, word: 'OK', form: 'hollow' },
       learning: { fg: p.inkMuted, wash: p.slateWash, word: 'Learning her routine', form: 'hollow' },
@@ -340,34 +380,40 @@ export const buildSemantics = (p: Palette, scheme: 'light' | 'dark'): Semantics 
       : { green: [blue[700], blue[900]], amber: [blue[500], blue[700]], blue: ['#2A3646', INK] },
 
     // The atmospheric ground's ramps and blooms. `day` is the page: white
-    // pooling to a blue-grey corner in light; the night ramp in dark. `alarm`
-    // is the takeover: the inverse ground, so it flips with the scheme.
+    // pooling to a blue-grey corner in light; the black ramp in dark. `night`
+    // and `alarm` are the two blue grounds: in light they pool from white
+    // into their blue, in dark from a lighter blue into a deeper one.
     washTone: {
       day: dark
         ? NIGHT_WASH
         : { base: [WHITE, '#F8FAFD', p.paper], warm: '255,255,255', cool: '185,205,235', grain: 0.04, dark: false },
-      night: NIGHT_WASH,
+      night: dark
+        ? { base: [blue[800], blue[900], blue[900]], warm: '138,174,234', cool: '0,0,0', grain: 0.07, dark: true }
+        : { base: [blue[50], blue[100], blue[100]], warm: '255,255,255', cool: '138,174,234', grain: 0.04, dark: false },
       alarm: dark
-        ? { base: [WHITE, '#F3F5F9', '#F3F5F9'], warm: '255,255,255', cool: '11,18,32', grain: 0.05, dark: false }
-        : { base: ['#1A2332', INK, INK], warm: '255,255,255', cool: '0,0,0', grain: 0.07, dark: true },
+        ? { base: ['#1A4AA8', blue[700], blue[800]], warm: '255,255,255', cool: '0,0,0', grain: 0.06, dark: true }
+        : { base: [blue[200], blue[300], blue[300]], warm: '255,255,255', cool: '23,63,145', grain: 0.05, dark: false },
     },
 
     // Glass constants. Tints are near-colourless: glass borrows its colour from
-    // whatever scrolls beneath. `alarm` is the inverse of the scheme.
+    // whatever scrolls beneath. `night` and `alarm` sit on the blue grounds, so
+    // they are light glass in light mode and deep glass in dark.
     glass: {
       tint: {
         neutral: dark ? 'rgba(11,15,22,0.22)' : 'rgba(255,255,255,0.10)',
-        night: 'rgba(11,15,22,0.22)',
-        alarm: dark ? 'rgba(255,255,255,0.12)' : 'rgba(11,18,32,0.24)',
+        night: dark ? 'rgba(10,29,68,0.30)' : 'rgba(255,255,255,0.18)',
+        alarm: dark ? 'rgba(15,44,102,0.30)' : 'rgba(255,255,255,0.22)',
       },
       fallback: {
         neutral: dark
           ? { fill: 'rgba(21,27,36,0.86)', line: 'rgba(255,255,255,0.10)' }
           : { fill: 'rgba(255,255,255,0.82)', line: 'rgba(255,255,255,0.75)' },
-        night: { fill: 'rgba(21,27,36,0.86)', line: 'rgba(255,255,255,0.10)' },
+        night: dark
+          ? { fill: 'rgba(15,44,102,0.86)', line: 'rgba(255,255,255,0.12)' }
+          : { fill: 'rgba(238,243,252,0.86)', line: 'rgba(11,18,32,0.10)' },
         alarm: dark
-          ? { fill: 'rgba(255,255,255,0.86)', line: 'rgba(11,18,32,0.12)' }
-          : { fill: 'rgba(11,18,32,0.80)', line: 'rgba(255,255,255,0.22)' },
+          ? { fill: 'rgba(15,44,102,0.88)', line: 'rgba(255,255,255,0.16)' }
+          : { fill: 'rgba(220,230,249,0.88)', line: 'rgba(11,18,32,0.14)' },
       },
       blur: { thin: 12, regular: 22, thick: 36 },
     },
@@ -397,7 +443,7 @@ export const radius = {
 export const size = { hit: 44, control: 40, button: 52, buttonSmall: 44 } as const;
 
 // One soft elevation for every white card. Never borders in light mode; in dark
-// mode a shadow on black is invisible, so Card draws a hairline instead.
+// mode a shadow on a deep ground is invisible, so Card draws a hairline instead.
 export const cardShadow = {
   shadowColor: INK,
   shadowOpacity: 0.06,
@@ -417,23 +463,60 @@ export const font = {
   serif: 'Fraunces_400Regular',
 } as const;
 
-// SF everywhere. Screen titles belong to the native navigation bar, not to us.
-// The serif exists for exactly one thing: Eleanor's own quoted words (content,
-// never chrome). An app whose chrome speaks in a display serif is a website.
+// SF everywhere. Screen titles belong to the native navigation bar (compact,
+// centred; see lib/nav.tsx), not to us. The serif exists for exactly one
+// thing: Eleanor's own quoted words (content, never chrome). An app whose
+// chrome speaks in a display serif is a website.
+//
+// THE SCALE. Six sizes and no more: 11, 13, 17, 22, 30, 40. Each step is a
+// real jump (about 1.3x), so the big things are genuinely big and the small
+// things genuinely small; two sizes a point apart are not a hierarchy, they
+// are drift. Every key below is an ALIAS onto one of the six. Same size, two
+// jobs? Weight tells them apart (`label` is `body` at 600; `tag` is `caption`
+// at 600), never a private size.
+//
+// Line-height and tracking are one rule each, not hand-picked per entry:
+//   display sizes (>= 22): line-height 1.12x, tracking -(size / 40)
+//   text sizes   (< 22):   line-height 1.35x, tracking 0
+//   prose (the serif quote): the text ratio, whatever the size
+export const scale = { micro: 11, caption: 13, body: 17, title: 22, display: 30, hero: 40 } as const;
+
+const lh = (size: number, prose = false) => Math.round(size * (size >= 22 && !prose ? 1.12 : 1.35));
+const track = (size: number) => (size >= 22 ? -(size / 40) : 0);
+const step = <W extends TextStyle['fontWeight']>(size: number, fontWeight: W, prose = false) =>
+  ({ fontSize: size, lineHeight: lh(size, prose), fontWeight, letterSpacing: track(size) }) as const;
+
+const HERO = step(scale.hero, '800' as const);
+const DISPLAY = step(scale.display, '800' as const);
+const TITLE = step(scale.title, '700' as const);
+const BODY = step(scale.body, '400' as const);
+const STRONG = step(scale.body, '600' as const);
+const CAPTION = step(scale.caption, '400' as const);
+const CAPTION_STRONG = step(scale.caption, '600' as const);
+
 export const type = {
-  // `hero` kept as a compat alias for the camera-lane screens; SF like all chrome.
-  hero: { fontSize: 34, lineHeight: 40, fontWeight: '800' as const, letterSpacing: -0.8 },
-  display: { fontSize: 30, lineHeight: 36, fontWeight: '800' as const, letterSpacing: -0.6 }, // alert headline only
-  title: { fontSize: 22, lineHeight: 28, fontWeight: '700' as const, letterSpacing: -0.4 },
-  heading: { fontSize: 20, lineHeight: 25, fontWeight: '700' as const, letterSpacing: -0.4 }, // in-screen section (Health-style)
-  stat: { fontSize: 22, lineHeight: 26, fontWeight: '700' as const, letterSpacing: -0.3 },
-  body: { fontSize: 17, lineHeight: 24 }, // iOS body default (HIG)
-  label: { fontSize: 15, lineHeight: 20, fontWeight: '600' as const },
-  caption: { fontSize: 13, lineHeight: 18 },
-  tag: { fontSize: 13, lineHeight: 18, fontWeight: '600' as const },   // chip, tag and row-label text
-  button: { fontSize: 17, lineHeight: 22, fontWeight: '600' as const }, // Btn labels
-  // The serif's one job: Eleanor's own quoted words. Content, never chrome.
-  quote: { fontFamily: font.serif, fontSize: 19, lineHeight: 28 },
+  /** 40. A screen's one big sentence (the camera lane, a Presence headline). */
+  hero: HERO,
+  /** 30. The alert headline, a question that is the whole screen. */
+  display: DISPLAY,
+  /** 22. A title inside content. */
+  title: TITLE,
+  /** = title. The Marquee section heading. */
+  heading: TITLE,
+  /** = title. A tile's figure. */
+  stat: TITLE,
+  /** 17. Prose. The iOS body default. */
+  body: BODY,
+  /** = body, at 600. A row title, a field label. */
+  label: STRONG,
+  /** = body, at 600. A Btn label. */
+  button: STRONG,
+  /** 13. Metadata: a time, a count, a unit. */
+  caption: CAPTION,
+  /** = caption, at 600. A chip, a tag, a row label. */
+  tag: CAPTION_STRONG,
+  /** The serif's one job: her own quoted words, at the title size, set as prose. */
+  quote: { fontFamily: font.serif, fontSize: scale.title, lineHeight: lh(scale.title, true) },
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -484,12 +567,21 @@ export const motion = {
 const MONO = Platform.select({ ios: 'Menlo', default: 'monospace' }) as string;
 
 // Machine voice. Tabular figures so a live number never shifts its own layout.
-// NEVER used for human sentences. See DESIGN.md, the voice law.
+// NEVER used for human sentences. See DESIGN.md, the voice law. Same six sizes
+// as `type`, same line-height and tracking rules; `micro` is the one entry that
+// tracks OUT (+1), because it is the uppercase overline and caps need air.
+const monoStep = (size: number, letterSpacing = track(size)): TextStyle =>
+  ({ fontFamily: MONO, fontSize: size, lineHeight: lh(size), fontVariant: ['tabular-nums'], letterSpacing });
+
 export const mono: Record<'data' | 'big' | 'hero' | 'micro' | 'stamp', TextStyle> = {
-  // The one big counter on a slab (Needs a check 03). Not for prose, ever.
-  hero: { fontFamily: MONO, fontSize: 46, lineHeight: 50, fontVariant: ['tabular-nums'], letterSpacing: -1.5 },
-  data: { fontFamily: MONO, fontSize: 15, lineHeight: 20, fontVariant: ['tabular-nums'], letterSpacing: -0.2 },
-  big: { fontFamily: MONO, fontSize: 26, lineHeight: 30, fontVariant: ['tabular-nums'], letterSpacing: -1 },
-  micro: { fontFamily: MONO, fontSize: 10, lineHeight: 13, letterSpacing: 1.1, fontVariant: ['tabular-nums'] },
-  stamp: { fontFamily: MONO, fontSize: 12, lineHeight: 16, fontVariant: ['tabular-nums'], letterSpacing: 0 },
+  /** 40 (= type.hero). The one big counter on a slab (Needs a check 03). */
+  hero: monoStep(scale.hero),
+  /** 22 (= type.title). A tile's figure, a card's number. */
+  big: monoStep(scale.title),
+  /** 13 (= type.caption). A reading in a row. */
+  data: monoStep(scale.caption),
+  /** = data. A timestamp, a band id. */
+  stamp: monoStep(scale.caption),
+  /** 11, uppercase, tracked out. `DataLabel`. */
+  micro: monoStep(scale.micro, 1),
 };

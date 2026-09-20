@@ -33,7 +33,7 @@ import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area
 import { Glass, Txt, useReducedMotion, type GlassTone } from '@/components';
 import { Icon } from '@/components/icon';
 import { shell } from '@/lib/copy/staff';
-import { motion, radius, sp, useTheme } from '@/theme';
+import { motion, radius, sp, useTheme, mono } from '@/theme';
 
 // ---- geometry ------------------------------------------------------------------
 
@@ -150,7 +150,10 @@ export function FloatingTabBar({
               <Txt
                 kind="caption"
                 numberOfLines={1}
-                style={{ fontSize: 11, lineHeight: 13, fontWeight: focused ? '700' : '500', color }}
+                // The one tab-bar label style, on the scale: `micro` is the
+                // smallest step the type system has, and weight carries the
+                // focused state rather than a second size.
+                style={[mono.micro, { fontFamily: undefined, fontWeight: focused ? '700' : '500', color }]}
               >
                 {label}
               </Txt>

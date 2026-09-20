@@ -51,13 +51,13 @@ export function Marquee({
   /** Anything richer than `meta` (a button, a chip). Wins over `meta`. */
   right?: React.ReactNode;
   night?: boolean;
-  /** First section on the screen: no big top margin. */
+  /** First section on the screen: no top margin (the header/screen inset is the gap). */
   first?: boolean;
   style?: ViewStyle;
 }) {
   const c = useColors(night);
   return (
-    <View style={[{ marginTop: first ? 0 : sp(7), marginBottom: sp(2.5) }, style]}>
+    <View style={[{ marginTop: first ? 0 : sp(6), marginBottom: sp(2.5) }, style]}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: sp(3) }}>
         <Txt kind="heading" style={[{ flexShrink: 1 }, night === undefined ? {} : { color: c.ink }]}>
           {title}

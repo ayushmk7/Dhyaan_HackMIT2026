@@ -1,22 +1,28 @@
-// Night rounds: 23:00–07:00 mode. Only what deviated tonight, darkest screen
-// in the app — Marcus reads this in a dim corridor, so it is the most
-// instrument-like surface on the staff side: cream-on-black, tabular figures,
-// hard rules, no decoration.
+// Night rounds: 23:00 to 07:00 mode. Only what deviated tonight, on the
+// darkest screen in the app. Marcus reads this in a dim corridor, so it is the
+// most instrument-like surface on the staff side: light on the night ground,
+// tabular figures, hard rules, no decoration.
+//
+// The weights, top to bottom: one large count; whoever is alerting on a white
+// plate (the only inversion on the night ground); whoever is worth a look or
+// has gone quiet on a night card with the reason; and the roll call as one
+// dense line per resident. When nothing has deviated, the sentence saying so
+// is the large thing instead, and the roll call still shows each band's last
+// signal, because a rounds screen that renders one line tells the night nurse
+// nothing.
 //
 // It used to be permanently "All quiet tonight": it filtered `res_eleanor`
 // (the only seeded resident) out, then filtered what was left down to
-// `attention | alerting | offline` — and `backend/app/routers/residents.py`
+// `attention | alerting | offline`, and `backend/app/routers/residents.py`
 // only ever sends `alerting` or `ok`. Now it ranks on states that can actually
-// occur (see `(staff)/_layout.tsx`), and when nothing deviates it still shows
-// the roll call with each band's last signal, because a rounds screen that
-// renders one sentence tells the night nurse nothing.
+// occur (see `(staff)/_layout.tsx`).
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 import {
-  Card, DataLabel, EmptyState, ErrorState, LoadingState, Marquee, Row, RowGroup, Screen, Slab,
-  Stagger, StateChip, StatusDot, Txt,
+  Card, DataLabel, EmptyState, ErrorState, LoadingState, Marquee, Row, RowGroup, Rule, Screen,
+  Slab, Stagger, StatusDot, Txt,
 } from '@/components';
 import { readout, rounds as copy } from '@/lib/copy/staff';
 import { timeOf } from '@/lib/format';
@@ -28,6 +34,21 @@ import type { ResidentState } from '@/theme/tokens';
 import { NEEDS_EYES, TIER, deriveState, pad2, triageReason } from '../_layout';
 
 type RoundsItem = Resident & { state: ResidentState; reason: string | null };
+
+const seen = (r: Resident) => (r.last_seen ? timeOf(r.last_seen) : readout.noTime);
+
+function Telemetry({ r }: { r: Resident }) {
+  return (
+    <Row gap={3} style={{ flexWrap: 'wrap' }}>
+      {/* Staff-only whereabouts, D-001. */}
+      <DataLabel value={r.room ?? readout.none}>{copy.card.room}</DataLabel>
+      <DataLabel value={seen(r)}>{copy.card.seen}</DataLabel>
+      {r.band_battery_pct != null && (
+        <DataLabel value={`${r.band_battery_pct}%`}>{copy.card.band}</DataLabel>
+      )}
+    </Row>
+  );
+}
 
 export default function Rounds() {
   const t = useTheme();
@@ -53,8 +74,11 @@ export default function Rounds() {
     })
     .sort((a, b) => TIER[a.state] - TIER[b.state]);
 
-  const deviating = rows.filter((r) => NEEDS_EYES.includes(r.state));
+  const urgent = rows.filter((r) => r.state === 'alerting');
+  const watch = rows.filter((r) => r.state !== 'alerting' && NEEDS_EYES.includes(r.state));
   const quiet = rows.filter((r) => !NEEDS_EYES.includes(r.state));
+  const deviating = urgent.length + watch.length;
+  const open = (r: RoundsItem) => router.push(`/(staff)/triage/resident/${r.id}`);
 
   return (
     <Screen native tone="night" wash refreshControl={refreshControl}>
@@ -65,67 +89,78 @@ export default function Rounds() {
 
       {!isLoading && !isError && (
         <Stagger>
-          {/* Inverted: cream slab on the night ground. One such moment, here,
-              and the only takeover-tier surface outside the alert. */}
-          <Slab tone="cream" lift="takeover" style={{ paddingVertical: sp(4) }}>
-            <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }}>
+          {/* The one large number, in the night ink. */}
+          <View>
+            <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }} gap={4}>
               <View>
-                <DataLabel>{copy.slab.needsLook}</DataLabel>
-                <Txt kind="readout" style={{ marginTop: sp(1) }}>{pad2(deviating.length)}</Txt>
+                <Txt kind="readout">{pad2(deviating)}</Txt>
+                <DataLabel style={{ marginTop: sp(1) }}>{copy.slab.needsLook}</DataLabel>
               </View>
-              <View style={{ alignItems: 'flex-end', gap: sp(1.5) }}>
+              <View style={{ alignItems: 'flex-end', gap: sp(1.5), paddingBottom: sp(0.5) }}>
                 <DataLabel value={pad2(rows.length)}>{copy.slab.onFloor}</DataLabel>
                 <DataLabel value={dataUpdatedAt ? timeOf(new Date(dataUpdatedAt).toISOString()) : readout.noTime}>
                   {copy.slab.updated}
                 </DataLabel>
               </View>
             </Row>
-          </Slab>
+            <Rule weight="heavy" style={{ marginTop: sp(3) }} />
+          </View>
 
           <View>
-            <Marquee title={copy.needsLookTonight} meta={pad2(deviating.length)} />
-            {deviating.length === 0 ? (
-              <EmptyState>{copy.emptyQuiet}</EmptyState>
-            ) : (
+            <Marquee title={copy.needsLookTonight} meta={pad2(deviating)} style={{ marginTop: sp(5) }} />
+
+            {/* Inverted: a white plate on the night ground, for whoever is
+                alerting. The only takeover-tier surface outside the alert. */}
+            {urgent.map((r) => (
+              <Slab
+                key={r.id}
+                tone="cream"
+                lift="takeover"
+                onPress={() => open(r)}
+                accessibilityLabel={copy.card.a11y(r.display_name, r.room)}
+                style={{ marginBottom: sp(3) }}
+              >
+                <Txt kind="title" numberOfLines={1}>{r.display_name}</Txt>
+                {!!r.reason && <Txt kind="body" style={{ marginTop: sp(1.5) }}>{r.reason}</Txt>}
+                <Rule weight="hair" style={{ marginTop: sp(3.5) }} />
+                <View style={{ marginTop: sp(3) }}><Telemetry r={r} /></View>
+              </Slab>
+            ))}
+
+            {watch.length > 0 && (
               <View style={{ gap: sp(3) }}>
-                {deviating.map((r) => (
+                {watch.map((r) => (
                   <Pressable
                     key={r.id}
                     accessibilityRole="button"
                     accessibilityLabel={copy.card.a11y(r.display_name, r.room)}
-                    onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
+                    onPress={() => open(r)}
                   >
                     {({ pressed }) => (
                       <Card style={pressed ? { opacity: 0.7 } : undefined}>
-                        <Row style={{ justifyContent: 'space-between' }}>
-                          <Row gap={2} style={{ flex: 1 }}>
-                            <StatusDot state={r.state} />
-                            <Txt kind="label" numberOfLines={1} style={{ flex: 1 }}>
-                              {r.display_name}
-                            </Txt>
-                          </Row>
-                          <StateChip state={r.state} />
+                        <Row gap={2}>
+                          <StatusDot state={r.state} size={10} />
+                          <Txt kind="label" numberOfLines={1} style={{ flex: 1 }}>
+                            {r.display_name}
+                          </Txt>
+                          <Txt kind="stamp" tone="muted">{t.stateColor[r.state].word}</Txt>
                         </Row>
                         {!!r.reason && (
-                          <Txt kind="body" style={{ marginTop: sp(2) }}>
-                            {r.reason}
-                          </Txt>
+                          <Txt kind="body" style={{ marginTop: sp(2) }}>{r.reason}</Txt>
                         )}
-                        <Row gap={3} style={{ marginTop: sp(2.5), flexWrap: 'wrap' }}>
-                          {/* Staff-only whereabouts — D-001. */}
-                          <DataLabel value={r.room ?? readout.none}>{copy.card.room}</DataLabel>
-                          <DataLabel value={r.last_seen ? timeOf(r.last_seen) : readout.noTime}>
-                            {copy.card.seen}
-                          </DataLabel>
-                          {r.band_battery_pct != null && (
-                            <DataLabel value={`${r.band_battery_pct}%`}>{copy.card.band}</DataLabel>
-                          )}
-                        </Row>
+                        <View style={{ marginTop: sp(2.5) }}><Telemetry r={r} /></View>
                       </Card>
                     )}
                   </Pressable>
                 ))}
               </View>
+            )}
+
+            {deviating === 0 && rows.length > 0 && (
+              // The quiet night is the large sentence.
+              <Txt kind="title" style={{ marginTop: sp(2), paddingRight: sp(6) }}>
+                {copy.emptyQuiet}
+              </Txt>
             )}
           </View>
 
@@ -138,10 +173,10 @@ export default function Rounds() {
                     key={r.id}
                     accessibilityRole="button"
                     accessibilityLabel={copy.quietA11y(r.display_name)}
-                    onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
+                    onPress={() => open(r)}
                     style={({ pressed }) => [{ paddingVertical: sp(2.5) }, pressed && { opacity: 0.6 }]}
                   >
-                    <Row style={{ justifyContent: 'space-between' }}>
+                    <Row style={{ justifyContent: 'space-between' }} gap={3}>
                       <Row gap={2} style={{ flex: 1 }}>
                         <StatusDot state={r.state} size={8} />
                         <Txt kind="label" numberOfLines={1} style={{ flex: 1 }}>
@@ -152,9 +187,7 @@ export default function Rounds() {
                         <Txt kind="stamp" tone="muted">
                           {r.room ? copy.roomStamp(r.room) : readout.blank}
                         </Txt>
-                        <Txt kind="stamp" tone="muted">
-                          {r.last_seen ? timeOf(r.last_seen) : readout.noTime}
-                        </Txt>
+                        <Txt kind="stamp" tone="muted">{seen(r)}</Txt>
                       </Row>
                     </Row>
                   </Pressable>
@@ -164,7 +197,7 @@ export default function Rounds() {
           )}
 
           {rows.length === 0 && (
-            <EmptyState style={{ marginTop: sp(6) }}>{copy.emptyNoResidents}</EmptyState>
+            <EmptyState style={{ marginTop: sp(4) }}>{copy.emptyNoResidents}</EmptyState>
           )}
         </Stagger>
       )}

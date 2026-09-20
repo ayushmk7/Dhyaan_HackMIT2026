@@ -9,8 +9,10 @@
 // good for — filling in the step-by-step history when a backend sends one —
 // and the screen reads correctly either way.
 //
-// Everything white sits on vermilion, and vermilion means alarm and nothing
-// else in this app. The hard cream rules and the mono state readout are the
+// The takeover is the `alarm` tone, resolved by the theme; this file names no
+// colour of its own. What makes it unmistakable is not the ground but the
+// shape: her name at the top step of the scale, one heavy accent rule under
+// it, and one action pinned at the bottom. The mono state readout is the
 // counterweight: under the noise, this is a machine you can audit.
 //
 // Every sentence this screen says lives in lib/copy/family.ts under `alert`,
@@ -32,7 +34,7 @@ import { useAlert, useContacts, useResident } from '@/lib/hooks';
 import { emergencyLine, useCareFile } from '@/store/carefile';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
-import { sp } from '@/theme/tokens';
+import { sp, useTheme } from '@/theme';
 
 const copy = family.alert;
 
@@ -91,6 +93,7 @@ export default function AlertTakeover() {
   const { role, residentId, residentName, user } = useSession();
   const careFile = useCareFile();
   const emsLine = emergencyLine(careFile);
+  const t = useTheme();
   const { data: resident } = useResident(alert?.resident_id ?? '');
   const [closedNote, setClosedNote] = useState<string | null>(null);
   const player = useAudioPlayer(require('../../../assets/audio/dhyaan-urgent.wav'));
@@ -293,42 +296,43 @@ export default function AlertTakeover() {
 
   return (
     <Screen tone="alarm" wash floatingBar={bar} style={{ paddingHorizontal: sp(5) }}>
-      {/* Beat 0 — the machine's own header. Uppercase mono is correct here
-          and nowhere else on this screen: it is telemetry, not a sentence. */}
+      {/* Beat 0 — the sentence, and nothing above it. Ten seconds to read
+          that someone has fallen: the top step of the scale, then the one
+          heavy rule in the accent, then the machine's own header under it.
+          Uppercase mono is correct there and nowhere else on this screen. */}
       <Entrance index={0}>
-        <DataLabel value={alert ? timeOf(alert.opened_at) : ''}>
-          {copy.kind[alert?.kind ?? 'fall'] ?? copy.kind.fall}
-        </DataLabel>
-        <Rule style={{ marginTop: sp(2) }} />
-      </Entrance>
-
-      <Entrance index={1}>
-        <Txt kind="display" style={{ marginTop: sp(4) }}>
+        <Txt kind="hero" style={{ marginTop: sp(2) }}>
           {copy.headline(alert?.kind ?? 'fall', name)}
         </Txt>
+        <Rule weight="heavy" color={t.accent} style={{ marginTop: sp(4) }} />
+        <DataLabel value={alert ? timeOf(alert.opened_at) : ''} style={{ marginTop: sp(2.5) }}>
+          {copy.kind[alert?.kind ?? 'fall'] ?? copy.kind.fall}
+        </DataLabel>
       </Entrance>
 
-      <Entrance index={2}>{middle}</Entrance>
+      <Entrance index={1}>{middle}</Entrance>
 
-      <Entrance index={3}>
+      <Entrance index={2}>
         <Marquee title={copy.whatDone} />
         {ladder.length > 0 ? (
           <LadderTimeline steps={ladder} />
         ) : (
           // No ladder history over REST (lib/http.ts sends []). Show the
-          // machine's real position instead of an empty timeline.
-          <Slab tone="alarm" style={{ gap: sp(2.5) }}>
+          // machine's real position instead of an empty timeline. On the
+          // ground, not on a plate: the one plate on this screen is the
+          // paramedics' card, which is the thing that matters.
+          <View style={{ gap: sp(2.5) }}>
             <DataLabel value={alert?.state ?? '—'}>{copy.state}</DataLabel>
             <DataLabel value={alert ? timeOf(alert.opened_at) : '—'}>{copy.opened}</DataLabel>
-            <Txt kind="caption" style={{ opacity: 0.85, marginTop: sp(1) }}>
+            <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>
               {copy.noHistory}
             </Txt>
-          </Slab>
+          </View>
         )}
       </Entrance>
 
       {transcript.length > 0 && (
-        <Entrance index={4}>
+        <Entrance index={3}>
           <Marquee title={copy.hearing} />
           {transcript.map((line, i) => (
             <Txt
@@ -336,7 +340,7 @@ export default function AlertTakeover() {
               kind="body"
               style={
                 line.speaker === 'agent'
-                  ? { fontStyle: 'italic', fontSize: 16, lineHeight: 24, opacity: 0.8, marginBottom: sp(2) }
+                  ? { fontStyle: 'italic', opacity: 0.8, marginBottom: sp(2) }
                   : { fontWeight: '700', marginBottom: sp(2) }
               }
             >
@@ -346,9 +350,9 @@ export default function AlertTakeover() {
         </Entrance>
       )}
 
-      {/* Beat 5 — everything that is not the one commitment. The floating bar
+      {/* Beat 4 — everything that is not the one commitment. The floating bar
           below holds that, and only that. */}
-      <Entrance index={5}>
+      <Entrance index={4}>
         <Marquee title={copy.ratherYourself} />
         <View style={{ gap: sp(2.5) }}>
           {role === 'staff' ? (
@@ -369,10 +373,10 @@ export default function AlertTakeover() {
               {herPhone ? (
                 <Btn kind="outline" label={copy.call(name)} onPress={callHer} />
               ) : (
-                <Txt kind="caption" style={{ opacity: 0.8 }}>{copy.noNumberCalling(name)}</Txt>
+                <Txt kind="caption" tone="muted">{copy.noNumberCalling(name)}</Txt>
               )}
               <Btn kind="outline" label={copy.call911} onPress={call911} />
-              <Txt kind="caption" style={{ opacity: 0.8, textAlign: 'center' }}>
+              <Txt kind="caption" tone="muted" style={{ textAlign: 'center' }}>
                 {phase === 'final' ? copy.dialerNoteFinal : copy.dialerNote}
               </Txt>
             </>
@@ -381,7 +385,7 @@ export default function AlertTakeover() {
       </Entrance>
 
       {emsLine && (
-        <Entrance index={6}>
+        <Entrance index={5}>
           <Marquee title={copy.paramedics} />
           <Slab tone="alarm">
             <DataLabel>{copy.fromCareFile}</DataLabel>

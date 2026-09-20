@@ -452,8 +452,6 @@ export const onboard = {
   about: {
     questions: ABOUT_QUESTIONS,
     questionCounter: 'Question',
-    answered: 'Answered',
-    tapOne: 'Tap one, then make it hers',
     fieldLabel: 'What Dhyaan should remember',
     charCount: (n: number, max: number) => `${n} of ${max} characters`,
     storedAsSentence: 'This is stored as a sentence and read back to you when it’s used.',
@@ -473,7 +471,7 @@ export const onboard = {
     rejected: 'The hub didn’t accept that code.',
     bandOnFile: 'Band on file',
     recorded: (residentName: string) =>
-      `Her hub recorded that band as ${residentName}’s. It has not heard from the band itself yet — it will count as connected the moment the band sends its first reading.`, // voice-ok
+      `Her hub recorded that band as ${residentName}’s. It has not heard from the band itself yet. It will count as connected the moment the band sends its first reading.`,
     checkDigits: 'Check those digits against the ones printed on the band. The hub accepts any six digits, so a typo here would file her falls under a band nobody is wearing.',
     differentCode: 'Type a different code',
   },

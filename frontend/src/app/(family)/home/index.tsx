@@ -1,8 +1,9 @@
-// Today. One floating sentence about her, then the day in figures, then the
-// few things worth knowing — each section absent entirely when it has nothing
-// to say, because "nothing yet today" is the state this app opens in.
+// Today. A dashboard, not a wall: one answer at the top (is she okay, right
+// now), the day's four figures on one plate under it, and everything that is
+// only sometimes relevant folded into a short list of rows. Nothing on this
+// screen is a paragraph. Her day and Settings hold the rest.
 //
-// The status line is the server's presence sentence, room-free by design: a
+// The answer is the server's presence sentence, room-free by design: a
 // per-room breakdown is whereabouts, and whereabouts never reach a family
 // screen (VLM_PLAN §1/§5.2, D-001). Same reason there is no room-time bar here.
 //
@@ -15,8 +16,8 @@ import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Linking, RefreshControl, View } from 'react-native';
 import {
-  Card, Chevron, Entrance, ErrorState, Glass, Hairline, IconBtn, KindTag, LoadingState, Marquee,
-  MetricRow, PresenceHero, Row, RowGroup, Screen, Slab, StatTile, StatusDot, Txt,
+  DataLabel, Entrance, ErrorState, IconBtn, LoadingState, MetricRow, PresenceHero, Row, RowGroup,
+  Screen, Slab, StatusDot, Txt,
 } from '@/components';
 import { Avatar } from '@/components/avatar';
 import { family } from '@/lib/copy/family';
@@ -29,18 +30,9 @@ import type { ActivityItem, Presence } from '@/lib/types';
 import { useCareFile } from '@/store/carefile';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
-import { hue, sp, useTheme } from '@/theme';
+import { sp, useTheme } from '@/theme';
 
 const copy = family.home;
-
-const openerSymbol = (text: string): string => {
-  const t = text.toLowerCase();
-  if (t.includes('walk')) return 'figure.walk';
-  if (t.includes('dinner') || t.includes('meal') || t.includes('eat')) return 'fork.knife';
-  if (t.includes('sleep') || t.includes('night')) return 'moon.zzz';
-  return 'bubble.left';
-};
-
 
 /** The sentence a person reads; the band's fall record arrives as a log line. */
 const familySentence = (item: ActivityItem): string => {
@@ -49,7 +41,7 @@ const familySentence = (item: ActivityItem): string => {
   return displaySentence(item.sentence);
 };
 
-/** What the camera is doing — never where she is. */
+/** What the camera is doing. Never where she is. */
 function subline(p: Presence | undefined): string {
   if (!p) return ' ';
   if (p.status === 'no_camera') return copy.subline.noCamera;
@@ -67,7 +59,7 @@ function subline(p: Presence | undefined): string {
   return copy.subline.onNoticed(ago(p.last_observation_at));
 }
 
-/** When the server has no sentence yet, the hero says so plainly. */
+/** When the server has no sentence yet, the answer says so plainly. */
 function emptySentence(p: Presence | undefined, name: string): string {
   if (!p || p.status === 'no_camera') return copy.empty.nothingYet;
   if (!p.camera.consent) return copy.empty.cameraOff;
@@ -76,6 +68,9 @@ function emptySentence(p: Presence | undefined, name: string): string {
   }
   return copy.empty.nothingYet;
 }
+
+/** The missing-value glyph, for a figure nobody has counted yet. */
+const NONE = '–';
 
 export default function Today() {
   const t = useTheme();
@@ -88,10 +83,12 @@ export default function Today() {
   // Her own line rides on the roster projection now, so no extra request.
   const { data: resident } = useResident(residentId);
   // Real against the backend. `latestMessage` still legitimately resolves null
-  // in live mode (no endpoint exists), so its section simply isn't rendered.
+  // in live mode (no endpoint exists), so its row simply isn't rendered.
   const { data: prompts } = useTalkAbout();
   const { data: herMessage } = useLatestMessage();
   const nextAppt = useCareFile((s) => s.appointments[0]);
+  // The openers are one row until asked for.
+  const [openersShown, setOpenersShown] = useState(false);
 
   // The websocket is the fast path; the 15 s refetch is the belt under it.
   const presence = livePresence ?? fetched;
@@ -121,12 +118,23 @@ export default function Today() {
 
   const tiles = activity?.tiles;
   // "Last noticed" is the last thing it SAW. The feed also carries lines
-  // worked out from her pattern (the day's story, a deviation), and the
-  // nightly rollup stamps those with the moment it ran, so `items[0]` is
-  // often a story about the day rather than a sighting in it.
+  // worked out from her pattern, and the nightly rollup stamps those with the
+  // moment it ran, so `items[0]` is often a story about the day, not a sighting.
   const latest = activity?.items?.find((i) => i.kind === 'observed');
   const watching = !!presence && presence.status !== 'no_camera' && presence.camera.consent
     && presence.camera.online && presence.status !== 'paused';
+
+  // Meals and minutes in view are counted by the camera. When nothing is
+  // watching, a zero is not "she didn't eat", it is "nobody was looking", so
+  // those two go muted rather than pretending to be a reading.
+  const figures: { value: string; label: string; camera: boolean }[] = [
+    { value: tiles ? String(tiles.meals) : NONE, label: copy.tiles.meals, camera: true },
+    { value: tiles ? String(tiles.in_view_minutes) : NONE, label: copy.tiles.minutesInView, camera: true },
+    { value: tiles ? String(tiles.night_ups) : NONE, label: copy.tiles.upAtNight, camera: false },
+    { value: tiles ? String(tiles.out_of_house) : NONE, label: copy.tiles.timesOut, camera: false },
+  ];
+
+  const hasRows = !!latest || !!herMessage || !!prompts?.length || !!nextAppt;
 
   return (
     <Screen
@@ -136,53 +144,36 @@ export default function Today() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.inkMuted} />
       }
     >
-      {/* Beat 0 — the one sentence, floating over the ground. */}
+      {/* Beat 0. The answer: her name, the sentence, what the camera is doing.
+          Big type on bare paper, nothing around it. */}
       <Entrance index={0} distance={26}>
-        <Glass lift="float" interactive style={{ padding: sp(5) }}>
-          <Row style={{ justifyContent: 'space-between' }} gap={3}>
-            <Row gap={2.5} style={{ flex: 1 }}>
-              <Avatar name={residentName} size={38} />
-              <View style={{ flex: 1 }}>
-                <Txt kind="label" numberOfLines={1}>{residentName}</Txt>
-                <Row gap={1.5} style={{ marginTop: 1 }}>
-                  <StatusDot state={watching ? 'ok' : 'offline'} size={7} />
-                  <Txt kind="caption" tone="muted" numberOfLines={1} style={{ flex: 1 }}>
-                    {subline(presence)}
-                  </Txt>
-                </Row>
-              </View>
-            </Row>
-            <IconBtn
-              name="phone.fill"
-              label={phone ? copy.call(residentName) : copy.noPhoneFor(residentName)}
-              disabled={!phone}
-              onPress={() => phone && Linking.openURL(`tel:${phone}`)}
-            />
+        <Row style={{ justifyContent: 'space-between' }} gap={3}>
+          <Row gap={2.5} style={{ flex: 1 }}>
+            <Avatar name={residentName} size={32} />
+            <Txt kind="label" numberOfLines={1} style={{ flexShrink: 1 }}>{residentName}</Txt>
           </Row>
-
-          {!!presence?.sentence.trim() && !!presence.last_observation_at && (
-            <View style={{ marginTop: sp(4) }}>
-              <KindTag kind="observed" detail={ago(presence.last_observation_at)} />
-            </View>
-          )}
-          <PresenceHero
-            sentence={presence?.sentence ?? ''}
-            emptySentence={emptySentence(presence, residentName)}
-            style={{ marginTop: sp(3) }}
+          <IconBtn
+            name="phone.fill"
+            label={phone ? copy.call(residentName) : copy.noPhoneFor(residentName)}
+            disabled={!phone}
+            onPress={() => phone && Linking.openURL(`tel:${phone}`)}
           />
-        </Glass>
-
-        {/* Below the glass, not inside it: glass holds the heading, never prose. */}
-        {!phone && (
-          <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>
-            {copy.noPhoneExplained(residentName)}
+        </Row>
+        <PresenceHero
+          sentence={presence?.sentence ?? ''}
+          emptySentence={emptySentence(presence, residentName)}
+          style={{ marginTop: sp(5) }}
+        />
+        <Row gap={1.5} style={{ marginTop: sp(3) }}>
+          <StatusDot state={watching ? 'ok' : 'offline'} size={7} />
+          <Txt kind="caption" tone="muted" numberOfLines={1} style={{ flex: 1 }}>
+            {subline(presence)}
           </Txt>
-        )}
+        </Row>
       </Entrance>
 
-      {/* Beat 1 — the day, in figures. */}
-      <Entrance index={1}>
-        <Marquee title={copy.today} meta={localDayKey()} />
+      {/* Beat 1. The day in four figures, on the screen's one hard plate. */}
+      <Entrance index={1} style={{ marginTop: sp(7) }}>
         {activityError && (
           <ErrorState
             inline
@@ -191,117 +182,86 @@ export default function Today() {
             style={{ marginBottom: sp(3) }}
           />
         )}
-        <Row gap={3}>
-          {/* Both of these are counted by the camera. When nothing is
-              watching, a zero is not "she didn't eat", it is "nobody was
-              looking", so the badge goes grey instead of green. */}
-          <StatTile
-            icon="fork.knife"
-            state={tiles ? (watching ? 'ok' : 'unknown') : 'unknown'}
-            value={tiles ? String(tiles.meals) : '–'}
-            label={copy.tiles.meals}
-          />
-          <StatTile
-            icon="figure.walk"
-            state={tiles ? (watching ? 'ok' : 'unknown') : 'unknown'}
-            value={tiles ? String(tiles.in_view_minutes) : '–'}
-            label={copy.tiles.minutesInView}
-          />
-        </Row>
-        <Row gap={3} style={{ marginTop: sp(3) }}>
-          <StatTile
-            icon="moon.zzz.fill"
-            state={tiles ? 'ok' : 'unknown'}
-            value={tiles ? String(tiles.night_ups) : '–'}
-            label={copy.tiles.upAtNight}
-          />
-          <StatTile
-            icon="figure.walk.motion"
-            state={tiles ? 'ok' : 'unknown'}
-            value={tiles ? String(tiles.out_of_house) : '–'}
-            label={copy.tiles.timesOut}
-          />
-        </Row>
+        <Slab>
+          <DataLabel>{localDayKey()}</DataLabel>
+          <Row gap={2} style={{ marginTop: sp(3.5), alignItems: 'flex-start' }}>
+            {figures.map((f) => (
+              <View key={f.label} style={{ flex: 1 }}>
+                <Txt kind="data" tone={f.camera && !watching ? 'muted' : undefined} numberOfLines={1}>
+                  {f.value}
+                </Txt>
+                <Txt kind="caption" tone="muted" numberOfLines={2} style={{ marginTop: 2 }}>
+                  {f.label}
+                </Txt>
+              </View>
+            ))}
+          </Row>
+        </Slab>
       </Entrance>
 
-      {/* Beat 2 — the screen's one uncompromising surface: the last thing it
-          saw, printed hard. Absent when it hasn't seen anything. */}
-      {latest && (
-        <Entrance index={2}>
-          <Marquee title={copy.lastNoticed} meta={timeOf(latest.ts)} />
-          <Slab
-            accessibilityLabel={copy.openDetails(familySentence(latest))}
-            // Straight to this observation, not to the top of a list it may
-            // be halfway down.
-            onPress={() => router.push({
-              pathname: '/(family)/timeline/[eventId]',
-              params: { eventId: latest.id },
-            })}
-          >
-            <Txt kind="title">{familySentence(latest)}</Txt>
-            <Row style={{ justifyContent: 'space-between', marginTop: sp(4) }}>
-              {/* The three kinds stay labelled even here — especially here. */}
-              <KindTag kind={latest.kind} detail={timeOf(latest.ts)} />
-              <Chevron />
-            </Row>
-          </Slab>
-        </Entrance>
-      )}
-
-      {/* Beat 3 — her own words. Null in live mode until an endpoint exists,
-          and a section with nothing in it is a section that isn't drawn. */}
-      {herMessage && (
-        <Entrance index={3}>
-          <Marquee title={copy.fromHer(residentName)} meta={ago(herMessage.at)} />
-          <Card>
-            <Txt kind="quote">“{herMessage.text}”</Txt>
-            {phone && (
-              <>
-                <Hairline style={{ marginTop: sp(3.5) }} />
-                <MetricRow
-                  hue={hue.social}
-                  icon="arrowshape.turn.up.left"
-                  label={copy.reply}
-                  sentence={copy.textBack(residentName)}
-                  onPress={() =>
-                    Linking.openURL(`sms:${phone}&body=${encodeURIComponent(copy.replyBody)}`)
-                  }
-                />
-              </>
+      {/* Beat 2. Everything occasional, one line each, absent when empty. */}
+      {hasRows && (
+        <Entrance index={2} style={{ marginTop: sp(4) }}>
+          <RowGroup>
+            {latest && (
+              <MetricRow
+                icon="eye"
+                label={copy.lastNoticed}
+                time={timeOf(latest.ts)}
+                sentence={familySentence(latest)}
+                lines={1}
+                // Straight to this observation, not to the top of a list it
+                // may be halfway down.
+                onPress={() => router.push({
+                  pathname: '/(family)/timeline/[eventId]',
+                  params: { eventId: latest.id },
+                })}
+              />
             )}
-          </Card>
-        </Entrance>
-      )}
-
-      {/* Beat 4 — openers, drafted from today's real observations. Empty array
-          when there is no key behind the backend, and then no section. */}
-      {!!prompts?.length && (
-        <Entrance index={4}>
-          <Marquee title={copy.whenYouCall} meta={String(prompts.length)} />
-          <Txt kind="caption" tone="muted" style={{ marginBottom: sp(2.5) }}>
-            {copy.whenYouCallNote}
-          </Txt>
-          <RowGroup>
-            {prompts.map((p) => (
-              <MetricRow key={p} hue={hue.social} icon={openerSymbol(p)} label={copy.talkAbout} sentence={p} />
-            ))}
-          </RowGroup>
-        </Entrance>
-      )}
-
-      {/* Beat 5 — from her care file, which the family typed in themselves. */}
-      {nextAppt && (
-        <Entrance index={5}>
-          <Marquee title={copy.comingUp} right={<KindTag kind="told" />} />
-          <RowGroup>
-            <MetricRow
-              hue={hue.mind}
-              icon="calendar"
-              label={copy.appointment}
-              time={nextAppt.when}
-              sentence={nextAppt.title}
-              onPress={() => router.push('/(family)/settings/carefile')}
-            />
+            {herMessage && (
+              <MetricRow
+                icon="bubble.left"
+                label={copy.fromHer(residentName)}
+                time={ago(herMessage.at)}
+                sentence={herMessage.text}
+                lines={1}
+                onPress={
+                  phone
+                    ? () => Linking.openURL(`sms:${phone}&body=${encodeURIComponent(copy.replyBody)}`)
+                    : undefined
+                }
+              />
+            )}
+            {!!prompts?.length && (
+              <View>
+                <MetricRow
+                  icon="phone"
+                  label={copy.whenYouCall}
+                  sentence={openersShown ? undefined : prompts[0]}
+                  lines={1}
+                  onPress={() => setOpenersShown((v) => !v)}
+                  expanded={openersShown}
+                />
+                {openersShown && (
+                  <View style={{ paddingBottom: sp(3), gap: sp(2) }}>
+                    {prompts.map((p) => (
+                      <Txt key={p} kind="body">{p}</Txt>
+                    ))}
+                    <Txt kind="caption" tone="muted">{copy.whenYouCallNote}</Txt>
+                  </View>
+                )}
+              </View>
+            )}
+            {nextAppt && (
+              <MetricRow
+                icon="calendar"
+                label={copy.appointment}
+                time={nextAppt.when}
+                sentence={nextAppt.title}
+                lines={1}
+                onPress={() => router.push('/(family)/settings/carefile')}
+              />
+            )}
           </RowGroup>
         </Entrance>
       )}

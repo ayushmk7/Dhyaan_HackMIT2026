@@ -1,10 +1,9 @@
-// Onboarding: a native stack with a transparent header. The screens keep
-// their own in-content headings (a Marquee on a hard rule), so the bar carries
-// the back chevron — on iOS 26 that is a glass circle floating over the wash,
-// and the system's scroll-edge effect blurs content passing under it — and,
-// when the stack was entered from inside the app, a Cancel that returns
-// there. Welcome is the front door and has no header at all. Every other
-// screen renders <Screen native> so its content starts below the bar.
+// Onboarding: a native stack with the app's compact, centred, translucent
+// header. The screens keep their own in-content headings (a Marquee on a hard
+// rule), so the bar carries the back chevron and, when the stack was entered
+// from inside the app, a Cancel that returns there. Welcome is the front door
+// and has no header at all. Every other screen renders <Screen native> so its
+// content starts below the bar.
 //
 // The Cancel is what lets Settings re-enter this stack safely (pair a new
 // band, walk the rooms again): before it, the only exit was Continue, which
@@ -32,10 +31,16 @@ export default function OnboardLayout() {
     <Stack
       screenOptions={{
         title: shell.onboard.title,
+        headerLargeTitleEnabled: false,
+        headerTitleAlign: 'center',
         headerTransparent: true,
+        headerBlurEffect: t.isDark ? 'systemChromeMaterialDark' : 'systemChromeMaterialLight',
         headerShadowVisible: false,
         headerBackButtonDisplayMode: 'minimal',
-        headerTintColor: t.ink,
+        headerTintColor: t.accent,
+        // The size is the navigation bar's own default; only the weight and
+        // colour are ours (the scale forbids an inline size).
+        headerTitleStyle: { color: t.ink, fontWeight: '600' },
         contentStyle: { backgroundColor: t.paper },
         headerRight: onboarded
           ? () => <Btn kind="link" label={shell.onboard.cancel} onPress={leave} style={{ marginRight: sp(1) }} />

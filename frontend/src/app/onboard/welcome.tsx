@@ -8,7 +8,7 @@
 import { router } from 'expo-router';
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import { Btn, DataLabel, Entrance, Mark, Rule, Screen, Txt } from '@/components';
+import { Btn, DataLabel, Entrance, Mark, Screen, Txt } from '@/components';
 import { seedDemoResident } from '@/lib/api';
 import { USE_MOCKS } from '@/lib/config';
 import { onboard } from '@/lib/copy/staff';
@@ -37,7 +37,7 @@ export default function Welcome() {
     <Screen scroll={false} wash style={{ justifyContent: 'space-between' }}>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <Entrance index={0} style={{ alignItems: 'center' }}>
-          {/* The screen's one uncompromising moment: black plate, white mark. */}
+          {/* The screen's one uncompromising moment: the mark on its plate. */}
           <Mark size={116} />
         </Entrance>
 
@@ -45,8 +45,9 @@ export default function Welcome() {
           <Txt kind="hero" style={{ textAlign: 'center' }} accessibilityRole="header">
             {copy.title}
           </Txt>
-          <Rule style={{ marginTop: sp(3), marginHorizontal: sp(10) }} />
-          <Txt kind="body" style={{ textAlign: 'center', marginTop: sp(3) }}>
+          {/* No rule between the name and the line: the mark is the one hard
+              shape on this screen, and the tagline is a whisper under it. */}
+          <Txt kind="body" tone="muted" style={{ textAlign: 'center', marginTop: sp(3), paddingHorizontal: sp(6) }}>
             {copy.tagline}
           </Txt>
         </Entrance>

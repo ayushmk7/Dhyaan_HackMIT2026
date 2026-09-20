@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from . import DEMO, TUNING, VLM_MODEL, FRAME_H, FRAME_W
+from . import DEMO, PREVIEW_SCALE, TUNING, VLM_MODEL, FRAME_H, FRAME_W
 from .capture import Camera, SyntheticCamera, to_jpeg_b64
 from .gate import MotionGate, PersonGate, apply_mask, iou, pick_subject, posture_band
 from .keyframe import KeyframeSelector, RingBatch
@@ -610,24 +610,34 @@ class Worker:
                 cv2.putText(view, "subject", (x0, max(y0 - 6, 12)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.4, (60, 200, 60), 1, cv2.LINE_AA)
 
+        win = "dhyaan hub - the only screen a frame reaches"
+        if not getattr(self, "_win_made", False):
+            cv2.namedWindow(win, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
+            cv2.resizeWindow(win, w * PREVIEW_SCALE, h * PREVIEW_SCALE)
+            self._win_made = True
+        shown = cv2.resize(view, (w * PREVIEW_SCALE, h * PREVIEW_SCALE),
+                           interpolation=cv2.INTER_LINEAR)
+
+        # Text AFTER the upscale, so it is crisp rather than magnified pixels.
         # What it currently believes, in words, so the window answers "is it
         # seeing this?" without reading a log or the database.
+        sh, sw = shown.shape[:2]
         last = getattr(self, "_last_obs", None)
         sc = self.scene or {}
         lines = []
         if last:
-            lines.append(f"activity {last['activity']}   posture {last['posture']}")
-        # Food and dishes on their own lines: "objects" lumped a bottle in with
-        # the furniture, and a bottle is the thing you are looking for.
-        lines.append(f"people {sc.get('person_count', 0)}"
-                     f"   FOOD {', '.join(sc.get('food') or []) or '-'}")
+            lines.append(f"activity {last['activity']}    posture {last['posture']}")
+        lines.append(f"people {sc.get('person_count', 0)}    FOOD "
+                     f"{', '.join(sc.get('food') or []) or '-'}")
         lines.append(f"DRINK/DISH {', '.join(sc.get('dishes') or []) or '-'}"
-                     f"   seating {', '.join((sc.get('seating') or [])[:2]) or '-'}")
-        cv2.rectangle(view, (0, h - 30 - 18 * len(lines)), (w, h), (0, 0, 0), -1)
+                     f"    seating {', '.join((sc.get('seating') or [])[:2]) or '-'}")
+        lines.append(f"{self.state()} | {status}")
+        pad, lh = 14, 30
+        cv2.rectangle(shown, (0, sh - pad - lh * len(lines)), (sw, sh), (0, 0, 0), -1)
         for i, line in enumerate(lines):
-            cv2.putText(view, line, (8, h - 36 - 18 * (len(lines) - 1 - i)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (200, 220, 255), 1, cv2.LINE_AA)
-        cv2.imshow("dhyaan hub - the only screen a frame reaches", view)
+            cv2.putText(shown, line, (pad, sh - pad - lh * (len(lines) - 1 - i) - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.62, (210, 225, 255), 1, cv2.LINE_AA)
+        cv2.imshow(win, shown)
         k = cv2.waitKey(1) & 0xFF
         if k in (ord("q"), 27):
             return False

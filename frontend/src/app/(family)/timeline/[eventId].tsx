@@ -89,7 +89,9 @@ export default function EventDetail() {
       <Stagger gap={6}>
         <View>
           <KindTag kind={kindOf(event)} detail={timeOf(event.ts)} />
-          <Txt kind="title" style={{ marginTop: sp(3) }}>{familySentence(event)}</Txt>
+          {/* The sentence is the screen. Hero size, so the record below is
+              plainly the small print. */}
+          <Txt kind="hero" style={{ marginTop: sp(3) }}>{familySentence(event)}</Txt>
         </View>
 
         {/* The screen's one uncompromising surface: paper on ink, every figure

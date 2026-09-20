@@ -6,11 +6,13 @@
 // and the note under the form says exactly that. The screen gates the app,
 // holds a session, and signs out.
 //
+// Layout: the mark and the wordmark sit high and centred, the form directly
+// under them. Nothing here is centred vertically; a sign-in form that floats
+// in the middle of the screen reads as a splash page.
+//
 // The identifier is a username, not an email (the seeded account is `user`),
 // so the field asks for one: default keyboard, no capitalisation, no
-// autocorrect. `Field` does not expose `autoComplete`, which is the one prop
-// the React Native 0.86 docs say to set for keychain fill of a username and
-// password; it lives in components/ui.tsx, not here.
+// autocorrect.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
@@ -50,20 +52,18 @@ export default function Login() {
       style={{ paddingHorizontal: sp(5), flexGrow: 1 }}
       scrollProps={{ keyboardShouldPersistTaps: 'handled' }}
     >
-      <Entrance index={0} style={{ alignItems: 'center', marginTop: sp(9) }}>
+      <Entrance index={0} style={{ alignItems: 'center', marginTop: sp(2) }}>
         {/* Black plate, white mark: the one uncompromising note on a screen
             that is otherwise glass over atmosphere. */}
-        <Mark />
-        <Txt kind="hero" style={{ marginTop: sp(5) }} accessibilityRole="header">
+        <Mark size={72} />
+        <Txt kind="hero" style={{ marginTop: sp(4), textAlign: 'center' }} accessibilityRole="header">
           {auth.appName}
         </Txt>
-        <Rule style={{ alignSelf: 'stretch', marginTop: sp(3), marginHorizontal: sp(10) }} />
+        <Rule style={{ alignSelf: 'stretch', marginTop: sp(3), marginHorizontal: sp(12) }} />
       </Entrance>
 
-      <View style={{ flex: 1, minHeight: sp(8) }} />
-
-      {/* The door floats over the wash — the one glass surface here. */}
-      <Entrance index={1}>
+      {/* The door floats over the wash: the one glass surface here. */}
+      <Entrance index={1} style={{ marginTop: sp(7) }}>
         <Glass radius={radius.sheet} lift="float" style={{ padding: sp(5), gap: sp(3) }}>
           <Field
             label={auth.identifierLabel}
@@ -73,6 +73,7 @@ export default function Login() {
             keyboardType="default"
             autoCapitalize="none"
             autoCorrect={false}
+            autoComplete="username"
           />
           <Field
             label={auth.passwordLabel}
@@ -82,17 +83,15 @@ export default function Login() {
             secureTextEntry
             autoCapitalize="none"
             autoCorrect={false}
+            autoComplete="password"
             onSubmitEditing={() => submit()}
           />
           {!!error && <ErrorState inline message={error} />}
-          <Btn label={auth.submit} busy={busy} onPress={() => submit()} />
-          <Txt kind="caption" tone="muted">{/* voice-ok */}
-            {auth.note}
-          </Txt>
+          <Btn label={auth.submit} busy={busy} onPress={() => submit()} style={{ marginTop: sp(1) }} />
         </Glass>
       </Entrance>
 
-      <Entrance index={2} style={{ marginTop: sp(5), alignItems: 'center', gap: sp(2) }}>
+      <Entrance index={2} style={{ marginTop: sp(5), alignItems: 'center', gap: sp(3) }}>
         <Btn
           kind="link"
           label={auth.demoShortcut}
@@ -103,7 +102,12 @@ export default function Login() {
           }}
           style={{ alignSelf: 'center' }}
         />
+        <Txt kind="caption" tone="muted" style={{ textAlign: 'center', paddingHorizontal: sp(4) }}>{/* voice-ok */}
+          {auth.note}
+        </Txt>
       </Entrance>
+
+      <View style={{ flex: 1 }} />
     </Screen>
   );
 }

@@ -1,5 +1,6 @@
-// Settings. What Dhyaan was told, where the camera is, who it calls — and the
-// buttons that undo all of it.
+// Settings. Her name at the top, the notes Dhyaan was told under it, then one
+// quiet list of rows for everything that is only sometimes worth opening —
+// and, apart from all of it at the bottom, the two buttons that undo it all.
 //
 // Every control on this screen does exactly what its label says, and nothing
 // here is a placeholder dressed as a working switch:
@@ -15,7 +16,7 @@
 //     holds exactly what this app can show and nothing a family screen can't.
 //   - What Dhyaan does when something happens is a STATEMENT, not a switch:
 //     there is no alert-preferences endpoint, so there are no toggles to fake.
-// The native header owns the title; long-press the first section for debug.
+// The native header owns the title; long-press the notes heading for debug.
 //
 // Every sentence this screen says lives in lib/copy/family.ts under `settings`.
 import { useQueryClient } from '@tanstack/react-query';
@@ -24,10 +25,10 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Pressable, Share, View } from 'react-native';
 import {
-  Btn, Card, DataLabel, EmptyState, Entrance, ErrorState, FactRow, Field, Hairline, KeyValue,
-  LoadingState, Marquee, Row, RowGroup, Rule, Screen, Stagger, Txt,
+  Btn, Card, DataLabel, EmptyState, Entrance, ErrorState, FactRow, Field, KeyValue,
+  LoadingState, Marquee, MetricRow, Row, RowGroup, Rule, Screen, Txt,
 } from '@/components';
-import { Avatar, avatarTone } from '@/components/avatar';
+import { Avatar } from '@/components/avatar';
 import { api } from '@/lib/api';
 import { API_BASE, USE_MOCKS } from '@/lib/config';
 import { family } from '@/lib/copy/family';
@@ -51,8 +52,8 @@ const PUSH_READY = EAS_PROJECT_ID.length > 0 && !EAS_PROJECT_ID.startsWith('REPL
 
 const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
-// Screen-only debug view, long-press the first section header to reveal. Every
-// demo control lives here so the visible app carries no demo chrome.
+// Screen-only debug view, long-press the notes heading to reveal. Every demo
+// control lives here so the visible app carries no demo chrome.
 function DebugPanel() {
   const d = copy.debug;
   const qc = useQueryClient();
@@ -126,7 +127,7 @@ function DebugPanel() {
   };
 
   return (
-    <Card style={{ marginTop: sp(3) }}>
+    <Card style={{ marginBottom: sp(3) }}>
       <Rule weight="heavy" />
       <View style={{ gap: sp(1.5), marginTop: sp(3) }}>
         {/* The readings are the machine's own identifiers, not words. */}
@@ -164,28 +165,8 @@ function DebugPanel() {
   );
 }
 
-function CareFileSummary() {
-  const { medications, appointments, sources } = useCareFile();
-  return (
-    <View>
-      {sources.length > 0 ? (
-        <Txt kind="label">
-          {copy.careFile.summary(medications.length, appointments.length)}
-        </Txt>
-      ) : (
-        <Txt kind="body">
-          {copy.careFile.intro}
-        </Txt>
-      )}
-      <Btn
-        label={sources.length ? copy.careFile.open : copy.careFile.addFirst}
-        kind="quiet"
-        onPress={() => router.push('/(family)/settings/carefile')}
-        style={{ marginTop: sp(3) }}
-      />
-    </View>
-  );
-}
+/** A row that opens in place: the collapsed one-liner, or its full body. */
+type Opened = 'none' | 'camera' | 'happens' | 'consent';
 
 export default function Settings() {
   const qc = useQueryClient();
@@ -198,6 +179,7 @@ export default function Settings() {
   const {
     data: contacts, isLoading: contactsLoading, isError: contactsError, refetch: refetchContacts,
   } = useContacts();
+  const { medications, appointments, sources } = useCareFile();
 
   const [editing, setEditing] = useState<Fact | null>(null);
   const [adding, setAdding] = useState(false);
@@ -206,6 +188,10 @@ export default function Settings() {
   const [factBusy, setFactBusy] = useState(false);
   const [factError, setFactError] = useState<string | null>(null);
   const [confirmDeleteFact, setConfirmDeleteFact] = useState(false);
+
+  // One disclosure row open at a time; the rest stay one line.
+  const [opened, setOpened] = useState<Opened>('none');
+  const toggle = (which: Opened) => setOpened((o) => (o === which ? 'none' : which));
 
   const [confirmStop, setConfirmStop] = useState(false);
   const [cameraBusy, setCameraBusy] = useState(false);
@@ -376,6 +362,12 @@ export default function Settings() {
     profile?.consent.signed_at ? new Date(profile.consent.signed_at).toLocaleDateString() : '',
   );
 
+  const camera = profile?.camera;
+  const cameraState = camera
+    ? copy.camera.stateWord(camera.state, camera.paused_until ? timeOf(camera.paused_until) : null)
+    : undefined;
+  const ladderNames = (contacts ?? []).map((c) => c.name);
+
   const confirmField = (
     <Field
       label={copy.profile.typeToConfirm(name)}
@@ -388,154 +380,161 @@ export default function Settings() {
 
   return (
     <Screen native wash>
-      <Stagger>
-        {/* ---- About her ---- */}
-        <View>
-          <Pressable onLongPress={() => setDebugOpen((v) => !v)} delayLongPress={600}>
-            <Marquee
-              first
-              title={copy.told.title}
-              meta={profile ? copy.told.notes(facts.length) : undefined}
-            />
-          </Pressable>
-          {debugOpen && <DebugPanel />}
-          {/* One plate of rows: RowGroup draws the hairlines between every child. */}
-          <RowGroup>
-            {profileLoading && !profile && <LoadingState label={copy.told.loading} />}
-            {profileError && !profile && (
-              <ErrorState message={copy.told.loadError} onRetry={refetchProfile} />
-            )}
-            {!!profile && facts.length === 0 && (
-              <EmptyState>{copy.told.empty}</EmptyState>
-            )}
-            {facts.map((f) => (
-              <FactRow
-                key={f.id}
-                fact={f}
-                onPress={() => {
-                  setEditing(f);
-                  setAdding(false);
-                  setDraftText(f.text);
-                  setFactError(null);
-                  setConfirmDeleteFact(false);
-                }}
-              />
-            ))}
-            {!!profile?.appearance && (
-              <View style={{ paddingVertical: sp(3) }}>
-                <Txt kind="label" tone="muted">{copy.told.howDescribed}</Txt>
-                <Txt kind="body" style={{ marginTop: 2 }}>{profile.appearance}</Txt>
-              </View>
-            )}
-            {!!profile?.usual_spots?.length && (
-              <View style={{ paddingVertical: sp(3) }}>
-                <Txt kind="label" tone="muted">{copy.told.usualSpots}</Txt>
-                {profile.usual_spots.map((spot) => (
-                  <Txt key={spot} kind="body" style={{ marginTop: 2 }}>{spot}</Txt>
-                ))}
-              </View>
-            )}
+      {/* Beat 0. Her. The one large thing on the screen, on bare paper. */}
+      <Entrance index={0} distance={26}>
+        <Row gap={3}>
+          <Avatar name={name} size={56} />
+          <Txt kind="display" numberOfLines={2} style={{ flex: 1 }}>{name}</Txt>
+        </Row>
+        <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>
+          {copy.profile.livesAtHome(name)}
+        </Txt>
+      </Entrance>
 
-            {(editing || adding) && (
-              <View style={{ paddingVertical: sp(3), gap: sp(3) }}>
-                <Rule />
-                {adding && (
-                  <Field
-                    label={copy.told.about}
-                    value={draftKey}
-                    onChangeText={setDraftKey}
-                    placeholder={copy.told.keyPlaceholder}
-                    autoCapitalize="none"
-                  />
-                )}
-                <Field
-                  label={editing ? copy.told.aboutKey(editing.key) : copy.told.whatToRemember}
-                  value={draftText}
-                  onChangeText={setDraftText}
-                  placeholder={copy.told.sentencePlaceholder}
-                  multiline
-                  maxLength={300}
-                />
-                {!!factError && <ErrorState inline message={factError} />}
-                <Row gap={2}>
-                  <Btn
-                    kind="quiet"
-                    label={copy.told.cancel}
-                    style={{ flex: 1 }}
-                    onPress={closeFactForm}
-                  />
-                  <Btn
-                    label={copy.told.save}
-                    busy={factBusy}
-                    disabled={!draftText.trim()}
-                    style={{ flex: 1 }}
-                    onPress={saveFact}
-                  />
-                </Row>
-                {!!editing && (
-                  confirmDeleteFact ? (
-                    <View style={{ gap: sp(2) }}>
-                      <Txt kind="caption">{copy.told.deleteWarning}</Txt>
-                      <Btn
-                        label={copy.told.deleteNote}
-                        kind="danger"
-                        busy={factBusy}
-                        onPress={removeFact}
-                      />
-                      <Btn
-                        label={copy.told.keepIt}
-                        kind="quiet"
-                        onPress={() => setConfirmDeleteFact(false)}
-                      />
-                    </View>
-                  ) : (
-                    <Btn
-                      kind="link"
-                      tone="alert"
-                      label={copy.told.deleteNote}
-                      onPress={() => setConfirmDeleteFact(true)}
-                    />
-                  )
-                )}
-              </View>
-            )}
-            {!editing && !adding && !!profile && (
-              <Btn
-                kind="quiet"
-                label={copy.told.addNote}
-                style={{ marginVertical: sp(3) }}
-                onPress={() => { setAdding(true); setDraftKey(''); setDraftText(''); setFactError(null); }}
-              />
-            )}
-          </RowGroup>
-        </View>
-
-        {/* ---- Camera ---- */}
-        <View>
+      {/* Beat 1. What Dhyaan was told: the one list on the screen, and the
+          only heading, because it is the only thing here that is a list. */}
+      <Entrance index={1}>
+        <Pressable onLongPress={() => setDebugOpen((v) => !v)} delayLongPress={600}>
           <Marquee
-            title={copy.camera.title}
-            meta={profile?.camera ? profile.camera.state : undefined}
+            title={copy.told.title}
+            meta={profile ? copy.told.notes(facts.length) : undefined}
           />
-          <Card>
-            {!profile?.camera ? (
-              <EmptyState>{copy.camera.noCamera}</EmptyState>
-            ) : (
-              <>
-                {/* The only room name on a family screen, and it is allowed:
-                    this is where the FAMILY installed the camera (they picked
-                    it in onboarding), not where she is. Labelled "Where it's
-                    installed" rather than "Room" so it cannot be misread as
-                    whereabouts — D-001 bans her location, not the hardware's. */}
-                <KeyValue label={copy.camera.whereInstalled} value={zoneLabel(profile.camera.zone)} />
-                <KeyValue
-                  label={copy.camera.state}
-                  value={copy.camera.stateWord(
-                    profile.camera.state,
-                    profile.camera.paused_until ? timeOf(profile.camera.paused_until) : null,
-                  )}
-                  style={{ marginTop: sp(2) }}
+        </Pressable>
+        {debugOpen && <DebugPanel />}
+        <RowGroup>
+          {profileLoading && !profile && <LoadingState label={copy.told.loading} />}
+          {profileError && !profile && (
+            <ErrorState message={copy.told.loadError} onRetry={refetchProfile} />
+          )}
+          {!!profile && facts.length === 0 && (
+            <EmptyState>{copy.told.empty}</EmptyState>
+          )}
+          {facts.map((f) => (
+            <FactRow
+              key={f.id}
+              fact={f}
+              onPress={() => {
+                setEditing(f);
+                setAdding(false);
+                setDraftText(f.text);
+                setFactError(null);
+                setConfirmDeleteFact(false);
+              }}
+            />
+          ))}
+          {!!profile?.appearance && (
+            <View style={{ paddingVertical: sp(3) }}>
+              <Txt kind="label" tone="muted">{copy.told.howDescribed}</Txt>
+              <Txt kind="body" style={{ marginTop: 2 }}>{profile.appearance}</Txt>
+            </View>
+          )}
+          {!!profile?.usual_spots?.length && (
+            <View style={{ paddingVertical: sp(3) }}>
+              <Txt kind="label" tone="muted">{copy.told.usualSpots}</Txt>
+              {profile.usual_spots.map((spot) => (
+                <Txt key={spot} kind="body" style={{ marginTop: 2 }}>{spot}</Txt>
+              ))}
+            </View>
+          )}
+
+          {(editing || adding) && (
+            <View style={{ paddingVertical: sp(3), gap: sp(3) }}>
+              {adding && (
+                <Field
+                  label={copy.told.about}
+                  value={draftKey}
+                  onChangeText={setDraftKey}
+                  placeholder={copy.told.keyPlaceholder}
+                  autoCapitalize="none"
                 />
-                <Hairline style={{ marginVertical: sp(3) }} />
+              )}
+              <Field
+                label={editing ? copy.told.aboutKey(editing.key) : copy.told.whatToRemember}
+                value={draftText}
+                onChangeText={setDraftText}
+                placeholder={copy.told.sentencePlaceholder}
+                multiline
+                maxLength={300}
+              />
+              {!!factError && <ErrorState inline message={factError} />}
+              <Row gap={2}>
+                <Btn
+                  kind="quiet"
+                  label={copy.told.cancel}
+                  style={{ flex: 1 }}
+                  onPress={closeFactForm}
+                />
+                <Btn
+                  label={copy.told.save}
+                  busy={factBusy}
+                  disabled={!draftText.trim()}
+                  style={{ flex: 1 }}
+                  onPress={saveFact}
+                />
+              </Row>
+              {!!editing && (
+                confirmDeleteFact ? (
+                  <View style={{ gap: sp(2) }}>
+                    <Txt kind="caption">{copy.told.deleteWarning}</Txt>
+                    <Btn
+                      label={copy.told.deleteNote}
+                      kind="danger"
+                      busy={factBusy}
+                      onPress={removeFact}
+                    />
+                    <Btn
+                      label={copy.told.keepIt}
+                      kind="quiet"
+                      onPress={() => setConfirmDeleteFact(false)}
+                    />
+                  </View>
+                ) : (
+                  <Btn
+                    kind="link"
+                    tone="alert"
+                    label={copy.told.deleteNote}
+                    onPress={() => setConfirmDeleteFact(true)}
+                  />
+                )
+              )}
+            </View>
+          )}
+          {!editing && !adding && !!profile && (
+            <Btn
+              kind="quiet"
+              label={copy.told.addNote}
+              style={{ marginVertical: sp(3) }}
+              onPress={() => { setAdding(true); setDraftKey(''); setDraftText(''); setFactError(null); }}
+            />
+          )}
+        </RowGroup>
+      </Entrance>
+
+      {/* Beat 2. Everything else, one line each. A row that has more to say
+          opens in place; a row that goes somewhere carries a chevron. */}
+      <Entrance index={2} style={{ marginTop: sp(4) }}>
+        <RowGroup>
+          {/* Her camera. The only room name on a family screen, and it is
+              allowed: this is where the FAMILY installed the camera (they
+              picked it in onboarding), not where she is. The copy says
+              "installed in" so it cannot be misread as whereabouts (D-001
+              bans her location, not the hardware's). */}
+          <View>
+            <MetricRow
+              icon="video"
+              label={copy.camera.title}
+              time={cameraState}
+              sentence={
+                opened === 'camera' ? undefined
+                  : camera ? copy.camera.installedIn(zoneLabel(camera.zone)) : copy.camera.noCamera
+              }
+              lines={camera ? 1 : 3}
+              onPress={camera ? () => toggle('camera') : undefined}
+              expanded={camera ? opened === 'camera' : undefined}
+            />
+            {opened === 'camera' && !!camera && (
+              <View style={{ paddingBottom: sp(3), gap: sp(2) }}>
+                <KeyValue label={copy.camera.whereInstalled} value={zoneLabel(camera.zone)} />
                 {!confirmStop ? (
                   <Btn kind="link" tone="alert" label={copy.camera.stop} onPress={() => setConfirmStop(true)} />
                 ) : (
@@ -546,178 +545,183 @@ export default function Settings() {
                     <Btn label={copy.camera.leaveRunning} kind="quiet" onPress={() => setConfirmStop(false)} />
                   </View>
                 )}
-              </>
+              </View>
             )}
-          </Card>
-        </View>
+          </View>
 
-        {/* ---- Ladder ---- */}
-        <View>
-          <Marquee
-            title={copy.ladder.title}
-            meta={contacts ? copy.ladder.contacts(contacts.length) : undefined}
+          {/* Who it calls: the order is the point, so the names are the line. */}
+          {contactsLoading && !contacts && <LoadingState label={copy.ladder.loading} />}
+          {contactsError && !contacts && (
+            <ErrorState message={copy.ladder.loadError} onRetry={refetchContacts} />
+          )}
+          {!!contacts && (
+            <MetricRow
+              icon="phone"
+              label={copy.ladder.title}
+              sentence={ladderNames.length ? copy.ladder.inOrder(ladderNames) : copy.ladder.empty}
+              lines={ladderNames.length ? 2 : 4}
+            />
+          )}
+
+          <MetricRow
+            icon="doc.text"
+            label={copy.careFile.title}
+            sentence={sources.length ? copy.careFile.summary(medications.length, appointments.length) : copy.careFile.intro}
+            lines={sources.length ? 1 : 3}
+            onPress={() => router.push('/(family)/settings/carefile')}
           />
-          <RowGroup>
-            {contactsLoading && !contacts && <LoadingState label={copy.ladder.loading} />}
-            {contactsError && !contacts && (
-              <ErrorState message={copy.ladder.loadError} onRetry={refetchContacts} />
+
+          {/* Not a preferences pane. There is no endpoint for alert
+              preferences, so this states what Dhyaan does today rather than
+              offering switches that would forget themselves on unmount. */}
+          <View>
+            <MetricRow
+              icon="bell"
+              label={copy.happens.title}
+              sentence={opened === 'happens' ? undefined : copy.happens.short}
+              lines={1}
+              onPress={() => toggle('happens')}
+              expanded={opened === 'happens'}
+            />
+            {opened === 'happens' && (
+              <View style={{ paddingBottom: sp(3), gap: sp(2) }}>
+                <Txt kind="label">{copy.happens.ifFall}</Txt>
+                <Txt kind="body">{copy.happens.ifFallBody}</Txt>
+                <Txt kind="label" style={{ marginTop: sp(1) }}>{copy.happens.everythingElse}</Txt>
+                <Txt kind="body">{copy.happens.everythingElseBody}</Txt>
+                <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>{copy.happens.nothingToSwitch}</Txt>
+              </View>
             )}
-            {!!contacts && contacts.length === 0 && (
-              <EmptyState>{copy.ladder.empty}</EmptyState>
+          </View>
+
+          <View>
+            <MetricRow
+              icon="checkmark.seal"
+              label={copy.consent.title}
+              sentence={opened === 'consent' ? undefined : consentLine}
+              lines={1}
+              onPress={() => toggle('consent')}
+              expanded={opened === 'consent'}
+            />
+            {opened === 'consent' && (
+              <View style={{ paddingBottom: sp(3), gap: sp(1.5) }}>
+                <Txt kind="caption" tone="muted">{consentLine}</Txt>
+                {([
+                  [copy.consent.falls, profile?.consent.falls],
+                  [copy.consent.camera, profile?.consent.camera],
+                  [copy.consent.memory, profile?.consent.memory],
+                ] as const).map(([label, on]) => (
+                  <KeyValue
+                    key={label}
+                    label={label}
+                    value={on ? copy.consent.agreed : copy.consent.declined}
+                    tone={on ? 'ok' : 'muted'}
+                  />
+                ))}
+              </View>
             )}
-            {(contacts ?? []).map((c, i) => (
-              <Row key={c.id} gap={3} style={{ paddingVertical: sp(2.5) }}>
-                <Avatar name={c.name} size={34} tone={avatarTone(i)} />
-                <Txt kind="body" style={{ flex: 1 }}>{c.name}</Txt>
-                <Txt kind="caption" tone="muted">{c.relationship}</Txt>
-              </Row>
-            ))}
-          </RowGroup>
-        </View>
+          </View>
 
-        <View>
-          <Marquee title={copy.careFile.title} />
-          <Card>
-            <CareFileSummary />
-          </Card>
-        </View>
+          {/* No buttons into /onboard/pair or /onboard/survey. Those screens
+              have no header and no way back; their only visible exit is
+              Continue, which walks the whole setup again and ends by
+              re-saving her consent from this session's blank answers,
+              switching everything off. Until setup can be re-entered safely,
+              this says what is true. */}
+          <MetricRow
+            icon="dot.radiowaves.left.and.right"
+            label={copy.band.title}
+            sentence={copy.band.body}
+            lines={3}
+          />
 
-        {/* ---- What actually happens ----
-            Not a preferences pane. There is no endpoint for alert preferences,
-            so this states what Dhyaan does today rather than offering switches
-            that would forget themselves on unmount. */}
-        <View>
-          <Marquee title={copy.happens.title} />
-          <Card>
-            <Txt kind="label">{copy.happens.ifFall}</Txt>
-            <Txt kind="body" style={{ marginTop: sp(1) }}>{copy.happens.ifFallBody}</Txt>
-            <Hairline style={{ marginVertical: sp(3) }} />
-            <Txt kind="label">{copy.happens.everythingElse}</Txt>
-            <Txt kind="body" style={{ marginTop: sp(1) }}>{copy.happens.everythingElseBody}</Txt>
-            <Hairline style={{ marginVertical: sp(3) }} />
-            <Txt kind="caption" tone="muted">{copy.happens.nothingToSwitch}</Txt>
-          </Card>
-        </View>
+          <View>
+            <MetricRow
+              icon="square.and.arrow.up"
+              label={copy.profile.shareJson}
+              sentence={copy.profile.shareJsonNote}
+              lines={2}
+              onPress={exportData}
+            />
+            {exportError && <ErrorState inline message={exportError} style={{ marginBottom: sp(2) }} />}
+          </View>
+        </RowGroup>
+      </Entrance>
 
-        {/* ---- Consent record ---- */}
-        <View>
-          <Marquee title={copy.consent.title} />
-          <Card>
-            <Txt kind="caption" tone="muted">{consentLine}</Txt>
-            <View style={{ marginTop: sp(3), gap: sp(1.5) }}>
-              {([
-                [copy.consent.falls, profile?.consent.falls],
-                [copy.consent.camera, profile?.consent.camera],
-                [copy.consent.memory, profile?.consent.memory],
-              ] as const).map(([label, on]) => (
-                <KeyValue
-                  key={label}
-                  label={label}
-                  value={on ? copy.consent.agreed : copy.consent.declined}
-                  tone={on ? 'ok' : 'muted'}
-                />
-              ))}
+      {/* Beat 3. Apart from everything, under a hard rule: the two things
+          that cannot be undone. Position and wording carry it; each one still
+          makes you type her name (DESIGN rule 8). */}
+      <Entrance index={3} style={{ marginTop: sp(12) }}>
+        <Rule weight="heavy" />
+        <Txt kind="label" style={{ marginTop: sp(3) }}>{copy.profile.cannotUndo}</Txt>
+        {!!forgetResult && (
+          <Txt kind="caption" tone="ok" style={{ marginTop: sp(2) }} accessibilityLiveRegion="polite">
+            {forgetResult}
+          </Txt>
+        )}
+
+        {destructive !== 'wipe' && (
+          destructive !== 'forget' ? (
+            <Btn
+              kind="link"
+              tone="alert"
+              label={copy.profile.forget}
+              onPress={() => openDestructive('forget')}
+              style={{ marginTop: sp(3) }}
+            />
+          ) : (
+            <View style={{ gap: sp(3), marginTop: sp(3) }}>
+              <Txt kind="body">{copy.profile.forgetExplained}</Txt>
+              {confirmField}
+              {!!forgetError && <ErrorState inline message={forgetError} />}
+              <Btn
+                label={copy.profile.forgetEverything}
+                kind="danger"
+                busy={forgetBusy}
+                disabled={!nameTyped}
+                onPress={forget}
+              />
+              <Btn
+                label={copy.profile.keepProfile}
+                kind="quiet"
+                onPress={() => { setDestructive('none'); setConfirmName(''); }}
+              />
             </View>
-          </Card>
-        </View>
+          )
+        )}
 
-        {/* ---- Memory / privacy ---- */}
-        <View>
-          <Marquee title={copy.profile.title} />
-          <Card>
-            <Txt kind="body">{copy.profile.livesAtHome(name)}</Txt>
-            {!!forgetResult && (
-              <Txt kind="caption" tone="ok" style={{ marginTop: sp(3) }} accessibilityLiveRegion="polite">
-                {forgetResult}
-              </Txt>
-            )}
-            <Hairline style={{ marginVertical: sp(3) }} />
-            <Btn kind="link" label={copy.profile.shareJson} onPress={exportData} />
-            <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>{copy.profile.shareJsonNote}</Txt>
-            {exportError && <ErrorState inline message={exportError} style={{ marginTop: sp(1) }} />}
-
-            <View style={{ marginTop: sp(4) }}>
-              <Rule weight="heavy" />
+        {destructive !== 'forget' && (
+          destructive !== 'wipe' ? (
+            <Btn
+              kind="link"
+              tone="alert"
+              label={copy.profile.wipe}
+              onPress={() => openDestructive('wipe')}
+              style={{ marginTop: sp(3) }}
+            />
+          ) : (
+            <View style={{ gap: sp(3), marginTop: sp(3) }}>
+              <Txt kind="body">{copy.profile.wipeExplained}</Txt>
+              {confirmField}
+              {!!forgetError && <ErrorState inline message={forgetError} />}
+              <Btn
+                label={copy.profile.wipe}
+                kind="danger"
+                busy={forgetBusy}
+                disabled={!nameTyped}
+                onPress={wipeAndStop}
+              />
+              <Btn
+                label={copy.profile.leaveRunning}
+                kind="quiet"
+                onPress={() => { setDestructive('none'); setConfirmName(''); }}
+              />
             </View>
+          )
+        )}
+      </Entrance>
 
-            {/* Irreversible, so each one makes you type her name (DESIGN rule 8). */}
-            {destructive !== 'wipe' && (
-              destructive !== 'forget' ? (
-                <Btn
-                  kind="link"
-                  tone="alert"
-                  label={copy.profile.forget}
-                  onPress={() => openDestructive('forget')}
-                  style={{ marginTop: sp(3) }}
-                />
-              ) : (
-                <View style={{ gap: sp(3), marginTop: sp(3) }}>
-                  <Txt kind="body">{copy.profile.forgetExplained}</Txt>
-                  {confirmField}
-                  {!!forgetError && <ErrorState inline message={forgetError} />}
-                  <Btn
-                    label={copy.profile.forgetEverything}
-                    kind="danger"
-                    busy={forgetBusy}
-                    disabled={!nameTyped}
-                    onPress={forget}
-                  />
-                  <Btn
-                    label={copy.profile.keepProfile}
-                    kind="quiet"
-                    onPress={() => { setDestructive('none'); setConfirmName(''); }}
-                  />
-                </View>
-              )
-            )}
-
-            {destructive !== 'forget' && (
-              destructive !== 'wipe' ? (
-                <Btn
-                  kind="link"
-                  tone="alert"
-                  label={copy.profile.wipe}
-                  onPress={() => openDestructive('wipe')}
-                  style={{ marginTop: sp(3) }}
-                />
-              ) : (
-                <View style={{ gap: sp(3), marginTop: sp(3) }}>
-                  <Txt kind="body">{copy.profile.wipeExplained}</Txt>
-                  {confirmField}
-                  {!!forgetError && <ErrorState inline message={forgetError} />}
-                  <Btn
-                    label={copy.profile.wipe}
-                    kind="danger"
-                    busy={forgetBusy}
-                    disabled={!nameTyped}
-                    onPress={wipeAndStop}
-                  />
-                  <Btn
-                    label={copy.profile.leaveRunning}
-                    kind="quiet"
-                    onPress={() => { setDestructive('none'); setConfirmName(''); }}
-                  />
-                </View>
-              )
-            )}
-          </Card>
-        </View>
-
-        {/* ---- Band ----
-            No buttons into /onboard/pair or /onboard/survey. Those screens have
-            no header and no way back; their only visible exit is Continue,
-            which walks the whole setup again and ends by re-saving her consent
-            from this session's blank answers, switching everything off. Until
-            setup can be re-entered safely, this says what is true. */}
-        <View>
-          <Marquee title={copy.band.title} />
-          <Card>
-            <Txt kind="body">{copy.band.body}</Txt>
-          </Card>
-        </View>
-      </Stagger>
-
-      <Entrance index={8} style={{ marginTop: sp(8) }}>
+      <Entrance index={4} style={{ marginTop: sp(10) }}>
         <Btn
           kind="quiet"
           label={copy.signOut}

@@ -89,6 +89,10 @@ DEMO = dict(min_gap_s=6, on_dwell_s=15, max_batch_wait_s=15, absent_after_s=12)
 # biggest latency lever left. 448x252 is still ample to see a person, a table
 # and a sandwich; it is not ample to read a document, which we never do.
 FRAME_W, FRAME_H = 448, 252   # nothing larger is ever kept
+# Display-only magnification for --preview. The detectors still see 448x252;
+# this just stops the operator window being a postage stamp on a 5K display.
+PREVIEW_SCALE = int(os.getenv("PREVIEW_SCALE", "3"))
+
 JPEG_QUALITY = 70             # ~18 KB/frame to Ollama
 
 # Measured on this machine, same live frame, same prompt, warm:

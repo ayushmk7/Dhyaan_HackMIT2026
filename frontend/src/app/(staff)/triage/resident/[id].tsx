@@ -2,6 +2,12 @@
 // compares to their own baseline, today's observations, and a note the floor
 // can actually leave behind.
 //
+// The identity block is the focal point: the name at the hero size, the
+// where-line under it, telemetry on a heavy rule. It is drawn on paper unless
+// this resident is alerting, in which case the same block is the inverted
+// plate. Inversion is alarm and nothing else, so a resident who is fine is
+// never shown on a black slab.
+//
 // Fixed here:
 //   · "Add a note" wrote to useState and evaporated on unmount. It now POSTs
 //     through `api.addNote` (POST /v1/residents/{id}/notes, stored as a real
@@ -12,7 +18,7 @@
 //     became NaN and never fired. Empty and one-point series are handled
 //     explicitly now.
 //   · "Ask about X" called `api.chat` with no resident, and the facade was
-//     hardcoded to the SESSION's resident in both clients — asking about
+//     hardcoded to the SESSION's resident in both clients: asking about
 //     Harold returned Eleanor's day, the most dangerous bug on this screen.
 //     `api.chat` now takes a resident id, so the box is offered for everyone
 //     and scoped to the resident on screen. The mock holds one resident and
@@ -31,7 +37,6 @@ import {
   Btn, Card, Chip, DataLabel, EmptyState, ErrorState, EventRow, Field, LoadingState, Marquee,
   Refusal, RoomTimeBar, Row, RowGroup, Rule, Screen, Slab, Sparkline, Stagger, StateChip, Txt,
 } from '@/components';
-import { Avatar } from '@/components/avatar';
 import { api } from '@/lib/api';
 import { readout, resident as copy } from '@/lib/copy/staff';
 import { ago, dayOf, timeOf } from '@/lib/format';
@@ -102,7 +107,7 @@ export default function ResidentDetail() {
   const { data: baselines } = useBaselines(id);
   const { data: events } = useTimeline(id);
   const { data: segments } = useLocationHistory(id, localDayKey());
-  // ponytail: no `useLocation` hook in lib/hooks.ts — calling the facade
+  // ponytail: no `useLocation` hook in lib/hooks.ts, so the facade is called
   // directly here, the same pattern triage's open-alerts poll already uses.
   // GET /residents/{id}/location is one document; `useResident` pays for the
   // whole roster, so this is the cheap read for the one thing that moves.
@@ -193,6 +198,30 @@ export default function ResidentDetail() {
     }
   };
 
+  // The identity block reads its colours from whatever it is placed on: the
+  // paper, or the inverted plate when this resident is alerting.
+  const identity = (
+    <>
+      <Txt kind="hero" numberOfLines={1} adjustsFontSizeToFit accessibilityRole="header">
+        {resident.display_name}
+      </Txt>
+      <Row style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: sp(2.5) }} gap={3}>
+        <Txt kind="body" tone="muted" style={{ flex: 1 }} numberOfLines={2}>{whereLine}</Txt>
+        <StateChip state={state} />
+      </Row>
+      <Rule weight={state === 'alerting' ? 'hair' : 'heavy'} style={{ marginTop: sp(3.5) }} />
+      <Row gap={3} style={{ marginTop: sp(2.5), flexWrap: 'wrap' }}>
+        <DataLabel value={resident.room ?? readout.none}>{copy.slab.room}</DataLabel>
+        <DataLabel value={resident.last_seen ? timeOf(resident.last_seen) : readout.noTime}>
+          {copy.slab.seen}
+        </DataLabel>
+        {resident.band_battery_pct != null && (
+          <DataLabel value={`${resident.band_battery_pct}%`}>{copy.slab.band}</DataLabel>
+        )}
+      </Row>
+    </>
+  );
+
   return (
     <Screen
       native
@@ -209,39 +238,12 @@ export default function ResidentDetail() {
       ) : undefined}
     >
       <Stagger>
-        {/* The one uncompromising moment: the identity slab, ink on paper.
-            The slab supplies every colour inside it. */}
-        <Slab>
-          <Row gap={3} style={{ alignItems: 'flex-start' }}>
-            <Avatar
-              name={resident.display_name}
-              size={48}
-              tone={state === 'attention' || state === 'alerting' ? 'amber' : 'blue'}
-            />
-            <View style={{ flex: 1 }}>
-              <Txt kind="title" numberOfLines={1}>{resident.display_name}</Txt>
-              <Txt kind="caption" tone="muted" style={{ marginTop: 2 }}>
-                {whereLine}
-              </Txt>
-            </View>
-            <StateChip state={state} />
-          </Row>
-          <Rule weight="hair" style={{ marginTop: sp(3.5) }} />
-          <Row gap={3} style={{ marginTop: sp(2.5), flexWrap: 'wrap' }}>
-            <DataLabel value={resident.room ?? readout.none}>{copy.slab.room}</DataLabel>
-            <DataLabel value={resident.last_seen ? timeOf(resident.last_seen) : readout.noTime}>
-              {copy.slab.seen}
-            </DataLabel>
-            {resident.band_battery_pct != null && (
-              <DataLabel value={`${resident.band_battery_pct}%`}>{copy.slab.band}</DataLabel>
-            )}
-          </Row>
-        </Slab>
+        {state === 'alerting' ? <Slab>{identity}</Slab> : <View>{identity}</View>}
 
         {deviations.length > 0 ? (
-          // Ochre is a resident state, not a card background: the plate stays
-          // white and the "worth a look" meaning rides on the chip.
-          <Card>
+          // "Worth a look" is a state, not a card background: the plate stays
+          // plain and the meaning rides on the chip.
+          <Card style={{ marginTop: sp(5) }}>
             <StateChip state="attention" />
             <Txt kind="body" style={{ marginTop: sp(2.5) }}>
               {copy.deviation.summary(

@@ -1,5 +1,5 @@
-// The one write. Everything onboarding collected — consent, her description,
-// the camera's room, and every fact — goes to the server here, in one place,
+// The one write. Everything onboarding collected (consent, her description,
+// the camera's room, and every fact) goes to the server here, in one place,
 // so there is exactly one thing that can fail and exactly one retry to build.
 //
 // It does not pretend to have succeeded: if the write fails you stay on this
@@ -15,9 +15,13 @@
 // patch only carries the grants this run actually answered; the server and
 // the mock both merge a partial consent, so even a failed read cannot turn
 // anything off.
+//
+// The hero owns the screen. What follows is a short quiet column: what to
+// expect, and one machine line for how many notes are about to be saved.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
-import { Btn, Card, DataLabel, Entrance, ErrorState, Rule, Screen, Txt } from '@/components';
+import { View } from 'react-native';
+import { Btn, DataLabel, Entrance, ErrorState, Rule, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
 import { onboard } from '@/lib/copy/staff';
 import type { Profile } from '@/lib/types';
@@ -105,35 +109,34 @@ export default function Done() {
         />
       }
     >
-      <Entrance index={0}>
+      <Entrance index={0} style={{ marginTop: sp(6) }}>
         <Txt kind="hero" accessibilityRole="header">
           {copy.hero}
         </Txt>
-        <Rule weight="heavy" style={{ marginTop: sp(4) }} />
         <Txt kind="body" tone="muted" style={{ marginTop: sp(4) }}>
           {copy.getToKnow(session.residentName)}
         </Txt>
       </Entrance>
 
-      <Entrance index={1}>
-        <Card style={{ marginTop: sp(6) }}>
-          <Txt kind="label">{copy.expectTitle}</Txt>
-          {copy.expect.map((line) => (
-            <Txt key={line.slice(0, 20)} kind="caption" tone="muted" style={{ marginTop: sp(2.5) }}>
+      <Entrance index={1} style={{ marginTop: sp(10) }}>
+        <Txt kind="label">{copy.expectTitle}</Txt>
+        {copy.expect.map((line, i) => (
+          <React.Fragment key={line.slice(0, 20)}>
+            {i > 0 && <Rule weight="hair" />}
+            <Txt kind="caption" tone="muted" style={{ paddingVertical: sp(2.5) }}>
               {line}
             </Txt>
-          ))}
-        </Card>
+          </React.Fragment>
+        ))}
       </Entrance>
 
       <Entrance index={2}>
-        <Card style={{ marginTop: sp(3) }}>
+        <View style={{ marginTop: sp(6) }}>
           <DataLabel value={String(facts.length)}>{copy.notesToSave}</DataLabel>
-          <Rule style={{ marginTop: sp(2) }} />
-          <Txt kind="caption" tone="muted" style={{ marginTop: sp(2.5) }}>{/* voice-ok */}
+          <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{/* voice-ok */}
             {facts.length === 0 ? copy.noNotes : copy.notesEditable}
           </Txt>
-        </Card>
+        </View>
       </Entrance>
 
       {!!error && (

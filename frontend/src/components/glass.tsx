@@ -42,10 +42,10 @@ export function Glass({
   const t = useTheme();
   const base: ViewStyle = { borderRadius: radius, overflow: 'hidden' };
   const shadow = elevation[lift] as ViewStyle;
-  // Neutral glass follows the scheme; night glass is always dark; alarm glass
-  // sits on the takeover, which is the inverse of the scheme.
-  const glassScheme =
-    tone === 'night' ? 'dark' : tone === 'alarm' ? (t.isDark ? 'light' : 'dark') : t.scheme;
+  // Every ground is light in light mode and deep in dark mode (the night
+  // ground and the takeover are blue, not black), so glass follows the scheme
+  // whatever it floats over; `tone` only picks the tint.
+  const glassScheme = t.scheme;
 
   if (glassAvailable) {
     return (

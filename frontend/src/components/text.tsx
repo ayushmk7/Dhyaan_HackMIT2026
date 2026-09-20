@@ -6,16 +6,18 @@
 // the right default colours without every screen passing `night` or an rgba
 // to each child. Explicit props always win; the surface only fills the gaps.
 //
-// A surface is resolved against the SCHEME as well: `paper` is near-white in
-// light and near-black in dark; `ink` and `alarm` are the inverse of the
-// scheme, so they flip; `night` is always dark and `cream` is always white.
+// A surface is resolved against the SCHEME as well: in light mode every
+// surface is light (paper is near-white; `ink`, `night` and `alarm` are the
+// blue ramp's light steps) and takes ink text; in dark mode every surface but
+// `cream` is deep (black paper, deep blue plates) and takes light text.
+// `cream` is always the white plate.
 //
 // This file imports nothing from the rest of the component tree, so brutal.tsx,
 // viz.tsx, avatar.tsx and alert-extras.tsx can all use <Txt> without a cycle.
 import React from 'react';
 import { Text, TextStyle } from 'react-native';
 import { Scheme, themes, useTheme } from '@/theme/theme';
-import { mono, onDark, onLight, type } from '@/theme/tokens';
+import { blue, mono, onDeep, onLight, type } from '@/theme/tokens';
 
 // ---- Surface ------------------------------------------------------------------
 
@@ -31,12 +33,12 @@ export function Surface({ tone, children }: { tone: SurfaceTone; children: React
 export const useSurface = (): SurfaceTone => React.useContext(SurfaceCtx);
 
 /**
- * Whether a surface takes light text, in a given scheme. `night` always does;
- * `cream` never does; `paper` does in dark mode; `ink` and `alarm` are the
- * inverse of the scheme, so they do only in light mode.
+ * Whether a surface takes light text, in a given scheme. Nothing does in
+ * light mode (every plate is a light blue); everything but `cream` does in
+ * dark mode, where the plates are deep blue and the paper is black.
  */
 export const isDarkSurface = (t: SurfaceTone, scheme: Scheme = 'light') =>
-  t === 'night' || (scheme === 'dark' ? t === 'paper' : t === 'ink' || t === 'alarm');
+  scheme === 'dark' && t !== 'cream';
 
 export type SurfaceColors = {
   /** Primary text. */
@@ -55,7 +57,7 @@ export type SurfaceColors = {
   wash: string;
   /** `wash`, pressed. */
   pressed: string;
-  /** The inverse plate on this surface: the gravest button, the alerting chip. */
+  /** The gravest plate on this surface: the commitment button, the alerting chip. Navy on a light surface, light blue on a deep one. */
   plate: string;
   /** `plate`, pressed. */
   platePressed: string;
@@ -76,26 +78,36 @@ export type SurfaceColors = {
  */
 export const surfaceColors = (t: SurfaceTone, scheme: Scheme = 'light'): SurfaceColors => {
   const th = themes[scheme];
-  const dark = isDarkSurface(t, scheme);
-  // Light text on a dark plate, or dark text on a white one: the same seven
-  // alphas, mirrored. Which set a slab takes depends on the scheme, which is
-  // why an ink Slab in dark mode reads black-on-white.
-  const on = dark ? onDark : onLight;
-  const inverse = dark
-    ? { plate: '#FFFFFF', platePressed: th.isDark ? th.inverseRaised : '#E6EAF1', onPlate: '#0B1220' }
-    : { plate: '#0B1220', platePressed: '#1A2332', onPlate: '#FFFFFF' };
-  // The accent on a dark plate must be the light blue whatever the scheme, and
-  // on a white plate the deep blue, so it is picked by the SURFACE, not the scheme.
-  const accent = dark
-    ? { accent: themes.dark.accent, onAccent: themes.dark.onAccent, accentWash: themes.dark.accentWash }
-    : { accent: themes.light.accent, onAccent: themes.light.onAccent, accentWash: themes.light.accentWash };
+  const deep = isDarkSurface(t, scheme);
+  // Light text on a deep plate, or ink on a light one: the same seven alphas,
+  // mirrored. Which set a plate takes depends on the scheme: an ink Slab is
+  // light blue with ink text in light mode, deep blue with light text in dark.
+  const on = deep ? onDeep : onLight;
+  // The gravest plate is the far end of the blue ramp from the surface: navy
+  // (blue[800]) on any light surface, light blue (blue[200]) on a deep one.
+  // Never black, never white: it has to be the loudest thing on the takeover
+  // without being a hue of its own.
+  const plate = deep
+    ? { plate: blue[200], platePressed: blue[300], onPlate: '#0B1220' }
+    : { plate: blue[800], platePressed: blue[900], onPlate: '#FFFFFF' };
+  // The accent, as text, is picked by the SURFACE: blue[600] on white or
+  // paper, one step deeper (blue[700]) on a light blue plate so it still
+  // clears AA there, and blue[200] on a deep blue plate.
+  const bluePlate = t === 'ink' || t === 'alarm' || t === 'night';
+  const accent = deep
+    ? bluePlate
+      ? { accent: blue[200], onAccent: blue[900], accentWash: 'rgba(185,205,243,0.16)' }
+      : { accent: themes.dark.accent, onAccent: themes.dark.onAccent, accentWash: themes.dark.accentWash }
+    : bluePlate
+      ? { accent: blue[700], onAccent: '#FFFFFF', accentWash: 'rgba(255,255,255,0.62)' }
+      : { accent: themes.light.accent, onAccent: themes.light.onAccent, accentWash: themes.light.accentWash };
 
   switch (t) {
     case 'night':
       return {
         ink: th.nightInk, muted: th.nightMuted, label: th.nightMuted, faint: th.nightMuted,
         line: th.nightLine, rule: th.nightInk, wash: th.nightRaised, pressed: th.nightLine,
-        ...inverse, ...accent,
+        ...plate, ...accent,
       };
     case 'ink':
     case 'alarm':
@@ -103,13 +115,13 @@ export const surfaceColors = (t: SurfaceTone, scheme: Scheme = 'light'): Surface
       return {
         ink: on.ink, muted: on.soft, label: on.muted, faint: on.muted,
         line: on.line, rule: on.rule, wash: on.wash, pressed: on.pressed,
-        ...inverse, ...accent,
+        ...plate, ...accent,
       };
     default:
       return {
         ink: th.ink, muted: th.inkMuted, label: th.inkMuted, faint: th.inkFaint,
         line: th.line, rule: th.ink, wash: th.slateWash, pressed: th.slateWashDeep,
-        ...inverse, ...accent,
+        ...plate, ...accent,
       };
   }
 };
@@ -131,7 +143,7 @@ export type TxtKind = keyof typeof type | 'mono' | 'data' | 'readout' | 'stamp' 
 /**
  * `ink`/`muted` read the surface. `accent` is the blue. The rest are kept for
  * compatibility and resolve to what their MEANING is now: `ok` and `alert`
- * are ink (OK has no colour; alarm is inversion, which text alone cannot do),
+ * are ink (OK has no colour; alarm is a plate, which text alone cannot be),
  * `warn`, `slate` and `amber` are the accent.
  */
 export type Tone =
@@ -150,8 +162,8 @@ const kindStyle = (k: TxtKind): TextStyle =>
 /**
  * Resolve a tone against the surface and scheme. Absent -> the surface's ink;
  * `muted` -> the surface's muted; `ink` -> the scheme's ink on purpose
- * (explicit wins, and an explicit ink on an ink slab is the caller's to
- * notice). `accent` follows the surface so it stays legible on a dark plate.
+ * (explicit wins, and it is right on every light-mode plate now). `accent`
+ * follows the surface so it stays legible on a blue plate.
  */
 export function toneColor(tone: Tone | undefined, surface: SurfaceTone, scheme: Scheme = 'light'): string {
   const c = surfaceColors(surface, scheme);

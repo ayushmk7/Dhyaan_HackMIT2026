@@ -1,7 +1,8 @@
 // Pieces of the alert takeover: the cancel countdown, the ringing visual,
 // and the applause-line elapsed stat. Drawn in the surface's ink, which on
-// the takeover is white in light mode and black in dark mode. The ElapsedStat
-// is the exception and sits on the paper close-out.
+// the takeover is ink in light mode (a blue[300] ground) and light in dark
+// mode (blue[700]). The ElapsedStat is the exception and sits on the paper
+// close-out.
 import React, { useEffect, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 import { mono, sp } from '@/theme/tokens';
@@ -106,7 +107,9 @@ const styles = StyleSheet.create({
   },
   // Tabular, and mono: this number changes every second, and proportional
   // digits make the whole ring twitch as 30 becomes 29 becomes 28.
-  ringNumber: { ...mono.hero, fontSize: 56, lineHeight: 62 },
+  // One size off the scale, on purpose: the ring is 128pt wide and the hero
+  // step would leave it looking empty. 1.4x hero, same tracking rule.
+  ringNumber: { ...mono.hero, fontSize: 56, lineHeight: 62, letterSpacing: -1.4 },
   caption: { textAlign: 'center', maxWidth: 260 },
   pulseStage: { width: 140, height: 140, alignItems: 'center', justifyContent: 'center' },
   pulseRing: {

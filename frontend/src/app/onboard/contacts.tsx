@@ -1,4 +1,4 @@
-// The escalation ladder. Order matters — this is who Dhyaan calls, in order,
+// The escalation ladder. Order matters: this is who Dhyaan calls, in order,
 // when she doesn’t answer.
 //
 // The list starts EMPTY. It used to open with a hardcoded "Priya Sharma,
@@ -6,11 +6,15 @@
 // straight through saved a fictional daughter as contact #1, which is the
 // first number Dhyaan dials in an emergency. A name on this screen may only
 // ever be one somebody typed.
+//
+// The people are rows, not cards, and the number is the loudest thing in each
+// row because the number is the point. The add form is the same column of
+// fields on the paper, not a box.
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 import {
-  Btn, Card, Entrance, ErrorState, Field, IconBtn, Marquee, Row, Screen, Txt,
+  Btn, Entrance, ErrorState, Field, IconBtn, Marquee, Row, Rule, Screen, Txt,
 } from '@/components';
 import { Avatar, avatarTone } from '@/components/avatar';
 import { api } from '@/lib/api';
@@ -78,74 +82,71 @@ export default function Contacts() {
           title={copy.title}
           meta={contacts.length ? copy.meta(contacts.length) : undefined}
         />
-        <Txt kind="body">
+        <Txt kind="caption" tone="muted">
           {copy.calledInOrder(residentName)}
         </Txt>
       </Entrance>
 
       {contacts.length === 0 && !adding && (
-        <Entrance index={1}>
-          <Card style={{ marginTop: sp(5) }}>
-            <Txt kind="body">{/* voice-ok */}
-              {copy.emptyBody}
-            </Txt>
-            <Btn
-              label={copy.addFirst}
-              style={{ marginTop: sp(4) }}
-              onPress={() => setAdding(true)}
-            />
-          </Card>
+        <Entrance index={1} style={{ marginTop: sp(8) }}>
+          <Txt kind="body">{/* voice-ok */}
+            {copy.emptyBody}
+          </Txt>
+          <Btn
+            label={copy.addFirst}
+            style={{ marginTop: sp(5) }}
+            onPress={() => setAdding(true)}
+          />
         </Entrance>
       )}
 
-      <View style={{ marginTop: contacts.length ? sp(5) : 0, gap: sp(3) }}>
+      <View style={{ marginTop: contacts.length ? sp(4) : 0 }}>
         {contacts.map((c, i) => (
           <Entrance key={`${c.name}-${i}`} index={1 + i}>
-            <Card>
-              <Row style={{ justifyContent: 'space-between' }}>
-                <Row gap={3} style={{ flex: 1 }}>
-                  {/* Numbered because this list is genuinely sequential — the
-                      one place in the app where a number means an order. */}
-                  <Txt kind="stamp" tone="muted">{i + 1}</Txt>
-                  <Avatar name={c.name} size={34} tone={avatarTone(i)} />
-                  <View style={{ flex: 1 }}>
-                    <Txt kind="label">{c.name}</Txt>
-                    <Txt kind="caption" tone="muted">{copy.contactLine(c.relationship, c.phone)}</Txt>
-                  </View>
-                </Row>
-                <Row gap={1}>
-                  <IconBtn
-                    kind="ghost"
-                    size={34}
-                    name="chevron.up"
-                    label={copy.moveEarlier(c.name)}
-                    disabled={i === 0}
-                    onPress={() => move(i, -1)}
-                  />
-                  <IconBtn
-                    kind="ghost"
-                    size={34}
-                    name="chevron.down"
-                    label={copy.moveLater(c.name)}
-                    disabled={i === contacts.length - 1}
-                    onPress={() => move(i, 1)}
-                  />
-                  <IconBtn
-                    kind="ghost"
-                    size={34}
-                    name="xmark"
-                    label={copy.remove(c.name)}
-                    onPress={() => setContacts((cs) => cs.filter((_, j) => j !== i))}
-                  />
-                </Row>
+            {i > 0 && <Rule weight="hair" />}
+            <Row style={{ justifyContent: 'space-between', paddingVertical: sp(3) }}>
+              <Row gap={3} style={{ flex: 1 }}>
+                {/* Numbered because this list is genuinely sequential: the
+                    one place in the app where a number means an order. */}
+                <Txt kind="title" style={{ minWidth: sp(6) }}>{i + 1}</Txt>
+                <Avatar name={c.name} size={34} tone={avatarTone(i)} />
+                <View style={{ flex: 1 }}>
+                  <Txt kind="label">{c.name}</Txt>
+                  <Txt kind="caption" tone="muted">{copy.contactLine(c.relationship, c.phone)}</Txt>
+                </View>
               </Row>
-            </Card>
+              <Row gap={1}>
+                <IconBtn
+                  kind="ghost"
+                  size={34}
+                  name="chevron.up"
+                  label={copy.moveEarlier(c.name)}
+                  disabled={i === 0}
+                  onPress={() => move(i, -1)}
+                />
+                <IconBtn
+                  kind="ghost"
+                  size={34}
+                  name="chevron.down"
+                  label={copy.moveLater(c.name)}
+                  disabled={i === contacts.length - 1}
+                  onPress={() => move(i, 1)}
+                />
+                <IconBtn
+                  kind="ghost"
+                  size={34}
+                  name="xmark"
+                  label={copy.remove(c.name)}
+                  onPress={() => setContacts((cs) => cs.filter((_, j) => j !== i))}
+                />
+              </Row>
+            </Row>
           </Entrance>
         ))}
       </View>
 
       {adding ? (
-        <Card style={{ marginTop: sp(4) }}>
+        <View style={{ marginTop: sp(6) }}>
           <Field
             label={copy.name} placeholder={copy.namePlaceholder}
             value={draft.name} onChangeText={(name) => setDraft((d) => ({ ...d, name }))}
@@ -164,9 +165,9 @@ export default function Contacts() {
             <Btn kind="quiet" label={copy.cancel} onPress={() => setAdding(false)} style={{ flex: 1 }} />
             <Btn label={copy.add} onPress={addDraft} disabled={!draft.name.trim() || !draft.phone.trim()} style={{ flex: 1 }} />
           </Row>
-        </Card>
+        </View>
       ) : contacts.length > 0 ? (
-        <Btn kind="quiet" label={copy.addAnother} onPress={() => setAdding(true)} style={{ marginTop: sp(4) }} />
+        <Btn kind="link" label={copy.addAnother} onPress={() => setAdding(true)} style={{ marginTop: sp(4), alignSelf: 'flex-start' }} />
       ) : null}
 
       {!!error && <ErrorState inline message={error} style={{ marginTop: sp(6) }} />}

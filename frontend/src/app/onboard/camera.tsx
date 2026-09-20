@@ -1,15 +1,19 @@
-// Where the camera goes. Four rooms, and only four — bedroom and bathroom are
+// Where the camera goes. Four rooms, and only four: bedroom and bathroom are
 // not options here, are not options on the wire (the API returns 422 for
 // them), and there is no admin override (§5.1). A picker that could offer them
 // would be the bug; this one cannot.
 //
 // The room chosen here is installer config. It rides on events for the
 // baseline learner and never reaches a family screen as "where she is" (D-001).
+//
+// The question owns the screen: the title and the four chips under it. The
+// layout note, the checklist and the test are quieter, in that order, and
+// none of them sits in a card.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
 import {
-  Btn, Card, Chip, Entrance, ErrorState, Field, Marquee, Row, Rule, Screen, Txt,
+  Btn, Chip, Entrance, ErrorState, Field, Marquee, Row, Rule, Screen, Txt,
 } from '@/components';
 import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
@@ -40,7 +44,7 @@ export default function Camera() {
   const allChecked = checked.every(Boolean);
   const ready = camera.zone != null && allChecked;
 
-  // Polls GET /presence for up to 20 s. Never a preview — no endpoint returns
+  // Polls GET /presence for up to 20 s. Never a preview: no endpoint returns
   // image bytes, and the API process never has one to return.
   const runTest = async () => {
     setTest({ kind: 'testing' });
@@ -75,7 +79,7 @@ export default function Camera() {
     >
       <Entrance index={0}>
         <Marquee first title={copy.title} />
-        <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(2) }}>
+        <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(1) }}>
           {ROOMS.map((zone) => (
             <Chip
               key={zone}
@@ -96,32 +100,28 @@ export default function Camera() {
           hint={copy.layoutHint}
           multiline
           maxLength={300}
-          style={{ marginTop: sp(6) }}
+          style={{ marginTop: sp(7) }}
         />
       </Entrance>
 
-      <Entrance index={2}>
-        <Card style={{ marginTop: sp(6) }}>
-          <Txt kind="label">{copy.checklistTitle}</Txt>
-          <Rule style={{ marginTop: sp(2) }} />
-          {CHECKLIST.map((line, i) => (
-            <Row
-              key={line}
-              gap={2}
-              style={{ marginTop: sp(3), alignItems: 'flex-start' }}
-            >
+      <Entrance index={2} style={{ marginTop: sp(7) }}>
+        <Txt kind="label">{copy.checklistTitle}</Txt>
+        {CHECKLIST.map((line, i) => (
+          <React.Fragment key={line}>
+            {i > 0 && <Rule weight="hair" />}
+            <Row gap={3} style={{ paddingVertical: sp(3), alignItems: 'center' }}>
+              <Txt kind="caption" tone={checked[i] ? 'ink' : 'muted'} style={{ flex: 1 }}>{line}</Txt>
               <Chip
                 label={checked[i] ? copy.checked : copy.confirm}
                 selected={checked[i]}
                 onPress={() => setChecked((c) => c.map((v, j) => (j === i ? !v : v)))}
               />
-              <Txt kind="caption" tone="muted" style={{ flex: 1 }}>{line}</Txt>
             </Row>
-          ))}
-        </Card>
+          </React.Fragment>
+        ))}
       </Entrance>
 
-      <Entrance index={3} style={{ marginTop: sp(6), gap: sp(2) }}>
+      <Entrance index={3} style={{ marginTop: sp(5), gap: sp(2) }}>
         <Btn
           kind="quiet"
           label={copy.test}

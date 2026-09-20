@@ -61,31 +61,22 @@ export const family = {
 
     call: (name: string) => `Call ${name}`,
     noPhoneFor: (name: string) => `No phone number saved for ${name}`,
-    noPhoneExplained: (name: string) =>
-      `Dhyaan doesn’t have a phone number for ${name}, only for the people it calls if she needs someone. That’s why this button can’t dial her.`,
 
-    today: 'Today',
     todayError: 'Couldn’t load today.',
+    // Four figures on one plate, a quarter of the screen each: short words.
     tiles: {
       meals: 'Meals',
-      minutesInView: 'Minutes in view',
+      minutesInView: 'Minutes seen',
       upAtNight: 'Up at night',
-      timesOut: 'Times out',
+      timesOut: 'Went out',
     },
 
+    // The collapsed rows under the plate. Each is one line and a tap.
     lastNoticed: 'Last noticed',
-    openDetails: (sentence: string) => `${sentence}. Open the details.`,
-
     fromHer: (name: string) => `From ${name}`,
-    reply: 'Reply',
-    textBack: (name: string) => `Text ${name} back`,
     replyBody: 'Got your message! ',
-
     whenYouCall: 'When you call',
     whenYouCallNote: 'Drafted from what Dhyaan saw today, not from things she has said.',
-    talkAbout: 'Talk about',
-
-    comingUp: 'Coming up',
     appointment: 'Appointment',
   },
 
@@ -183,7 +174,10 @@ export const family = {
     ],
     planFromChat: 'Plan from group chat',
 
+    // The empty screen's one big sentence, and the law under it.
+    hero: (name: string) => `Ask anything about ${name}’s week.`,
     everyAnswer: 'Every answer says where it came from.',
+    openCitation: (label: string) => `Open ${label}`,
 
     // Why an answer was withheld, above the answer itself.
     refusal: {
@@ -194,7 +188,7 @@ export const family = {
     },
 
     askAbout: (name: string) => `Ask about ${name}`,
-    placeholder: (name: string) => `Ask anything about ${name}’s week`,
+    placeholder: (name: string) => `A question about ${name}`,
     ask: 'Ask',
     thinking: 'Reading her day…',
     sendError: 'Couldn’t reach Dhyaan. Try again.',
@@ -202,6 +196,8 @@ export const family = {
 
   // ---- Family plan ----------------------------------------------------------
   plan: {
+    // The empty screen: what this does, in one sentence, above the paste box.
+    hero: 'Paste the thread. Get the plan.',
     threadLabel: 'The family thread',
     threadPlaceholder: 'Paste the family group chat',
     threadHint: 'It is read once to write the plan below. Dhyaan doesn’t keep it.',
@@ -211,6 +207,9 @@ export const family = {
     unreadable: 'Dhyaan couldn’t read that thread just now. Nothing was sent anywhere. Try again in a moment.',
     needsAI: 'Reading a thread needs Dhyaan’s writing service, which isn’t connected on this phone. Nothing was sent anywhere.',
 
+    // The machine reading under the decision: WHEN  Saturday 2pm.
+    when: 'When',
+    startOver: 'Start over',
     whoDoingWhat: 'Who’s doing what',
     nobodyAnswered: 'Nobody answered yet',
     replyReady: 'A reply, ready to send',
@@ -252,6 +251,8 @@ export const family = {
       // The one room name allowed on a family screen: where the family put
       // the camera, not where she is.
       whereInstalled: 'Where it’s installed',
+      installedIn: (where: string) => `Installed in the ${where.toLowerCase()}.`,
+      notSetUp: 'Not set up',
       state: 'State',
       stateWord: (state: string, pausedUntil: string | null) =>
         state === 'watching' ? 'Watching'
@@ -267,6 +268,8 @@ export const family = {
     ladder: {
       title: 'Who Dhyaan calls, in order',
       contacts: (n: number) => count(n, 'contact', 'contacts'),
+      // "Priya, then Raj, then Meera": the order is the point.
+      inOrder: (names: string[]) => names.join(', then '),
       loading: 'Loading…',
       loadError: 'Couldn’t load her contacts.',
       empty: 'Nobody on the list yet, so a call she doesn’t answer has nowhere to go. The list is written during setup, and there isn’t a way to change it from here yet.',
@@ -288,10 +291,14 @@ export const family = {
       everythingElse: 'Everything else',
       everythingElseBody: 'Meals, walks, visitors, a long stay in one place: these go on her timeline for you to read. Nobody is phoned about them.',
       nothingToSwitch: 'There is nothing to switch here. A fall always calls; nothing else ever does. If that ever becomes a choice, it will be made here.',
+      // The one line the collapsed row shows.
+      short: 'A fall always calls. Nothing else ever does.',
     },
 
     consent: {
       title: 'Consent',
+      // The plate's machine stamp: CONSENT  12/03/2026.
+      stamp: 'Consent',
       recorded: (name: string, by: string, relationship: string, on: string) =>
         `Recorded for ${name}${by ? ` by ${by}` : ''}${relationship ? ` (${relationship})` : ''}${on ? ` on ${on}` : ''}.`,
       falls: 'Fall detection',
@@ -309,6 +316,8 @@ export const family = {
       exportTitle: (name: string) => `${name} export`,
       exportError: 'Couldn’t put that together. Try again.',
 
+      // Over the three irreversible controls, which sit apart from everything else.
+      cannotUndo: 'None of these can be undone.',
       forget: 'Forget her profile',
       forgetExplained: 'This deletes every note, every observation and everything Dhyaan learned about where she sits. It cannot be undone. Fall detection and the camera keep running, and you stay signed in.',
       typeToConfirm: (name: string) => `Type “${name}” to confirm`,
@@ -415,8 +424,8 @@ export const family = {
       noHeartbeat: 'NO HEARTBEAT YET',
     },
 
-    pipeline: 'Pipeline',
-    telemetry: 'Telemetry',
+    // The one heading under the pane: the cascade and the readings together.
+    worker: 'The worker',
 
     simulate: 'Simulate',
     meal: 'Meal',

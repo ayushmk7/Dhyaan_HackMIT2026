@@ -19,12 +19,20 @@ import { Txt, useSurfaceColors } from './text';
 // invent blocks.
 
 export function MetricRow({
-  hue: tint, icon, label, value, unit, sentence, time, onPress, lines = 2,
+  hue: tint, icon, label, value, unit, sentence, time, onPress, lines = 2, expanded,
 }: {
   /** The label tint. Omit it for the surface's muted; pass `t.accent` to point. */
   hue?: string; icon: string; label: string;
   value?: string; unit?: string; sentence?: string; time?: string;
   onPress?: () => void; lines?: number;
+  /**
+   * Set this when the row opens IN PLACE rather than going somewhere.
+   *
+   * A right chevron is a promise that tapping leaves this screen. A row that
+   * only unfolds was making that promise and breaking it, so a disclosure row
+   * gets a chevron that points down, and up once it is open.
+   */
+  expanded?: boolean;
 }) {
   const c = useSurfaceColors();
   const fg = tint ?? c.label;
@@ -42,7 +50,9 @@ export function MetricRow({
         </Row>
         <Row gap={1}>
           {!!time && <Txt kind="stamp" tone="muted">{time}</Txt>}
-          {onPress && <Chevron size={11} />}
+          {onPress && (expanded === undefined
+            ? <Chevron size={11} />
+            : <Icon name={expanded ? 'chevron.up' : 'chevron.down'} size={11} color={c.faint} />)}
         </Row>
       </Row>
       {value != null ? (
@@ -145,11 +155,11 @@ function Pulse({ color }: { color: string }) {
 
 export function LadderTimeline({ steps, night }: { steps: LadderStep[]; night?: boolean }) {
   // Defaults to the surface it sits on (the takeover is an alarm surface). A
-  // bare `night` forces the light-on-dark set: this ladder only ever runs on
-  // the takeover, never on the night ground, so `night` means "on dark".
+  // bare `night` forces the night ground's set; this ladder only ever runs on
+  // the takeover, so leave it unset and let the surface decide.
   const c = useSurfaceColors(night === undefined ? undefined : night ? 'night' : 'paper');
-  // The live step pulses in the surface's ink: white on the takeover in light
-  // mode, black on it in dark mode. Motion is the signal, not a hue.
+  // The live step pulses in the surface's ink: ink on the light blue takeover,
+  // light on the deep one in dark mode. Motion is the signal, not a hue.
   const ink = c.ink;
   const muted = c.muted;
   const line = c.line;

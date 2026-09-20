@@ -7,7 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Linking, View } from 'react-native';
-import { Btn, Card, ErrorState, Field, Row, RowGroup, Screen, SectionTitle, Txt } from '@/components';
+import { Btn, Card, ErrorState, Field, Row, RowGroup, Screen, SectionTitle, Slab, Txt } from '@/components';
 import { family } from '@/lib/copy/family';
 import { EXAMPLE_DISCHARGE } from '@/lib/example-docs';
 import { ago } from '@/lib/format';
@@ -83,7 +83,7 @@ export default function CareFileScreen() {
   return (
     <Screen native keyboard>
       {(empty || adding) && (
-        <View style={{ marginTop: sp(2) }}>
+        <View>
           {empty && (
             <View style={{ marginBottom: sp(3) }}>
               <Txt kind="body">{copy.intro}</Txt>
@@ -165,10 +165,10 @@ export default function CareFileScreen() {
 
       {(file.emergency.allergies.length > 0 || file.emergency.conditions.length > 0 || file.emergency.doctor) && (
         <>
-          {/* The heading carries the meaning; the plate stays white. Ochre is
-              a resident state, not a mood for a card. */}
+          {/* The one thing on this screen a paramedic would need, on the
+              screen's one hard plate. Inversion, not a colour. */}
           <SectionTitle>{copy.inEmergency}</SectionTitle>
-          <Card>
+          <Slab>
             {file.emergency.allergies.length > 0 && (
               <Txt kind="body">{copy.allergicTo(file.emergency.allergies)}</Txt>
             )}
@@ -183,7 +183,7 @@ export default function CareFileScreen() {
                 {file.emergency.doctor.phone ? ` · ${file.emergency.doctor.phone}` : ''}
               </Txt>
             )}
-          </Card>
+          </Slab>
         </>
       )}
 

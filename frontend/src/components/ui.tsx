@@ -16,7 +16,7 @@ import {
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/theme/theme';
-import { elevation, mono, motion, radius, size as S, sp, type, ResidentState } from '@/theme/tokens';
+import { elevation, mono, motion, radius, rule, size as S, sp, type, ResidentState } from '@/theme/tokens';
 import { DataLabel, Marquee, Rule } from './brutal';
 import { FLOATING_BAR_CLEARANCE, FloatingBar, Glass, GlassTone } from './glass';
 import { Icon, IconBadge } from './icon';
@@ -91,17 +91,35 @@ export function Screen({
   const insets = useSafeAreaInsets();
   const t = useTheme();
   const ground: ScreenTone = tone ?? (night ? 'night' : 'paper');
-  // The takeover is the inverse of the scheme: black in light, white in dark.
-  // It is the only screen drawn that way, which is how alarm stays unmistakable.
-  const groundColor = { paper: t.paper, night: t.night, alarm: t.inverse }[ground];
+  // The takeover is the only screen whose whole ground is the deep end of the
+  // light ramp (blue[300]; blue[700] in dark), under a 4px ink rule pinned
+  // beneath the status bar. Every other screen is paper or the pale night
+  // ground. That, the navy commitment button and the pulsing ring are how
+  // alarm stays unmistakable without black and without red.
+  const groundColor = { paper: t.paper, night: t.night, alarm: t.alarm }[ground];
   const base: ViewStyle = { flex: 1, backgroundColor: groundColor };
+  const alarmRule = ground === 'alarm' && (
+    <View
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={{
+        position: 'absolute', top: insets.top, left: 0, right: 0, height: rule.heavy,
+        backgroundColor: surfaceColors('alarm', t.scheme).rule, zIndex: 1,
+      }}
+    />
+  );
   const pad: ViewStyle = padded
     ? {
         paddingHorizontal: sp(4),
         paddingBottom: insets.bottom + sp(6) + (floatingBar ? FLOATING_BAR_CLEARANCE : 0),
       }
     : {};
-  const top = { paddingTop: native ? sp(2) : insets.top + sp(3) };
+  // Content starts HIGH. Under a native header the header itself is the top
+  // clearance (the scroll view insets for it automatically); a screen with no
+  // header sits straight under the status bar. A first-section Marquee adds
+  // nothing on top of this (`first`), so header + screen + section never stack.
+  const top = { paddingTop: native ? sp(1) : insets.top + sp(2) };
   const washTone: WashTone | null =
     wash === true ? (ground === 'paper' ? 'day' : ground) : wash === false ? null : wash;
   const barTone: GlassTone = ground === 'paper' ? 'neutral' : ground;
@@ -125,6 +143,7 @@ export function Screen({
     <View style={base}>
       {washTone && <Wash tone={washTone} height="100%" />}
       {body}
+      {alarmRule}
       {!!floatingBar && (
         <FloatingBar tone={barTone} inset={floatingBarInset}>{floatingBar}</FloatingBar>
       )}
@@ -246,7 +265,7 @@ export type BtnKind =
   | 'primary' | 'quiet' | 'danger' | 'ghost' | 'glass'
   /** A text link in the label weight. `tone="alert"` for a destructive opener. */
   | 'link'
-  /** The inverse plate on the surface: white on a dark surface, ink on a light one. */
+  /** The gravest plate on the surface: navy on a light surface, light blue on a deep one. */
   | 'inverse'
   /** A hairline outline, no fill: the takeover's secondary actions. */
   | 'outline';
@@ -289,11 +308,11 @@ export function Btn({
   }
 
   // primary = the accent. quiet = iOS "tonal": filled wash, no border. danger
-  // and inverse are the same gesture, the surface's INVERSE plate: the only
-  // black button on a light screen, the only white one on a dark screen. That
-  // is what the final button of an irreversible act, and every button on the
-  // takeover, has instead of red. Borders read as wireframe; `outline` is the
-  // one exception, and it exists for the takeover's secondary actions.
+  // and inverse are the same gesture, the surface's gravest plate: the only
+  // navy button on a light screen, the only light blue one on a deep screen.
+  // That is what the final button of an irreversible act, and every button on
+  // the takeover, has instead of red. Borders read as wireframe; `outline` is
+  // the one exception, and it exists for the takeover's secondary actions.
   const bg = {
     primary: c.accent, danger: c.plate, quiet: c.wash,
     ghost: 'transparent', glass: 'transparent', inverse: c.plate, outline: 'transparent',
@@ -500,10 +519,10 @@ export const SectionTitle = ({
 );
 
 // Opaque card on the ground: the grouped-table look, genuinely floating.
-// Never add a border in light mode; separators live INSIDE cards as
-// <Hairline/>. On a dark ground a shadow is invisible, so the card takes a
-// hairline edge instead. `glass` is opt-in and only correct when something
-// scrolls beneath the card.
+// Never add a border on paper; separators live INSIDE cards as <Hairline/>.
+// On the night ground and in dark mode a shadow is invisible (or is lost in
+// the blue), so the card takes a hairline edge instead. `glass` is opt-in and
+// only correct when something scrolls beneath the card.
 export const Card = ({
   children, style, night, lift = 'raised', glass = false, list = false,
 }: {
@@ -563,15 +582,16 @@ export function RowGroup({ children, night, style }: {
 }
 
 /**
- * The screen's one uncompromising contrast moment: an opaque plate at the
- * float tier in the OPPOSITE scheme. Every Txt, Rule, DataLabel, Chip and Btn
- * inside picks the right colour on its own; pass no tones.
+ * The screen's one focal plate: opaque, at the float tier, on the blue ramp.
+ * Every Txt, Rule, DataLabel, Chip and Btn inside picks the right colour on
+ * its own; pass no tones.
  *
- * `ink` (the default) is the inverse of the scheme: black in light, white in
- * dark. `cream` is always the white plate (the Rounds counter on the night
- * ground). `alarm` is the takeover's readout plate: one step back from the
- * takeover ground, with an outline so it reads as a plate on either scheme.
- * One per screen; two is noise.
+ * `ink` (the default, a historical name) is the light blue plate: blue[200]
+ * with ink text in light mode, blue[800] with light text in dark. `cream` is
+ * always the white plate (the Rounds counter on the night ground). `alarm` is
+ * the takeover's readout plate and the alerting tile on Floor: one step
+ * lighter than the takeover, inside a 2px ink rule, so it reads as alarm on
+ * the takeover and on paper alike. One per screen; two is noise.
  */
 export function Slab({
   children, tone = 'ink', lift = 'float', style, onPress, accessibilityLabel,
@@ -590,7 +610,7 @@ export function Slab({
   const bg = { ink: t.inverse, cream: t.white, alarm: t.inverseRaised }[tone];
   const plate: ViewStyle = {
     backgroundColor: bg, borderRadius: radius.glass, padding: sp(4.5),
-    ...(tone === 'alarm' ? { borderWidth: 1.5, borderColor: c.line } : null),
+    ...(tone === 'alarm' ? { borderWidth: rule.ink, borderColor: c.rule } : null),
   };
   const body = onPress ? (
     <AnimatedPressable
@@ -621,7 +641,7 @@ export function KeyValue({ label, value, tone, style }: {
   );
 }
 
-/** The app's mark: a figure on the inverse plate. Login and Welcome share it. */
+/** The app's mark: a figure on the focal plate. Login and Welcome share it. */
 export function Mark({ size = 88, style }: { size?: number; style?: ViewStyle }) {
   const t = useTheme();
   return (
@@ -673,8 +693,8 @@ export function StateChip({ state, label }: { state: ResidentState; label?: stri
   const t = useTheme();
   const c = useSurfaceColors();
   const s = t.stateColor[state];
-  // The alerting chip is the surface's inverse plate; everything else is a
-  // wash. Same rule as the buttons: the gravest thing is the inverted one.
+  // The alerting chip is the surface's gravest plate (navy on light, light
+  // blue on deep); everything else is a wash. Same rule as the buttons.
   const bg = s.form === 'inverse' ? c.plate : s.form === 'filled' ? c.accentWash : c.wash;
   const fg = s.form === 'inverse' ? c.onPlate : s.form === 'filled' ? c.accent : state === 'ok' ? c.ink : c.muted;
   return (
@@ -724,8 +744,8 @@ export function StatTile({
         {state === 'warn'
           ? <IconBadge name={icon} color={t.accent} size={30} />
           : <IconBadge name={icon} color={state === 'ok' ? t.inkMuted : t.inkFaint} size={30} outline />}
-        {/* mono.big, one step down: the tile is half a screen wide. */}
-        <Txt kind="data" style={{ fontSize: type.stat.fontSize, lineHeight: type.stat.lineHeight, marginTop: sp(2.5) }} numberOfLines={1}>
+        {/* mono.big is the title step, which is exactly a tile's figure. */}
+        <Txt kind="data" style={{ marginTop: sp(2.5) }} numberOfLines={1}>
           {value}
         </Txt>
         <Txt kind="caption" tone="muted" style={{ marginTop: 1 }} numberOfLines={1}>
@@ -770,9 +790,7 @@ const styles = StyleSheet.create({
   // The code is a machine reading, so it wears the machine face: Menlo,
   // tabular, centred, on the same plate-and-rule as every other field.
   inputCode: {
-    ...(mono.big as TextStyle),
-    fontSize: 38,
-    lineHeight: 46,
+    ...(mono.hero as TextStyle),
     letterSpacing: 8,
     textAlign: 'center',
     borderTopLeftRadius: radius.card,

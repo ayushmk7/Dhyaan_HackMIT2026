@@ -3,6 +3,10 @@
 // name their kind, because a family must always be able to tell observed from
 // assumed.
 //
+// The conversation is the screen. Her answers sit straight on the paper; your
+// questions are the one plate, a light blue bubble on the right. Nothing else
+// is boxed. Before the first question, one big sentence and the openers.
+//
 // A refusal is not an error. It renders as a quiet raised hand and a plain
 // sentence — no red, no warning icon, no retry — because the questions Dhyaan
 // won't answer, it won't answer for anyone, and being told so calmly is the
@@ -13,8 +17,7 @@ import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
 import {
-  Card, Chip, CitationChip, Entrance, ErrorState, IconBtn, KindTag, LoadingState, Refusal, Row, Rule,
-  Screen, Slab, Txt,
+  Chip, CitationChip, Entrance, ErrorState, IconBtn, LoadingState, Refusal, Row, Rule, Screen, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { family } from '@/lib/copy/family';
@@ -101,22 +104,15 @@ export default function Ask() {
     >
       {messages.length === 0 && (
         <>
-          {/* The screen's one uncompromising surface, and it is the law of
-              the screen: every answer names where it came from. */}
-          <Entrance index={0}>
-            <Slab>
-              <Txt kind="title">{copy.everyAnswer}</Txt>
-              <Rule weight="hair" style={{ marginTop: sp(3.5) }} />
-              <Row gap={2} style={{ marginTop: sp(3.5), flexWrap: 'wrap' }}>
-                <KindTag kind="observed" />
-                <KindTag kind="told" />
-                <KindTag kind="pattern" />
-              </Row>
-            </Slab>
+          {/* Before the first question: the one big sentence, the law under
+              it in a caption, then the openers. No plate, no legend. */}
+          <Entrance index={0} distance={26}>
+            <Txt kind="display">{copy.hero(residentName)}</Txt>
+            <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>{copy.everyAnswer}</Txt>
           </Entrance>
 
           <Entrance index={1}>
-            <View style={{ marginTop: sp(6), gap: sp(2) }}>
+            <View style={{ marginTop: sp(7), gap: sp(2), alignItems: 'flex-start' }}>
               {copy.suggestions.map((s) => (
                 <Chip key={s} label={s} onPress={() => send(s)} />
               ))}
@@ -129,18 +125,20 @@ export default function Ask() {
         </>
       )}
 
-      <View style={{ marginTop: sp(5), gap: sp(3) }}>
+      {/* The conversation. A question is the one plate; an answer is prose
+          on the paper with its sources under a hairline. */}
+      <View style={{ gap: sp(5) }}>
         {messages.map((m) =>
           m.role === 'user' ? (
             <View key={m.id} style={{
               alignSelf: 'flex-end', maxWidth: '85%',
-              backgroundColor: t.ink,
+              backgroundColor: t.accentWash,
               borderRadius: radius.bubble, paddingHorizontal: sp(3.5), paddingVertical: sp(2.5),
             }}>
-              <Txt kind="body" tone="paper">{m.text}</Txt>
+              <Txt kind="body">{m.text}</Txt>
             </View>
           ) : (
-            <Card key={m.id} style={{ alignSelf: 'stretch' }}>
+            <View key={m.id} style={{ alignSelf: 'stretch', paddingRight: sp(4) }}>
               {m.refused ? (
                 <Refusal label={refusalLabel(m.refusal_kind)}>
                   {m.text}
@@ -149,7 +147,7 @@ export default function Ask() {
                 <Txt kind="body">{m.text}</Txt>
               )}
               {!!m.citations?.length && (
-                <View style={{ marginTop: sp(3.5), gap: sp(2) }}>
+                <View style={{ marginTop: sp(3), gap: sp(2) }}>
                   <Rule weight="hair" color={t.line} />
                   {m.citations.map((c) => (
                     <CitationChip
@@ -167,15 +165,11 @@ export default function Ask() {
                   ))}
                 </View>
               )}
-            </Card>
+            </View>
           ),
         )}
 
-        {thinking && (
-          <Card>
-            <LoadingState label={copy.thinking} />
-          </Card>
-        )}
+        {thinking && <LoadingState label={copy.thinking} />}
 
         {sendError && !thinking && (
           <ErrorState inline message={sendError} onRetry={() => send(lastQuestion)} />
