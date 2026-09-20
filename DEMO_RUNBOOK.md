@@ -106,6 +106,28 @@ Set in the environment before `./dev.sh`.
   (repo copy now carries the ngrok URL, but verify after any push:
   `adb shell grep hub_url /home/arduino/ArduinoApps/fallband-app/config.json`).
 
+## Moving the demo host (e.g. to Ayush's machine)
+
+The tunnel domain belongs to the ngrok ACCOUNT, not the machine — every
+device (band, box, DevKitC, Twilio) follows it. No reflashing, no device
+config changes. ~20 min:
+
+1. Stop ngrok on the old machine (one tunnel per domain).
+2. New machine: `ngrok config add-authtoken <Abhinav's token>` then
+   `ngrok http 8000 --url subsystem-mushroom-grooving.ngrok-free.dev`.
+3. Pull the repo; AirDrop the two secret files (root `.env`,
+   `frontend/.env`) — never through git.
+4. `cd backend && uv venv && uv pip install -e ".[vision]" --group dev`;
+   docker mongo; `ollama pull nomic-embed-text` (VLM already pulled there).
+5. `./dev.sh` — a fresh DB seeds Asha with TEST_PHONE_E164 and band_unoq01.
+6. Fresh DB has no fingerprints: run the 2x35s room survey (above).
+7. `make vision-demo` once interactively for the camera permission prompt.
+8. App can run on EITHER laptop: point it at the tunnel
+   (`EXPO_PUBLIC_API_BASE=https://subsystem-mushroom-grooving.ngrok-free.dev/v1`).
+9. Bonus of hosting where vision runs: the fall auto-cancel's clock-sync
+   caveat disappears (one clock).
+10. REHEARSE ON THE MACHINE THAT PERFORMS. No exceptions.
+
 ## Recovery moves (fastest first)
 
 - **Call never comes**: check ngrok is up and printing the SAME domain; check
