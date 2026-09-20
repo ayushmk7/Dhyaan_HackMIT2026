@@ -454,9 +454,11 @@ export default function Settings() {
   return (
     <Screen native wash>
       {/* Beat 0. Her name. The one large thing on the screen, on bare paper,
-          with nothing beside it and nothing under it. */}
+          with nothing beside it and nothing under it. The same sp(4) inset the
+          headings carry, so her name starts on the text edge of the plates
+          below it rather than 16pt to their left. */}
       <Entrance index={0} distance={26}>
-        <Txt kind="display" numberOfLines={2}>{name}</Txt>
+        <Txt kind="display" numberOfLines={2} style={{ marginHorizontal: sp(4) }}>{name}</Txt>
       </Entrance>
 
       {/* Beat 1. What Dhyaan was told: the first plate, and the one whose
