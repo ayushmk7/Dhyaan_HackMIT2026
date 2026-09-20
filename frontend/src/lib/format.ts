@@ -45,3 +45,34 @@ export const eventTitle = (type: string): string =>
     prolonged_inactivity: 'Unusually still',
     baseline_deviation: 'Different from her routine',
   }[type] ?? zoneLabel(type));
+
+/**
+ * The resident's own number — how the family rings HER.
+ *
+ * `Resident.phone_e164` is the answer whenever the roster has been loaded; it
+ * comes straight off her document (backend/app/routers/residents.py). The
+ * contacts fallback exists because `Contact` is the escalation ladder — who
+ * Dhyaan rings ON her behalf — and some installs list her there too, under a
+ * "self" relationship or simply under her own name.
+ *
+ * Returns null rather than a placeholder. Every call site says "Dhyaan doesn't
+ * have a number for her" instead of dialling something that belongs to nobody;
+ * these buttons used to be a hardcoded +1 617 555 0100.
+ */
+export function residentNumber(
+  resident: { phone_e164?: string | null } | null | undefined,
+  contacts: { name: string; phone_e164: string; relationship: string }[] | undefined,
+  name: string,
+): string | null {
+  const own = resident?.phone_e164?.trim();
+  if (own) return own;
+  const full = name.trim().toLowerCase();
+  const first = full.split(/\s+/)[0];
+  const self = (contacts ?? []).find((c) => {
+    const rel = (c.relationship ?? '').toLowerCase();
+    if (rel === 'self' || rel === 'resident' || rel === 'herself' || rel === 'himself') return true;
+    const n = c.name.trim().toLowerCase();
+    return !!first && (n === full || n.split(/\s+/)[0] === first);
+  });
+  return self?.phone_e164?.trim() || null;
+}

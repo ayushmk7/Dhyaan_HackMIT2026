@@ -264,6 +264,7 @@ export default function Triage() {
           ))}
           {needsEyes.length === 0 && (
             <Txt kind="body" tone="muted" style={{ paddingVertical: sp(3) }}>
+              {/* voice-ok: an empty state, which DESIGN.md exempts. */}
               {residents.length === 0
                 ? 'No residents on this floor yet.'
                 : 'Nobody needs a check right now.'}

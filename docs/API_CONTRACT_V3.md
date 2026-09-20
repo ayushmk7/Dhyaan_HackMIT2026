@@ -92,3 +92,151 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "X-Band-Key: band-dev-key" \
 - **Chat citations carry `kind`** so the app can render *You told us* /
   *Dhyaan saw* / *From her pattern*. A family must always be able to tell what
   was observed from what was assumed.
+
+---
+
+# V3.1 — the live monitor, the camera list, and one alert shape
+
+Added after the first end-to-end run. Nothing above changed; everything below is
+new surface. Same auth rules: device routes take `X-Band-Key`, app routes take
+`Authorization: Bearer <API_KEY>`, everything is under `/v1`.
+
+## The monitor tick
+
+The hub worker posts one small JSON tick per cascade cycle (at most 1/s, see
+`vision/__init__.py TUNING["monitor_s"]`) so the app can render a live CCTV
+console. It is **telemetry, not data**: the API keeps only the latest tick per
+camera, in a module-level dict, and it is gone on restart. It is never written
+to MongoDB and it is never an observation.
+
+| Method | Path | Auth | Body | Returns |
+|---|---|---|---|---|
+| POST | `/ingest/camera/monitor` | device | the tick, below | `204`; `403` consent off/paused; `404` unknown camera; `422` bad box or gate |
+| GET | `/cameras` | app | — (optional `?resident_id=`) | `[{id, resident_id, state, consent, paused_until, last_heartbeat_at, online}]` |
+| GET | `/cameras/{camera_id}/monitor` | app | — | `{camera, online, tick}` — see below; `404` unknown camera |
+| POST | `/cameras/{camera_id}/pause` | app | `{hours: float}` (0 < h ≤ 24, default 2) | `{paused_until, paused_by: "family", presence}` |
+| POST | `/cameras/{camera_id}/resume` | app | — | `{paused_until: null, presence}`; **`403` if she paused it herself** |
+
+```jsonc
+// POST /v1/ingest/camera/monitor   — the tick, exactly
+{
+  "camera_id": "cam_mac_01",
+  "ts": "2026-09-20T02:55:47.883016+00:00",
+  "fps": 3.1,
+  "person_count": 1,                       // 0..6
+  "boxes": [[0.31, 0.34, 0.75, 0.99]],     // NORMALISED 0..1 x0,y0,x1,y1 — never pixels, max 6
+  "gate": "person",                        // "idle" | "motion" | "person" | "thinking"
+  "model": "qwen2.5vl:3b",
+  "latency_ms": 690,                       // of the last VLM call
+  "batch_frames": 1,
+  "activity": "eating",                    // the §3.5 enum, or null before the first observation
+  "sentence": "eating at the table",       // activity + spot, scrubbed; "" before the first one
+  "confidence": 0.82,                      // or null
+  "simulated": false                       // true on --source synthetic
+}
+```
+
+```jsonc
+// GET /v1/cameras/{camera_id}/monitor   — live
+{
+  "camera": {"id": "cam_mac_01", "resident_id": "res_eleanor", "state": "watching",
+             "consent": true, "paused_until": null,
+             "last_heartbeat_at": "2026-09-20T02:55:44+00:00", "online": true},
+  "online": true,
+  "tick": { ...the tick above, plus "resident_id" }
+}
+
+// GET /v1/cameras/{camera_id}/monitor   — nothing heard, or heard too long ago
+{"camera": {...}, "online": false, "tick": null}
+```
+
+Two different `online`s, on purpose: `camera.online` is the 30 s heartbeat ("is
+the worker running"), the top-level `online` is a tick newer than 15 s ("is the
+console live"). **`tick` is `null` rather than a stale or invented one** — a
+console that makes up a frame count is worse than one that admits it has not
+heard anything.
+
+Websocket, on the existing `/v1/live`, fired on every tick:
+
+```jsonc
+{"t": "camera.monitor", "camera_id": "cam_mac_01", "ts": "...", "fps": 3.1,
+ "person_count": 1, "boxes": [[0.31, 0.34, 0.75, 0.99]], "gate": "person",
+ "model": "qwen2.5vl:3b", "latency_ms": 690, "batch_frames": 1,
+ "activity": "eating", "sentence": "eating at the table", "confidence": 0.82,
+ "simulated": false, "resident_id": "res_eleanor"}
+```
+
+### Why this is family-visible, and what enforces it
+
+A tick carries counts, normalised geometry and the same activity/spot sentence
+`GET /presence` already returns. It carries **no zone, no evidence, no posture,
+no movement quality and no pixel** — and `MonitorIn` in `app/routers/camera.py`
+is what enforces that, because a Pydantic model is an allowlist: a field it does
+not declare simply vanishes at the boundary. `sentence` goes through the same
+`rag.scrub_rooms` filter `/activity` uses. `POST /ingest/camera/monitor` fails
+closed exactly as `/ingest/camera` does — a paused camera has no live console,
+or the pause would not mean anything.
+
+### Pausing
+
+`paused_by` is the whole control. The app writes `"family"`; the hub's own `p`
+key writes `"resident"`. `POST /resume` refuses (**403**) to lift a pause it did
+not set, which is `PRODUCT_SPEC.md` §8.3 rule 1 as a status code.
+
+## One alert shape, REST and websocket
+
+`GET /alerts/{id}`, `POST /alerts/{id}/ack`, `POST /alerts/{id}/resolve` and the
+`{"t": "alert.update"}` websocket message now all go through one shaper
+(`routers/residents.py::alert_response`), so they cannot drift. Two fields the
+takeover screen needs are now on **both** paths:
+
+```jsonc
+{
+  "id": "alt_...", "state": "MANUALLY_RESOLVED", ...,
+  "closed_at": "2026-09-20T02:40:11+00:00",   // null unless the state is terminal
+  "ladder": [
+    {"step": "suspected",       "at": "...", "detail": "A fall was suspected.",
+     "outcome": null, "from_state": null, "state": null},
+    {"step": "cancel_window",   "at": "...", "detail": "Waiting half a minute, in case it was nothing.",
+     "outcome": "window_open", "from_state": "SUSPECTED", "state": "LOCAL_CANCEL"},
+    {"step": "acknowledged",    "at": "...", "detail": "Priya is on it. The ladder has stopped.",
+     "outcome": "ack", "from_state": "LOCAL_CANCEL", "state": "ACKNOWLEDGED"}
+  ],
+  "calls": [...], "trigger_event": {...}
+}
+```
+
+`step` is the app's vocabulary, not the FSM's: `suspected`, `cancel_window`,
+`calling_resident`, `no_answer`, `calling_contact_1`, `calling_contact_2`,
+`escalated_final`, `acknowledged`, `cancelled`, `exhausted`, `resolved`. The FSM
+has more states than the screen has phases on purpose — the family does not need
+the difference between `RETRY_RESIDENT` and `VOICEMAIL`, both of which mean "she
+hasn't picked up". `detail` is the sentence the timeline prints. Nothing is
+stored for this: it is projected on read from the transition events
+`alerts.py::_apply` already writes (TECHNICAL_PRD §4.3). `closed_at` is
+`resolved_at ?? updated_at` when the state is terminal, else `null` — the app
+must stop computing it client-side.
+
+`GET /alerts` list rows carry `closed_at` too (no `ladder`; the list does not
+render one).
+
+## `--source synthetic`: the lane with no webcam
+
+```bash
+DEMO_FAST=1 make run                       # or: DEMO_FAST=1 uvicorn app.main:app
+python -m vision --source synthetic --camera-id cam_mac_01
+```
+
+A one-minute scripted day in a drawn living room: empty room (long enough to go
+out of view) → she walks in → sits → eats at the table with a plate → crosses to
+the armchair → a visitor joins her. One minute of it puts a **meal, a visitor and
+a spell of moving about** on `/activity`, and leaves `/cameras/{id}/monitor`
+returning a live tick with real boxes.
+
+Everything downstream of perception is the real thing — keyframe rules, the
+Ollama call (`qwen2.5vl:3b`), `POST /ingest/camera`, the dedup, presence, the
+events, both websocket messages. What is scripted is **who is in the room**: no
+detector and no 3B model reads a drawn figure as a person (measured: yolo11s
+scores it 0.04, i.e. noise). Every row it produces carries `simulated: true`,
+which is what makes that an admission rather than a lie. Without `DEMO_FAST=1`
+it still works, it just needs a few minutes for the dedup's real thresholds.

@@ -104,26 +104,22 @@ export default function EventDetail() {
           </Txt>
         </View>
 
-        {verdict ? (
-          <View>
-            <Marquee title="Thank you" first />
-            <Txt kind="body" tone="ok">
-              {/* True as written: the route records the verdict against this
-                  observation. Nothing reads it back for you, so don't promise
-                  that it will. */}
-              Got it. That’s recorded against this observation.
-            </Txt>
-          </View>
-        ) : (
-          <View>
-            <Marquee title="Did Dhyaan get this right?" first />
+        <View>
+          <Marquee title="Did Dhyaan get this right?" first />
+          {verdict ? (
+            // True as written: the route records the verdict against this
+            // observation. Nothing reads it back for you, so don't promise
+            // that it will — the old copy said Dhyaan would "weigh this
+            // differently next time", and nothing does.
+            <Txt kind="body" tone="ok">Got it. That’s recorded against this observation.</Txt>
+          ) : (
             <View style={{ gap: sp(2) }}>
               <Btn label="This was expected" kind="quiet" busy={busy} onPress={() => give('expected')} />
               <Btn label="This didn’t happen" kind="quiet" busy={busy} onPress={() => give('false_positive')} />
               {feedbackError && <Txt kind="caption" tone="alert">{feedbackError}</Txt>}
             </View>
-          </View>
-        )}
+          )}
+        </View>
       </Stagger>
     </Screen>
   );

@@ -2,6 +2,7 @@
 // the in-memory backend; in http mode it opens the real socket.
 import { create } from 'zustand';
 import { USE_MOCKS } from '@/lib/config';
+import { toAlert } from '@/lib/http';
 import { LiveClient } from '@/lib/live';
 import { dhyaan } from '@/lib/mock/dhyaan';
 import { queryClient } from '@/lib/queryClient';
@@ -10,8 +11,6 @@ import type {
 } from '@/lib/types';
 import type { ResidentState } from '@/theme/tokens';
 
-type DwellWarning = { zone: string; dwell_s: number; escalating: boolean };
-
 type LiveState = {
   status: 'connecting' | 'open' | 'closed';
   states: Record<string, ResidentState>;
@@ -19,7 +18,6 @@ type LiveState = {
   // VLM_PLAN §6.1: pushed after every observation and heartbeat state change.
   // Today reads this first and falls back to the 15 s GET /presence refetch.
   presence: Record<string, Presence>;
-  dwellWarnings: Record<string, DwellWarning>;
   /** camera_id -> the last tick. The console reads this; nothing else does. */
   monitor: Record<string, CameraMonitorTick>;
   activeAlert: Alert | null;
@@ -31,6 +29,13 @@ type LiveState = {
 };
 
 let unsubscribe: (() => void) | null = null;
+
+// REST alerts go through `toAlert`; socket alerts used to skip it entirely and
+// land in the store as the raw Mongo document. That is how the takeover got
+// stuck open: `closed_at` and `calls` are shaped by that function, and the
+// reducer below decides whether to dismiss on `closed_at`. The mock emits
+// already-shaped alerts, so it passes them straight through.
+const shapeAlert = (a: Alert): Alert => (USE_MOCKS ? a : toAlert(a as never));
 
 // Mirrors MONITOR_STALE_S in backend/app/routers/camera.py. Keep in sync.
 const MONITOR_STALE_MS = 15_000;
@@ -54,7 +59,6 @@ export const useLive = create<LiveState>((set, get) => ({
   states: {},
   locations: {},
   presence: {},
-  dwellWarnings: {},
   monitor: {},
   activeAlert: null,
   ladder: [],
@@ -83,22 +87,24 @@ export const useLive = create<LiveState>((set, get) => ({
 
   applyEvent(m) {
     switch (m.t) {
-      case 'alert.opened':
-        set({ activeAlert: m.alert, ladder: [...(m.alert.ladder ?? [])], transcript: [] });
+      case 'alert.opened': {
+        const a = shapeAlert(m.alert);
+        set({ activeAlert: a, ladder: [...(a.ladder ?? [])], transcript: [] });
         break;
+      }
       // Real backend (backend/app/routers/live.py) only ever sends this one —
       // the whole current alert doc, on open/ack/resolve alike — never the
       // mock's separate opened/ladder/voice/closed messages. Treat it as
       // "this is the current truth" so a live alert on a real backend still
       // opens the takeover and still closes it.
-      case 'alert.update':
+      case 'alert.update': {
+        const a = shapeAlert(m.alert);
         set((s) => ({
-          activeAlert: m.alert.closed_at
-            ? (s.activeAlert?.id === m.alert.id ? null : s.activeAlert)
-            : m.alert,
-          ladder: m.alert.closed_at ? s.ladder : [...(m.alert.ladder ?? [])],
+          activeAlert: a.closed_at ? (s.activeAlert?.id === a.id ? null : s.activeAlert) : a,
+          ladder: a.closed_at ? s.ladder : [...(a.ladder ?? [])],
         }));
         break;
+      }
       case 'alert.ladder':
         set((s) => ({ ladder: [...s.ladder, m.step] }));
         break;
@@ -131,12 +137,10 @@ export const useLive = create<LiveState>((set, get) => ({
         set((s) => ({ locations: { ...s.locations, [m.resident_id]: m.location } }));
         break;
       case 'location.dwell':
-        set((s) => ({
-          dwellWarnings: {
-            ...s.dwellWarnings,
-            [m.resident_id]: { zone: m.zone, dwell_s: m.dwell_s, escalating: m.escalating },
-          },
-        }));
+        // Nothing emits this on either backend, and nothing read the store slot
+        // it used to fill. Kept as an explicit no-op rather than deleted from
+        // the union: the PRD still specifies the message, and a silent
+        // `default` would swallow a real one if it ever starts arriving.
         break;
       case 'resident.state':
         set((s) => ({ states: { ...s.states, [m.resident_id]: m.state } }));

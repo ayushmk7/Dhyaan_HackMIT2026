@@ -188,6 +188,40 @@ class Worker:
         except Exception:
             pass
 
+    def post_async(self, payload):
+        """Fire the ingest POST on a worker thread.
+
+        It is only ~3 ms, but it sits in the capture loop and the loop now runs
+        at 15 fps, so it is 3 ms stolen from every frame for a result nothing
+        downstream waits on. One thread, one queue, drop-oldest if the API
+        stalls: a backed-up network must slow the network, not the camera.
+        """
+        if self.dry_run:
+            return self.post(payload)
+        q = getattr(self, "_postq", None)
+        if q is None:
+            import queue, threading
+
+            q = self._postq = queue.Queue(maxsize=32)
+
+            def drain():
+                while True:
+                    item = q.get()
+                    if item is None:
+                        return
+                    try:
+                        self.post(item)
+                    except Exception as e:      # noqa: BLE001
+                        log(f"post failed: {type(e).__name__}: {str(e)[:120]}")
+
+            threading.Thread(target=drain, daemon=True, name="dhyaan-post").start()
+        try:
+            q.put_nowait(payload)
+        except Exception:                        # noqa: BLE001
+            # Full queue: the API is slower than the camera. Drop this one and
+            # say so rather than letting the loop block behind it.
+            log("post queue full — dropped an observation (API slower than the camera)")
+
     def post(self, payload):
         """--dry-run prints the exact JSON instead of posting it, so it can be
         diffed against fixtures/camera_observation.json."""
@@ -321,7 +355,7 @@ class Worker:
                         self._last_shape = shape
                         quick = vlm.post_rules(
                             vlm.from_scene(self.scene, posture_band(box, self.tuning)))
-                        self.post(vlm.to_payload(
+                        self.post_async(vlm.to_payload(
                             self.camera_id, self.cfg["resident_id"],
                             datetime.now(timezone.utc).isoformat(), 0.0, 1, quick,
                             model=os.getenv("YOLO_MODEL", "yolo11s.pt").replace(".pt", ""),

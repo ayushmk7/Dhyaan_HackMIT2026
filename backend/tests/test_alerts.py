@@ -135,3 +135,44 @@ async def test_silence_escalates(db, resident, monkeypatch):
     # nobody ever calls classify()
     doc = await _wait_for_state(db, alert["_id"], "CALLING_CONTACT_1")
     assert doc["severity"] == "critical"
+
+
+async def test_restart_rearms_an_in_flight_ladder(db, resident, monkeypatch):
+    """A process restart must not strand an open alert mid-escalation.
+
+    Timers are in-memory asyncio tasks, so `uvicorn --reload` (which fires every
+    time a file is saved in development) used to leave the phone showing a live
+    takeover that would never advance and never close. `start_timers()` re-arms
+    from what the database already knows.
+    """
+    monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 30)  # long: it must NOT fire on its own
+    alert = await alerts.open_alert(resident, "evt_restart", kind="fall", severity="critical")
+    assert alert["state"] == "LOCAL_CANCEL"
+
+    # Simulate the restart: every in-memory timer dies with the process.
+    alerts.stop_timers()
+    assert not [t for t in alerts._timers.values() if not t.done()]
+
+    # It has been "28 seconds" since the window opened, so 2 remain — shortened
+    # here to keep the test fast while still exercising the elapsed-time maths.
+    monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 0.05)
+    alerts.start_timers()
+
+    doc = await _wait_for_state(db, alert["_id"], "CALLING_RESIDENT")
+    assert doc["resident_call_attempts"] == 1
+
+
+async def test_restart_leaves_closed_alerts_alone(db, resident, monkeypatch):
+    """Re-arming must not resurrect a ladder that already finished."""
+    monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 5)
+    alert = await alerts.open_alert(resident, "evt_restart2", kind="fall", severity="critical")
+    await alerts.cancel(alert["_id"], by="band_button")
+
+    alerts.stop_timers()
+    monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 0.05)
+    alerts.start_timers()
+    await asyncio.sleep(0.2)
+
+    fresh = await db.alerts.find_one({"_id": alert["_id"]})
+    assert fresh["state"] == "CANCELLED"
+    assert await _call_events(db, resident) == []

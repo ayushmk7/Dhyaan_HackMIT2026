@@ -73,6 +73,12 @@ async def broadcast_alert(alert: dict) -> None:
     path and left it stuck on screen on the socket. One shaper, no drift.
     Lazy import because residents.py imports this module.
     """
+    if not _connections:
+        # Nobody is listening, so do not pay two queries to shape a message that
+        # goes nowhere. `alerts.py` broadcasts on every FSM transition, and that
+        # ladder must not slow down for an empty room.
+        return
+
     from .residents import alert_response
 
     await broadcast({"t": "alert.update", "alert": await alert_response(alert)},

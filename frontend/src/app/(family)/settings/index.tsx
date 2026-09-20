@@ -585,14 +585,14 @@ export default function Settings() {
           <Marquee title="What Dhyaan does when something happens" />
           <Card>
             <Txt kind="label">If her band detects a fall</Txt>
-            <Txt kind="body" tone="muted" style={{ marginTop: sp(1) }}>
+            <Txt kind="body" style={{ marginTop: sp(1) }}>
               It gives her thirty seconds to cancel, then Dhyaan calls her. If she does
               not answer, it calls the people above, in order, and your phone is told
               at the same time.
             </Txt>
             <Hairline style={{ marginVertical: sp(3) }} />
             <Txt kind="label">Everything else</Txt>
-            <Txt kind="body" tone="muted" style={{ marginTop: sp(1) }}>
+            <Txt kind="body" style={{ marginTop: sp(1) }}>
               Meals, walks, visitors, a long stay in one place — these go on her
               timeline for you to read. Nobody is phoned about them.
             </Txt>

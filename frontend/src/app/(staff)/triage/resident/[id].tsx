@@ -11,16 +11,19 @@
 //     backend's one-point series was empty, so the deviation check silently
 //     became NaN and never fired. Empty and one-point series are handled
 //     explicitly now.
-//   · "Ask about X" called `api.chat`, which is hardcoded to the SESSION's
-//     resident in both the mock and the real client. Asking about Harold
-//     returned Eleanor's day. The box is only offered for the session's own
-//     resident; for anyone else the screen says why, quietly.
+//   · "Ask about X" called `api.chat` with no resident, and the facade was
+//     hardcoded to the SESSION's resident in both clients — asking about
+//     Harold returned Eleanor's day, the most dangerous bug on this screen.
+//     `api.chat` now takes a resident id, so the box is offered for everyone
+//     and scoped to the resident on screen. The mock holds one resident and
+//     answers any other id with a real refusal, which renders in the quiet
+//     refusal shape rather than as an error.
 //   · `GET /residents/{id}/location/history` was a real endpoint with a real
 //     client function, a real hook and a real component, and nothing imported
 //     any of them. Staff screens are the one place whereabouts are permitted
 //     (DECISIONS.md D-001, TECHNICAL_PRD §12.4), so the room-time bar lives
 //     here.
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
@@ -36,7 +39,6 @@ import { ago, dayOf, timeOf } from '@/lib/format';
 import { localDayKey, useBaselines, useLocationHistory, useResident, useTimeline } from '@/lib/hooks';
 import type { BaselineFeature, ChatMessage } from '@/lib/types';
 import { useLive } from '@/store/live';
-import { useSession } from '@/store/session';
 import { elevation, palette, radius, sp } from '@/theme/tokens';
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
@@ -77,6 +79,7 @@ function BaselineRow({ b }: { b: BaselineFeature }) {
           <Row gap={2} style={{ alignItems: 'baseline' }}>
             <Txt kind="data" tone={deviating ? 'warn' : 'ink'}>{fmt(last)}</Txt>
             <Txt kind="caption" tone="muted">{b.unit} · one reading, no trend yet</Txt>
+              {/* voice-ok: an empty state, which DESIGN.md exempts. */}
           </Row>
         )}
       </View>
@@ -97,11 +100,20 @@ export default function ResidentDetail() {
   const { data: baselines } = useBaselines(id);
   const { data: events } = useTimeline(id);
   const { data: segments } = useLocationHistory(id, localDayKey());
+  // ponytail: no `useLocation` hook in lib/hooks.ts — calling the facade
+  // directly here, the same pattern triage's open-alerts poll already uses.
+  // GET /residents/{id}/location is one document; `useResident` pays for the
+  // whole roster, so this is the cheap read for the one thing that moves.
+  // 15 s is `usePresence`'s interval: the belt under the websocket push.
+  const { data: currentZone } = useQuery({
+    queryKey: ['location', id],
+    queryFn: () => api.getLocation(id),
+    enabled: !!id,
+    refetchInterval: 15_000,
+  });
   const liveStates = useLive((s) => s.states);
   const liveLocations = useLive((s) => s.locations);
   const activeAlert = useLive((s) => s.activeAlert);
-  const sessionResidentId = useSession((s) => s.residentId);
-  const sessionResidentName = useSession((s) => s.residentName);
 
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
@@ -124,14 +136,13 @@ export default function ResidentDetail() {
   }
 
   const state = liveStates[resident.id] ?? resident.state;
-  const location = liveLocations[resident.id] ?? resident.location;
+  // Socket first, then the dedicated zone read; the roster's copy only covers
+  // the frame before that read lands.
+  const location = liveLocations[resident.id] ?? currentZone ?? resident.location;
   const firstName = resident.display_name.split(' ')[0];
   const today = (events ?? []).filter((e) => dayOf(e.ts) === 'Today');
   const alertHere = state === 'alerting' && activeAlert?.resident_id === resident.id;
   const deviations = (baselines ?? []).filter(isDeviating);
-  // api.chat is hardcoded to the session's resident in BOTH clients, so any
-  // other resident's box would answer about the wrong person.
-  const canAsk = resident.id === sessionResidentId;
 
   const whereLine = location
     ? location.since
@@ -147,7 +158,8 @@ export default function ResidentDetail() {
     setAsking(true);
     setAskError(null);
     try {
-      setAnswer(await api.chat(q));
+      // Scoped to the resident on screen, never the session's.
+      setAnswer(await api.chat(q, resident.id));
     } catch (e) {
       setAskError(e instanceof Error ? e.message : 'Couldn’t reach Dhyaan. Try again.');
     } finally {
@@ -325,45 +337,41 @@ export default function ResidentDetail() {
             )}
           </View>
 
-          {canAsk ? (
-            <View>
-              <Marquee title={`Ask about ${firstName}`} />
-              <Row gap={2} style={{ alignItems: 'flex-end' }}>
-                <View style={{ flex: 1 }}>
-                  <Field
-                    label="Question"
-                    value={question}
-                    onChangeText={setQuestion}
-                    placeholder={`Has ${firstName} been eating?`}
-                    onSubmitEditing={ask}
-                  />
-                </View>
-                <Btn label="Ask" busy={asking} onPress={ask} style={{ minHeight: 48, paddingHorizontal: sp(4) }} />
-              </Row>
-              {!!askError && (
-                <Txt kind="caption" tone="alert" style={{ marginTop: sp(2) }}>{askError}</Txt>
-              )}
-              {!!answer && (
-                <Card style={{ marginTop: sp(3) }}>
-                  <Txt kind="body">{answer.text}</Txt>
-                  {!!answer.citations?.length && (
-                    <Row gap={2} style={{ marginTop: sp(3), flexWrap: 'wrap' }}>
-                      {answer.citations.map((c) => <Chip key={c.id} label={c.label} />)}
-                    </Row>
-                  )}
-                </Card>
-              )}
-            </View>
-          ) : (
-            // A refusal is not an error: it renders quietly, in ink, once.
-            <Row gap={2} style={{ marginTop: sp(7), alignItems: 'flex-start' }}>
-              <Icon name="hand.raised" size={15} color={palette.inkMuted} />
-              <Txt kind="caption" tone="muted" style={{ flex: 1 }}>
-                Asking Dhyaan is switched off here. It only answers about {sessionResidentName},
-                so a question about {firstName} would come back with the wrong resident’s day.
-              </Txt>
+          <View>
+            <Marquee title={`Ask about ${firstName}`} />
+            <Row gap={2} style={{ alignItems: 'flex-end' }}>
+              <View style={{ flex: 1 }}>
+                <Field
+                  label="Question"
+                  value={question}
+                  onChangeText={setQuestion}
+                  placeholder={`Has ${firstName} been eating?`}
+                  onSubmitEditing={ask}
+                />
+              </View>
+              <Btn label="Ask" busy={asking} onPress={ask} style={{ minHeight: 48, paddingHorizontal: sp(4) }} />
             </Row>
-          )}
+            {!!askError && (
+              <Txt kind="caption" tone="alert" style={{ marginTop: sp(2) }}>{askError}</Txt>
+            )}
+            {!!answer && (answer.refused ? (
+              // A refusal is not an error: hand.raised, ink, a plain sentence,
+              // no retry and no colour. Saying so calmly is the product working.
+              <Row gap={2} style={{ marginTop: sp(3.5), alignItems: 'flex-start' }}>
+                <Icon name="hand.raised" size={15} color={palette.inkMuted} />
+                <Txt kind="body" style={{ flex: 1 }}>{answer.text}</Txt>
+              </Row>
+            ) : (
+              <Card style={{ marginTop: sp(3) }}>
+                <Txt kind="body">{answer.text}</Txt>
+                {!!answer.citations?.length && (
+                  <Row gap={2} style={{ marginTop: sp(3), flexWrap: 'wrap' }}>
+                    {answer.citations.map((c) => <Chip key={c.id} label={c.label} />)}
+                  </Row>
+                )}
+              </Card>
+            ))}
+          </View>
         </Stagger>
       </Screen>
 

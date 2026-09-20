@@ -29,7 +29,13 @@ import os
 # `--preview` in the real room beats any default here.
 TUNING = dict(
     # --- stage 0: sampling ---
-    sample_every_n=10,        # 30 fps device -> ~3 fps through the cascade
+    # Every 2nd frame, not every 10th. At 10 a 30 fps camera ran the cascade at
+    # ~3 fps, so up to 333 ms passed before a change was even looked at - which
+    # was the rest of the perceived lag once the rate limit was gone. The budget
+    # per frame is now detector 14 ms + post 3 ms against a 33 ms camera
+    # interval, so 15 fps is comfortable. Raise it if a slower machine starts
+    # dropping frames.
+    sample_every_n=int(os.getenv("SAMPLE_EVERY_N", "2")),
     # --- stage 2: motion (MOG2 on 320x180 grey) ---
     mog_history=300,
     mog_var_threshold=25,

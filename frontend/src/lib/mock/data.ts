@@ -187,46 +187,46 @@ export function generateEleanor(now: number) {
 
 export const facilityResidents: Resident[] = [
   {
-    id: 'res_harold', display_name: 'Harold Weiss', room: '214', state: 'attention',
+    id: 'res_harold', display_name: 'Harold Weiss', phone_e164: '+16175550111', room: '214', state: 'attention',
     last_seen: iso(Date.now() - 4 * MIN), band_battery_pct: 58,
     location: { zone: 'bedroom', label: 'Room 214', since: iso(Date.now() - 50 * MIN), confidence: 0.91, method: 'ble' },
     open_alerts: 0, baseline_ready: true,
     attention_reason: 'Up at 3 AM two nights running, new for him',
   },
   {
-    id: 'res_marguerite', display_name: 'Marguerite Cole', room: '203', state: 'attention',
+    id: 'res_marguerite', display_name: 'Marguerite Cole', phone_e164: '+16175550122', room: '203', state: 'attention',
     last_seen: iso(Date.now() - 2 * MIN), band_battery_pct: 71,
     location: { zone: 'dining_room', label: 'Dining room', since: iso(Date.now() - 12 * MIN), confidence: 0.84, method: 'fused' },
     open_alerts: 0, baseline_ready: true,
     attention_reason: 'Ate 1 of 3 meals yesterday',
   },
   {
-    id: 'res_dorothy', display_name: 'Dorothy Nakamura', room: '207', state: 'ok',
+    id: 'res_dorothy', display_name: 'Dorothy Nakamura', phone_e164: '+16175550133', room: '207', state: 'ok',
     last_seen: iso(Date.now() - 1 * MIN), band_battery_pct: 88,
     location: { zone: 'living_room', label: 'Common room', since: iso(Date.now() - 34 * MIN), confidence: 0.9, method: 'camera' },
     open_alerts: 0, baseline_ready: true,
   },
   {
-    id: 'res_ernest', display_name: 'Ernest Boyd', room: '210', state: 'ok',
+    id: 'res_ernest', display_name: 'Ernest Boyd', phone_e164: '+16175550144', room: '210', state: 'ok',
     last_seen: iso(Date.now() - 6 * MIN), band_battery_pct: 64,
     location: { zone: 'hallway', label: 'Floor 2 hallway', since: iso(Date.now() - 3 * MIN), confidence: 0.77, method: 'ble' },
     open_alerts: 0, baseline_ready: true,
   },
   {
-    id: 'res_alma', display_name: 'Alma Reyes', room: '201', state: 'learning',
+    id: 'res_alma', display_name: 'Alma Reyes', phone_e164: '+16175550155', room: '201', state: 'learning',
     last_seen: iso(Date.now() - 8 * MIN), band_battery_pct: 92,
     location: { zone: 'bedroom', label: 'Room 201', since: iso(Date.now() - 65 * MIN), confidence: 0.88, method: 'ble' },
     open_alerts: 0, baseline_ready: false,
     attention_reason: 'Moved in 3 days ago, still learning his routine',
   },
   {
-    id: 'res_walter', display_name: 'Walter Osei', room: '212', state: 'ok',
+    id: 'res_walter', display_name: 'Walter Osei', phone_e164: '+16175550166', room: '212', state: 'ok',
     last_seen: iso(Date.now() - 30_000), band_battery_pct: 47,
     location: { zone: 'dining_room', label: 'Dining room', since: iso(Date.now() - 22 * MIN), confidence: 0.9, method: 'camera' },
     open_alerts: 0, baseline_ready: true,
   },
   {
-    id: 'res_june', display_name: 'June Pelletier', room: '206', state: 'offline',
+    id: 'res_june', display_name: 'June Pelletier', phone_e164: '+16175550177', room: '206', state: 'offline',
     last_seen: iso(Date.now() - 4 * HOUR), band_battery_pct: null,
     location: null, open_alerts: 0, baseline_ready: true,
     attention_reason: 'Band unreachable for 4 hours',
@@ -234,7 +234,7 @@ export const facilityResidents: Resident[] = [
 ];
 
 export const eleanorResident = (now: number): Resident => ({
-  id: 'res_eleanor', display_name: 'Eleanor', room: null, state: 'ok',
+  id: 'res_eleanor', display_name: 'Eleanor', phone_e164: '+16175550100', room: null, state: 'ok',
   last_seen: iso(now - 40_000), band_battery_pct: 64,
   location: { zone: 'kitchen', label: 'Kitchen', since: iso(now - 12 * MIN), confidence: 0.88, method: 'ble' },
   open_alerts: 0, baseline_ready: true,

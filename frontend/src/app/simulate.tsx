@@ -10,7 +10,7 @@
 // This is machine chrome, not a family screen, so it is the one place the
 // uppercase mono voice is allowed to describe the request itself.
 import { router } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Btn, DataLabel, Entrance, LoadingState, Rule, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
@@ -20,24 +20,30 @@ type Outcome = { t: 'running' } | { t: 'no_alert' } | { t: 'failed'; why: string
 
 export default function Simulate() {
   const [outcome, setOutcome] = useState<Outcome>({ t: 'running' });
+  // Bumping this re-runs the request. The retry button owns the reset back to
+  // 'running', so the effect body itself never calls setState.
+  const [attempt, setAttempt] = useState(0);
 
-  const run = useCallback(async () => {
-    setOutcome({ t: 'running' });
-    try {
-      const alert = await api.simulate('fall');
-      // `Alert | null` — a rehearsal that opens nothing is a real outcome, not
-      // a crash, so never reach into `alert.id` without checking first.
-      if (alert) router.replace(`/alert/${alert.id}`);
-      else setOutcome({ t: 'no_alert' });
-    } catch (e) {
-      setOutcome({
-        t: 'failed',
-        why: e instanceof Error ? e.message : 'The request didn’t go through.',
+  useEffect(() => {
+    let live = true;
+    api
+      .simulate('fall')
+      .then((alert) => {
+        if (!live) return;
+        // `Alert | null` — a rehearsal that opens nothing is a real outcome,
+        // not a crash, so never reach into `alert.id` without checking first.
+        if (alert) router.replace(`/alert/${alert.id}`);
+        else setOutcome({ t: 'no_alert' });
+      })
+      .catch((e: unknown) => {
+        if (!live) return;
+        setOutcome({
+          t: 'failed',
+          why: e instanceof Error ? e.message : 'The request didn’t go through.',
+        });
       });
-    }
-  }, []);
-
-  useEffect(() => { run(); }, [run]);
+    return () => { live = false; };
+  }, [attempt]);
 
   return (
     <Screen night wash="night" scroll={false} style={{ justifyContent: 'center' }}>
@@ -66,7 +72,12 @@ export default function Simulate() {
             <View style={{ gap: sp(2), marginTop: sp(4) }}>
               <Btn label="Back to Today" night onPress={() => router.replace('/(family)/home')} />
               {outcome.t === 'failed' && (
-                <Btn label="Try the rehearsal again" kind="quiet" night onPress={run} />
+                <Btn
+                  label="Try the rehearsal again"
+                  kind="quiet"
+                  night
+                  onPress={() => { setOutcome({ t: 'running' }); setAttempt((n) => n + 1); }}
+                />
               )}
             </View>
           </View>

@@ -269,7 +269,7 @@ function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
         {/* Bottom chrome: the sentence track burned across the pane. */}
         <View style={styles.captionBar}>
           <Rule color={palette.amber} style={{ opacity: 0.5 }} />
-          <SentenceTrack text={tick.sentence?.trim() || 'No sentence yet — the model has not been asked.'} />
+          <SentenceTrack text={tick.sentence?.trim() || 'No sentence yet. The model has not been asked.'} />
         </View>
       </View>
     </Glass>
@@ -443,7 +443,7 @@ export default function CameraConsole() {
       return (
         <Notice
           title="No camera is set up."
-          detail="Nothing is watching, and nothing is posting. Point a camera at one common room in Settings, then start the vision worker on her computer — this screen fills in the moment it says something."
+          detail="Nothing is watching, and nothing is posting. Point a camera at one common room in Settings, then start the vision worker on her computer. This screen fills in the moment it says something."
           action={<Btn kind="quiet" label="Open Settings" onPress={openSettings} />}
         />
       );
@@ -498,8 +498,9 @@ export default function CameraConsole() {
           <MonitorPane tick={tick} />
           {/* The one human line on the screen, and the product's best claim. */}
           <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>
+            {/* voice-ok: an empty state, which DESIGN.md exempts. */}
             No picture is kept, and none ever leaves her computer. What you are watching is the
-            shape the camera found and the sentence it wrote about it — that is the whole of what
+            shape the camera found and the sentence it wrote about it. That is the whole of what
             Dhyaan ever has.
           </Txt>
         </View>

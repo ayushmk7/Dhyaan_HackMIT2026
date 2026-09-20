@@ -159,6 +159,7 @@ export default function Floor() {
 
           {rooms.length === 0 && (
             <Txt kind="body" tone="muted" style={{ marginTop: sp(6) }}>
+              {/* voice-ok: an empty state, which DESIGN.md exempts. */}
               No rooms are set up on this floor yet.
             </Txt>
           )}

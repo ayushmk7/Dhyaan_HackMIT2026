@@ -70,7 +70,6 @@ class MockDhyaan {
     if (residentId !== 'res_eleanor') return [];
     return this.world.locationDays[date] ?? [];
   }
-  get locationDayKeys(): string[] { return Object.keys(this.world.locationDays); }
 
   getBaselines(residentId: string) {
     return residentId === 'res_eleanor' || residentId.startsWith('res_') ? eleanorBaselines : [];
@@ -182,10 +181,6 @@ class MockDhyaan {
     return alert;
   }
 
-  demoDeviationPush() {
-    const e = this.world.events.find((x) => x.type === 'meal_skipped');
-    if (e) this.emit({ t: 'event.new', event: e });
-  }
 
   // ---- connection layer (Meta challenge): observations → things to talk about ---
   // ponytail: live path swaps this for one Muse Spark call over the day's events;

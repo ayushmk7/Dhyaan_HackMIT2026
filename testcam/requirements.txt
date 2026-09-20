@@ -1,0 +1,7 @@
+# Agent A's backends. B and C append their own.
+numpy
+opencv-python            # frame source only
+ultralytics              # pulls torch; the PyTorch/MPS baseline
+coremltools              # only needed to EXPORT yolo -> .mlpackage
+pyobjc-framework-Vision  # Apple Vision; ships with macOS, this is just the binding
+pyobjc-framework-Quartz

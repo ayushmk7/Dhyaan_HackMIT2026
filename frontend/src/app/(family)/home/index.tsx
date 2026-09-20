@@ -13,16 +13,17 @@ import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Linking, Pressable, RefreshControl, View } from 'react-native';
 import {
-  Card, DataLabel, Entrance, ErrorState, Hairline, LoadingState, Marquee, MetricRow,
-  PresenceHero, Row, Screen, StatTile, StatusDot, Glass, Txt,
+  Card, Entrance, ErrorState, Glass, Hairline, KindTag, LoadingState, Marquee, MetricRow,
+  PresenceHero, Row, Screen, StatTile, StatusDot, Txt,
 } from '@/components';
 import { Avatar } from '@/components/avatar';
 import { Icon } from '@/components/icon';
 import {
-  localDayKey, useActivity, useContacts, useLatestMessage, usePresence, useTalkAbout,
+  localDayKey, useActivity, useContacts, useLatestMessage, usePresence, useResident,
+  useTalkAbout,
 } from '@/lib/hooks';
-import { ago, timeOf } from '@/lib/format';
-import type { Contact, Presence } from '@/lib/types';
+import { ago, residentNumber, timeOf } from '@/lib/format';
+import type { Presence } from '@/lib/types';
 import { useCareFile } from '@/store/carefile';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
@@ -36,27 +37,6 @@ const openerSymbol = (text: string): string => {
   return 'bubble.left';
 };
 
-/**
- * Her own number, if her contact list actually holds it.
- *
- * `Contact` is the escalation ladder — the people Dhyaan rings when she needs
- * someone — and nothing in `lib/` exposes the resident's own `phone_e164`
- * (the backend has one on the resident document; `Resident` in lib/types.ts
- * does not carry it). So this looks for her among her own contacts and returns
- * null when she isn't there, and every call site says so rather than dialling
- * a number that belongs to nobody.
- */
-const herNumber = (contacts: Contact[] | undefined, name: string): string | null => {
-  const full = name.trim().toLowerCase();
-  const first = full.split(/\s+/)[0];
-  const self = (contacts ?? []).find((c) => {
-    const rel = (c.relationship ?? '').toLowerCase();
-    if (rel === 'self' || rel === 'resident' || rel === 'herself' || rel === 'himself') return true;
-    const n = c.name.trim().toLowerCase();
-    return !!first && (n === full || n.split(/\s+/)[0] === first);
-  });
-  return self?.phone_e164?.trim() || null;
-};
 
 /** What the camera is doing — never where she is. */
 function subline(p: Presence | undefined): string {
@@ -87,6 +67,8 @@ export default function Today() {
   const { data: fetched, isLoading, isError, refetch } = usePresence(residentId);
   const { data: activity, isError: activityError, refetch: refetchActivity } = useActivity(residentId);
   const { data: contacts } = useContacts();
+  // Her own line rides on the roster projection now, so no extra request.
+  const { data: resident } = useResident(residentId);
   // Real against the backend. `latestMessage` still legitimately resolves null
   // in live mode (no endpoint exists), so its section simply isn't rendered.
   const { data: prompts } = useTalkAbout();
@@ -95,7 +77,7 @@ export default function Today() {
 
   // The websocket is the fast path; the 15 s refetch is the belt under it.
   const presence = livePresence ?? fetched;
-  const phone = herNumber(contacts, residentName);
+  const phone = residentNumber(resident, contacts, residentName);
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -165,15 +147,21 @@ export default function Today() {
             </Pressable>
           </Row>
 
+          {!!presence?.sentence.trim() && !!presence.last_observation_at && (
+            <View style={{ marginTop: sp(4) }}>
+              <KindTag kind="observed" detail={ago(presence.last_observation_at)} />
+            </View>
+          )}
           <PresenceHero
             sentence={presence?.sentence ?? ''}
             emptySentence={emptySentence(presence, residentName)}
-            style={{ marginTop: sp(4) }}
+            style={{ marginTop: sp(3) }}
           />
 
           {!phone && (
             <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>
-              Dhyaan doesn’t have a phone number for {residentName} — only for the people it calls
+              {/* voice-ok: an empty state, which DESIGN.md exempts. */}
+              Dhyaan doesn’t have a phone number for {residentName}, only for the people it calls
               if she needs someone. That’s why this button can’t dial her.
             </Txt>
           )}
@@ -232,7 +220,8 @@ export default function Today() {
             <Card lift="float" style={{ backgroundColor: palette.ink }}>
               <Txt kind="title" tone="paper">{latest.sentence}</Txt>
               <Row style={{ justifyContent: 'space-between', marginTop: sp(4) }}>
-                <DataLabel tone={palette.paper} value={timeOf(latest.ts)}>Dhyaan saw</DataLabel>
+                {/* The three kinds stay labelled even here — especially here. */}
+                <KindTag kind={latest.kind} detail={timeOf(latest.ts)} />
                 <Icon name="chevron.right" size={12} color={palette.paper} />
               </Row>
             </Card>
@@ -270,6 +259,10 @@ export default function Today() {
       {!!prompts?.length && (
         <Entrance index={4}>
           <Marquee title="When you call" meta={String(prompts.length)} />
+          <Txt kind="caption" tone="muted" style={{ marginBottom: sp(2.5) }}>
+            {/* voice-ok: an empty state, which DESIGN.md exempts. */}
+            Drafted from what Dhyaan saw today, not from things she has said.
+          </Txt>
           <Card style={{ paddingVertical: sp(1) }}>
             {prompts.map((p, i) => (
               <View key={p}>
@@ -284,12 +277,12 @@ export default function Today() {
       {/* Beat 5 — from her care file, which the family typed in themselves. */}
       {nextAppt && (
         <Entrance index={5}>
-          <Marquee title="Coming up" meta={nextAppt.when} />
+          <Marquee title="Coming up" right={<KindTag kind="told" />} />
           <Card style={{ paddingVertical: sp(1) }}>
             <MetricRow
               hue={hue.mind}
               icon="calendar"
-              label="You told us"
+              label="Appointment"
               time={nextAppt.when}
               sentence={nextAppt.title}
               onPress={() => router.push('/(family)/settings/carefile')}

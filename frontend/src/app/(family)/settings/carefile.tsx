@@ -6,7 +6,7 @@ import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Btn, Card, Hairline, Row, SectionTitle, Txt } from '@/components';
+import { Btn, Card, Hairline, Row, Rule, SectionTitle, Txt } from '@/components';
 import { EXAMPLE_DISCHARGE } from '@/lib/example-docs';
 import { ago } from '@/lib/format';
 import { useCareFile } from '@/store/carefile';
@@ -18,6 +18,7 @@ export default function CareFileScreen() {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
   const [note, setNote] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const [pasteFocused, setPasteFocused] = useState(false);
 
   // dhyaan://carefile?demo=1 — loads the example document (demo + headless testing,
   // same precedent as /simulate).
@@ -87,17 +88,27 @@ export default function CareFileScreen() {
                 Paste or photograph a care document.
               </Txt>
             )}
+            {/* Same grammar as <Field>: a plate with an exposed rule beneath
+                it, never a box outline. Field itself can't host a 220pt paste
+                area, so the shape is borrowed rather than rebuilt. */}
             <TextInput
               multiline
               value={draft}
               onChangeText={setDraft}
               placeholder="Paste a document here"
               placeholderTextColor={palette.inkMuted}
+              onFocus={() => setPasteFocused(true)}
+              onBlur={() => setPasteFocused(false)}
               style={{
                 minHeight: 120, maxHeight: 220, padding: sp(3),
-                backgroundColor: palette.raised, borderRadius: radius.card,
+                backgroundColor: palette.raised,
+                borderTopLeftRadius: radius.card, borderTopRightRadius: radius.card,
                 ...type.body, color: palette.ink, textAlignVertical: 'top',
               }}
+            />
+            <Rule
+              weight={pasteFocused ? 'ink' : 'hair'}
+              color={pasteFocused ? palette.ink : palette.line}
             />
             <View style={{ gap: sp(2), marginTop: sp(3) }}>
               <Btn label="Read it" onPress={addText} busy={file.busy} disabled={!draft.trim()} />

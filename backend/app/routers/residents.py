@@ -110,6 +110,10 @@ async def list_residents():
         out.append({
             "id": rid,
             "display_name": r.get("display_name"),
+            # Her own line. The ladder in `contacts` is who Dhyaan rings ON her
+            # behalf; this is how the family rings HER, and the app had no way
+            # to get it — every "Call Eleanor" button was a hardcoded number.
+            "phone_e164": r.get("phone_e164"),
             "room": r.get("room"),
             "state": "alerting" if alert else "ok",
             "battery_pct": battery_by_resident.get(rid),

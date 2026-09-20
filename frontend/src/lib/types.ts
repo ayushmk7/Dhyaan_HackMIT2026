@@ -18,6 +18,10 @@ export interface ResidentLocation {
 export interface Resident {
   id: string;
   display_name: string;
+  /** Her own line — how the family rings HER. Distinct from `Contact`, which
+   *  is the escalation ladder: who Dhyaan rings on her behalf. Null when the
+   *  resident document has no number. */
+  phone_e164: string | null;
   room: string | null;
   state: ResidentState; // real backend only ever sends 'ok' | 'alerting' today
   last_seen: string | null;

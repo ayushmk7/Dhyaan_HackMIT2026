@@ -56,7 +56,7 @@ Tests don't need `dev.sh` running (they spin up their own things via
 `conftest.py`), just mongo:
 
 ```bash
-cd backend && make mongo && make test   # 208 tests
+cd backend && make mongo && make test   # 245 tests
 ```
 
 The camera lane is separate — `dev.sh` doesn't start it, because it wants a
