@@ -42,6 +42,10 @@ type LiveState = {
 };
 
 let unsubscribe: (() => void) | null = null;
+/** The resident the open socket is scoped to, or undefined for the whole
+ *  facility. The session opens with no role, so the first connect is
+ *  facility-wide and the family lane re-opens scoped once it knows who it is. */
+let scopedTo: string | undefined;
 
 // REST alerts go through `toAlert`; socket alerts used to skip it entirely and
 // land in the store as the raw Mongo document. That is how the takeover got
@@ -84,7 +88,17 @@ export const useLive = create<LiveState>((set, get) => ({
   transcript: [],
 
   connect() {
-    if (unsubscribe) return;
+    const { role, residentId } = useSession.getState();
+    const scope = !USE_MOCKS && role === 'family' ? residentId : undefined;
+    if (unsubscribe) {
+      // Same feed as the open socket: nothing to do. A different one means the
+      // role was chosen after the first connect, so the socket in hand is on
+      // the wrong feed and has to be re-opened.
+      if (scopedTo === scope) return;
+      unsubscribe();
+      unsubscribe = null;
+    }
+    scopedTo = scope;
     set({ status: 'connecting' });
     if (USE_MOCKS) {
       unsubscribe = dhyaan.subscribe((m) => get().applyEvent(m));
@@ -100,14 +114,14 @@ export const useLive = create<LiveState>((set, get) => ({
     // become 'open' and stayed there through every silent reconnect. Today
     // renders one quiet line off this, and a line that cannot go false is
     // worse than no line at all.
-    // Scope the feed to this phone's resident unless this is the staff lane,
-    // which watches the whole floor. Unscoped, a family phone received every
-    // resident's alert and opened the takeover for a stranger's fall.
-    const { role, residentId } = useSession.getState();
-    const client = new LiveClient(
-      role === 'staff' ? undefined : residentId,
-      (open) => set({ status: open ? 'open' : 'closed' }),
-    );
+    // Scope the feed to this phone's resident once the family lane is the one
+    // asking. Unscoped, a family phone received every resident's alert and
+    // opened the takeover for a stranger's fall. Only `family` scopes: the
+    // session opens with no role at all and this runs on mount, so keying on
+    // "not staff" would put a staff phone on one resident's feed for the whole
+    // session — `broadcast` (backend/app/routers/live.py) filters every message
+    // type by the socket's resident, not just alerts.
+    const client = new LiveClient(scope, (open) => set({ status: open ? 'open' : 'closed' }));
     const off = client.subscribe((m) => get().applyEvent(m));
     client.connect();
     unsubscribe = () => { off(); client.close(); set({ status: 'closed' }); };

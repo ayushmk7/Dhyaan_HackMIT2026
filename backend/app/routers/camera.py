@@ -280,15 +280,29 @@ async def ingest_camera_heartbeat(body: HeartbeatIn):
         raise HTTPException(404, f"unknown camera_id {body.camera_id!r}")
 
     was = camera.get("state")
+    # A heartbeat reports what the hub is doing; it does not get to decide who
+    # owns the pause. It used to write `paused_until` unconditionally, so a
+    # single `watching` tick erased a pause the family had just set and
+    # reopened the fail-closed ingest gate — and a `paused` tick stamped
+    # `paused_by: "resident"` even when the pause it was echoing back was the
+    # family's, so their own Resume started 403ing one heartbeat later. The
+    # pause fields are therefore set only by the side that owns them.
     sets = {
         "state": body.state, "fps": body.fps, "dropped_batches": body.dropped_batches,
         "last_heartbeat_at": datetime.now(timezone.utc).isoformat(),
-        "paused_until": _aware(body.paused_until).isoformat() if body.paused_until else None,
     }
     if body.state == "paused":
-        # Pausing is her control, on her hub. Record who did it so no family
-        # surface can pretend it was theirs to undo (PRODUCT_SPEC §8.3).
-        sets["paused_by"] = "resident"
+        if body.paused_until:
+            sets["paused_until"] = _aware(body.paused_until).isoformat()
+        if camera.get("paused_by") != "family":
+            # Pausing is her control, on her hub. Record who did it so no family
+            # surface can pretend it was theirs to undo (PRODUCT_SPEC §8.3).
+            sets["paused_by"] = "resident"
+    elif body.state == "watching" and camera.get("paused_by") != "family":
+        # The hub is looking again, so her own pause is over. The family's is
+        # not: only /resume lifts that one.
+        sets["paused_until"] = None
+        sets["paused_by"] = None
     await d.cameras.update_one({"_id": body.camera_id}, {"$set": sets})
 
     if body.state != was:
@@ -617,7 +631,11 @@ async def resume_camera(camera_id: str):
     camera = await db().cameras.find_one({"_id": camera_id})
     if not camera:
         raise HTTPException(404, f"unknown camera_id {camera_id!r}")
-    if _is_paused(camera) and camera.get("paused_by") == "resident":
+    # Ownership, not liveness: an expired resident pause is still hers to lift
+    # (her hub clears it on its next `watching` heartbeat), and checking
+    # `_is_paused` as well meant one stray heartbeat handed the family a pause
+    # that was never theirs.
+    if camera.get("paused_by") == "resident":
         raise HTTPException(403, "she paused this camera — only she can start it again")
     await db().cameras.update_one({"_id": camera_id}, {"$set": {
         "paused_until": None, "paused_by": None}})
@@ -666,6 +684,12 @@ SIM_STEP_S = 70
 
 async def simulate_camera(resident_id: str, kind: str) -> dict:
     steps = SIMULATED[kind]
+    # The canned steps are backdated, so an episode this resident already has
+    # open swallows them: the second "Simulate a meal" just extended the first
+    # meal's interval and emitted nothing, and the Today tile did not move.
+    # Close her open intervals first so each run is its own episode.
+    for key in [k for k in presence._OPEN if k[0] == resident_id]:
+        presence._OPEN.pop(key, None)
     camera = await db().cameras.find_one({"resident_id": resident_id})
     if not camera:
         raise HTTPException(422, "resident has no camera — PUT /profile {camera} first")

@@ -1,5 +1,7 @@
+from datetime import date as _date
+
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from .. import baseline, rag
 
@@ -24,6 +26,15 @@ class ChatResponse(BaseModel):
 class RollupRequest(BaseModel):
     resident_id: str
     date: str  # local date, "YYYY-MM-DD"
+
+    @field_validator("date")
+    @classmethod
+    def _padded_iso(cls, v: str) -> str:
+        # "2026-9-1" used to reach baseline._day_range_utc and 500 out of a
+        # button the timeline screen presses. A malformed date is the caller's
+        # mistake, so say 422 rather than dying of it.
+        _date.fromisoformat(v)
+        return v
 
 
 @router.post("/residents/{resident_id}/chat", response_model=ChatResponse)

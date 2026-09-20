@@ -1,5 +1,6 @@
 // TanStack Query owns anything cacheable (§10.3). Zustand owns what the socket mutates.
 import { useQuery } from '@tanstack/react-query';
+import { useIsFocused } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useSession } from '@/store/session';
 import { api } from './api';
@@ -11,12 +12,16 @@ import { api } from './api';
  * hangs off it. Lived in the camera console until Today and the alert takeover
  * needed the same question asked of their own data.
  */
-export function useNow(everyMs = 1000): number {
+export function useNow(everyMs = 1000, enabled = true): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    // A screen the phone is not showing does not need a clock. The tab stays
+    // mounted when you leave it, so without this the camera console kept
+    // ticking once a second in your pocket.
+    if (!enabled) return;
     const id = setInterval(() => setNow(Date.now()), everyMs);
     return () => clearInterval(id);
-  }, [everyMs]);
+  }, [everyMs, enabled]);
   return now;
 }
 
@@ -114,13 +119,17 @@ export const useProfile = (residentId: string) =>
 export const useCameras = () =>
   useQuery({ queryKey: ['cameras'], queryFn: api.listCameras });
 
-export const useCameraMonitor = (cameraId: string | undefined) =>
-  useQuery({
+// Only the camera console reads this, and only while you are looking at it:
+// a 2 s poll that survives leaving the tab is a battery leak, not telemetry.
+export const useCameraMonitor = (cameraId: string | undefined) => {
+  const focused = useIsFocused();
+  return useQuery({
     queryKey: ['monitor', cameraId],
     queryFn: () => api.getCameraMonitor(cameraId!),
-    enabled: !!cameraId,
+    enabled: !!cameraId && focused,
     refetchInterval: 2000,
   });
+};
 
 // ---- session hydration -------------------------------------------------------
 

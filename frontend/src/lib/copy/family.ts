@@ -460,10 +460,6 @@ export const family = {
     // The glyph for a field the worker did not fill. Typography, not a reading.
     none: '—',
 
-    simulate: 'Simulate',
-    meal: 'Meal',
-    visitor: 'Visitor',
-    outOfView: 'Out of view',
     resume: 'Resume the camera',
     pauseTwoHours: 'Pause for 2 hours',
     trouble: 'That didn’t go through, so nothing changed. The hub may not be reachable.',
@@ -536,6 +532,12 @@ export const family = {
     // on the closed screen, whenever the ladder ran out.
     dialerNote: 'Opens your dialer. Dhyaan never calls 911 itself.',
     dialerNoteFinal: 'Dhyaan does not dial 911 for you. If you can’t reach her, this button opens your dialer.',
+
+    // Under the cancel ring. The number itself is set above it, in the ring.
+    cancelRingCaption: 'seconds for her to cancel from the band before Dhyaan calls',
+    // The applause line on the close-out: how fast a human was told.
+    elapsed: (s: number) => count(s, 'second', 'seconds'),
+    elapsedCaption: (name: string) => `from ${name}’s fall hitting the floor to a human being told.`,
 
     // The middle of the takeover, by phase.
     workingOut: 'Dhyaan is working out what to do next.',

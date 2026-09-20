@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from . import DEMO, PREVIEW_SCALE, TUNING, VLM_MODEL, FRAME_H, FRAME_W
-from .capture import Camera, SyntheticCamera, to_jpeg_b64
+from .capture import Camera, CameraUnavailable, SyntheticCamera, to_jpeg_b64
 from .gate import MotionGate, PersonGate, apply_mask, iou, pick_subject, posture_band
 from .keyframe import KeyframeSelector, RingBatch
 from . import openvocab, vlm
@@ -388,11 +388,40 @@ class Worker:
                     self.last_obs = dict(EMPTY_OBS)
                     # Nothing captured before this may land after it.
                     self._absent_ts = datetime.now().astimezone()
+                    # ...and the LED. Everything above stops us USING the
+                    # frames; the device itself stayed open, so the little
+                    # green light burned on through the whole privacy beat -
+                    # the one moment where the hardware has to agree with the
+                    # screen. A closed device is the only version of "it
+                    # stopped looking" a resident can check from across the
+                    # room without trusting us.
+                    if cam is not None:
+                        cam.close()
+                        cam = self.cam = None
                     self.monitor("idle")
                     if self.preview and not self._show(None, None, None, 0.0, status):
                         break
                     time.sleep(0.2)
                     continue
+
+                if cam is None:
+                    # Coming back from a pause or a withdrawn consent, where
+                    # the branch above closed the device.
+                    try:
+                        cam = self.cam = SyntheticCamera() if self.synthetic else Camera(self.source)
+                    except CameraUnavailable as e:
+                        # Something else may have taken the device while we
+                        # were not holding it. That is a reason to keep
+                        # polling, not to end the lane: she can still resume,
+                        # and this loop is what would notice.
+                        log(f"camera reopen failed: {e} — retrying in "
+                            f"{self.tuning['config_poll_s']:g}s")
+                        time.sleep(self.tuning["config_poll_s"])
+                        continue
+                    # A fresh device numbers its frames from zero, and the
+                    # stall clock has been standing still for the whole pause.
+                    last_seq, last_new = 0, time.monotonic()
+                    log(f"watching again · reopened source {self.source!r}")
 
                 seq, frame = cam.read()
                 if frame is None or seq == last_seq:
@@ -559,7 +588,8 @@ class Worker:
             pass
         finally:
             ring.take()
-            cam.close()
+            if cam is not None:                 # already closed by a pause
+                cam.close()
             self.heartbeat("offline")
             self._http.close()
             # Before the interpreter starts tearing down modules: MediaPipe's

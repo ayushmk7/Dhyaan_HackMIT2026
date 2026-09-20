@@ -5,6 +5,7 @@
 // close-out.
 import React, { useEffect, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { family } from '@/lib/copy/family';
 import { mono, sp } from '@/theme/tokens';
 import { useReducedMotion } from './entrance';
 import { Icon } from './icon';
@@ -41,7 +42,7 @@ export function CancelCountdownRing({ since, windowS = 30 }: { since: string; wi
         <Txt kind="readout" style={[styles.ringNumber, { color: c.ink }]}>{left}</Txt>
       </Animated.View>
       <Txt kind="caption" style={[styles.caption, { color: c.muted, marginTop: sp(3) }]}>
-        seconds for her to cancel from the band before Dhyaan calls
+        {family.alert.cancelRingCaption}
       </Txt>
     </View>
   );
@@ -91,9 +92,9 @@ export function ElapsedStat({ openedAt, closedAt, name }: { openedAt: string; cl
   const s = Math.max(1, Math.round((new Date(closedAt).getTime() - new Date(openedAt).getTime()) / 1000));
   return (
     <View style={{ marginTop: sp(6) }}>
-      <Txt kind="readout" style={styles.statNumber}>{s} seconds</Txt>
+      <Txt kind="readout" style={styles.statNumber}>{family.alert.elapsed(s)}</Txt>
       <Txt kind="body" tone="muted" style={{ marginTop: sp(1) }}>
-        from {name}’s fall hitting the floor to a human being told.
+        {family.alert.elapsedCaption(name)}
       </Txt>
     </View>
   );

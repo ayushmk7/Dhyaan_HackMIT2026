@@ -43,11 +43,31 @@ async def _send(ws: WebSocket, msg: dict) -> None:
 
 
 async def broadcast(msg: dict, resident_id: str | None) -> None:
-    """Public since the camera lane pushes `presence.update` too."""
-    for ws, info in list(_connections.items()):
-        if resident_id and info["resident_id"] and info["resident_id"] != resident_id:
-            continue
-        await _send(ws, msg)
+    """Public since the camera lane pushes `presence.update` too.
+
+    In parallel and on a clock. `events.emit()` awaits its subscribers, so this
+    sits on the fall-ingest path: one phone on bad venue wifi that never
+    finishes its send used to block every other client's event — and, behind
+    the per-socket lock, queue the next one behind it. Two seconds is long
+    enough for a slow phone and short enough that the ladder does not wait for
+    it; a socket that misses the deadline is dropped and reconnects with its
+    own backoff.
+    """
+    targets = [
+        ws for ws, info in _connections.items()
+        if not (resident_id and info["resident_id"] and info["resident_id"] != resident_id)
+    ]
+    results = await asyncio.gather(
+        *(asyncio.wait_for(_send(ws, msg), 2.0) for ws in targets),
+        return_exceptions=True,
+    )
+    for ws, res in zip(targets, results):
+        if isinstance(res, asyncio.TimeoutError):
+            # Same treatment as the dead-socket branch in `_send`, which the
+            # cancelled send never reached.
+            _connections.pop(ws, None)
+            with contextlib.suppress(Exception):
+                await ws.close()
 
 
 @subscribe

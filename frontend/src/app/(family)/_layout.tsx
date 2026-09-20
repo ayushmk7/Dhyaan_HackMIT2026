@@ -39,6 +39,9 @@ import { motion, radius, sp, useTheme, mono } from '@/theme';
 
 /** The capsule. 60 = two `radius.bar` corners meeting, so it is a true pill. */
 export const TAB_BAR_HEIGHT = 60;
+
+/** Every tab glyph, in one place so they cannot drift apart. */
+const TAB_ICON = 20;
 /** Air between the capsule and the home indicator (or the screen edge). */
 export const TAB_BAR_GAP = sp(2);
 /** What the bar takes from the bottom of every tab screen, above the system inset. */
@@ -147,7 +150,11 @@ export function FloatingTabBar({
               onLongPress={() => navigation.emit({ type: 'tabLongPress', target: route.key })}
               style={{ flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', gap: 2 }}
             >
-              {options.tabBarIcon?.({ focused, color, size: 22 })}
+              {/* 20, not 22. The tab glyphs sat slightly heavy against their
+                  labels; a touch smaller lets the label carry the row. All
+                  five move together, because a tab bar with one odd-sized
+                  icon reads as a mistake. */}
+              {options.tabBarIcon?.({ focused, color, size: TAB_ICON })}
               <Txt
                 kind="caption"
                 numberOfLines={1}
@@ -185,7 +192,7 @@ export function TabBarInsets({ children }: { children: React.ReactNode }) {
 
 export const glyph = (name: string) => {
   function TabGlyph({ color, focused }: { color: ColorValue; focused: boolean }) {
-    return <Icon name={name} size={22} color={color} weight={focused ? 'semibold' : 'regular'} />;
+    return <Icon name={name} size={TAB_ICON} color={color} weight={focused ? 'semibold' : 'regular'} />;
   }
   return TabGlyph;
 };

@@ -11,11 +11,14 @@ of 20. `unclear` is the correct answer there, and it is the answer this file
 spends most of its lines defending.
 """
 
+import json
+
 import numpy as np
 import pytest
 
-from vision import TUNING, gate
+from vision import DEMO, TUNING, gate
 from vision import posture as P
+from vision import vlm, worker
 from vision.keyframe import KeyframeSelector
 
 W, H = 448, 252                     # the real frame size the camera lane uses
@@ -217,3 +220,163 @@ def test_the_pure_bbox_path_survives_for_callers_with_no_pixels():
     assert gate.posture_band(BOX_WIDE) == "wide"
     assert gate.posture_band(BOX_TALL) == "tall"
     assert gate.posture_band(None) is None
+
+
+# --- foreshortening: the one case the torso angle cannot see ------------------
+
+def test_a_body_lying_toward_the_camera_is_unclear_not_seated():
+    """She fell with her head toward the lens, so the fall projects as nothing.
+
+    Shoulders 0.30 of the frame apart, hips barely below them, knees nearer the
+    camera than the hips: the torso is 12 px long, tilt reads 0 degrees (i.e.
+    "vertical"), the knees come out above the hips and the rule returned
+    `seated` at confidence 1.0. A real fall, confidently contradicted, and the
+    VLM lane never asked. Nothing here may say `seated` and nothing may say
+    `on_floor` either - two normalised landmarks cannot tell this from a deep
+    lean toward the lens.
+    """
+    lm = body(shoulder=(0.5, 0.50), hip=(0.5, 0.55), knee=(0.5, 0.52))
+    lm[P.L_SHOULDER] = P.Landmark(0.35, 0.50, 1.0)
+    lm[P.R_SHOULDER] = P.Landmark(0.65, 0.50, 1.0)
+    label, _ = P.posture_from_landmarks(lm, H, W)
+    assert label == "unclear", "a foreshortened torso is not a posture we read"
+
+    # ...and the ordinary bodies are untouched: their torsos are longer than
+    # their shoulders are wide, which is what standing and lying both look like.
+    assert P.posture_from_landmarks(body(), H, W)[0] == "upright"
+    assert P.posture_from_landmarks(
+        body(shoulder=(0.2, 0.5), hip=(0.75, 0.52), knee=(0.9, 0.55)), H, W)[0] == "on_floor"
+
+
+# --- from_scene: what the detector alone is allowed to assert ------------------
+
+def _scene(people=1, food=(), dishes=(), seating=()):
+    """The dict gate.PersonGate.scene() hands over, with nothing else in it."""
+    return {"person_count": people, "food": list(food),
+            "dishes": list(dishes), "seating": list(seating)}
+
+
+def test_one_frame_of_a_standing_person_is_standing_not_walking():
+    """A stance is not a journey. Two `walking` posts used to add up to
+    "Eleanor was up and moving about", off two still frames."""
+    assert vlm.from_scene(_scene(), "tall")["activity"] == "standing"
+    assert vlm.from_scene(_scene(), "tall")["movement"] == "unclear"
+
+
+def test_food_on_the_table_and_someone_walking_past_is_not_a_meal():
+    """The bowl is evidence of a bowl. Posture is the only thing left that says
+    she stopped for it - and `unclear` still counts, because at a table the
+    knees are under it and the meal beat has to fire anyway."""
+    lunch = _scene(food=["bowl of cereal"], dishes=["plate"], seating=["dining table"])
+    assert vlm.from_scene(lunch, "tall")["activity"] != "eating"
+    assert vlm.from_scene(lunch, "mid")["activity"] == "eating"
+    assert vlm.from_scene(lunch, None)["activity"] == "eating"
+    # ...and the floor still outranks the food.
+    assert vlm.from_scene(lunch, "wide")["activity"] == "on_floor"
+
+
+def test_the_demo_can_still_report_a_return_it_just_called_a_departure():
+    """--demo calls her absent after 12 s; an appear gap of 30 then refused to
+    report the re-entry, and spent the arrival for good."""
+    assert DEMO["on_person_appear_gap_s"] == DEMO["absent_after_s"]
+
+
+# --- the VLM call's own recovery path ------------------------------------------
+
+def test_a_fenced_reply_on_the_constrained_retry_is_still_read(monkeypatch):
+    """`format` constrains the decode, not the wrapper. Skipping the fence
+    strip here raised out of the retry and dropped the batch - the recovery
+    path failing on the one reply it exists for."""
+    good = json.dumps(dict(vlm.ABSENT, activity="sitting", person_count=1))
+    schemas = []
+
+    def fake_post(images_b64, prompt, model, host, timeout, use_schema):
+        schemas.append(use_schema)
+        return "Sure! Here is the JSON:" if not use_schema else f"```json\n{good}\n```"
+
+    monkeypatch.setattr(vlm, "_post", fake_post)
+    obs, _ms = vlm.call([], "prompt")
+    assert schemas == [False, True], "the retry never ran"
+    assert obs["activity"] == "sitting"
+
+
+# --- the two routes from a wide rectangle to the word "floor" ------------------
+
+def test_one_wide_frame_is_not_yet_a_confirmed_floor():
+    """`floor_confirmed` is what the worker's quick detector-change post reads
+    before it may say `wide`. That path had no confirm of its own, so a nap on
+    the sofa became "Eleanor appeared to be on the floor" off a single frame."""
+    k = KeyframeSelector()
+    assert k.floor_confirmed is False
+    k.update(0.0, True, BOX_WIDE)
+    assert k.floor_confirmed is False
+    k.update(1.0, True, BOX_WIDE)
+    assert k.floor_confirmed is True
+    # She gets up: the run drops and so does the permission.
+    k.update(2.0, True, BOX_TALL)
+    assert k.floor_confirmed is False
+
+
+def test_a_real_fall_is_not_held_behind_a_false_one_s_cooldown():
+    """A false on_floor arms a 30 s cooldown. The fall that follows it was
+    ANDed away here and then eaten by min_gap_s, so it arrived 20-30 s late.
+    Four consecutive wide frames - twice the confirm - go through."""
+    k = KeyframeSelector()
+    assert [k.update(t, True, BOX_WIDE) for t in (2.0, 3.0)][-1] == "on_floor"
+    k.update(4.0, True, BOX_TALL)                       # up again: it was nothing
+    later = [k.update(t, True, BOX_WIDE) for t in (10.0, 11.0, 12.0, 13.0)]
+    assert later[-1] == "on_floor", "the real fall waited out a false alarm"
+    assert later[:-1] == [None, None, None], "the bypass must cost more, not less"
+
+
+# --- the worker's two fail-closed edges ----------------------------------------
+
+def test_a_config_reply_that_is_not_an_object_is_no_consent(monkeypatch):
+    """A captive portal answers 200 with HTML. `cfg` was then a str and the
+    first cfg.get() raised AttributeError out of run(), so the lane died
+    instead of polling - the one thing the poll exists to survive."""
+    w = worker.Worker(source="synthetic", camera_id="cam_x", api="http://localhost:0",
+                      band_key="k", dry_run=True, no_yolo=True)
+    monkeypatch.setattr(w, "_fetch_config", lambda: "<html>Sign in to continue</html>")
+    w._refresh_config()
+    assert w.cfg == worker.NO_CONSENT
+
+
+def test_a_paused_camera_is_closed_and_reopened(monkeypatch):
+    """The privacy beat, at the hardware. Everything else stops us USING the
+    frames; the device stayed open, so the capture LED burned on through the
+    one moment where the light has to agree with the screen."""
+    w = worker.Worker(source="synthetic", camera_id="cam_x", api="http://localhost:0",
+                      band_key="k", dry_run=True, no_yolo=True)
+    cams = []
+
+    class _Cam:
+        def __init__(self):
+            self.n, self.closed = 0, False
+            cams.append(self)
+
+        def read(self):
+            self.n += 1
+            return self.n, frame()
+
+        def close(self):
+            self.closed = True
+
+        def script(self):
+            return dict(vlm.ABSENT, boxes=[], person_count=0)
+
+    ticks = []
+    monkeypatch.setattr(worker, "SyntheticCamera", _Cam)
+    monkeypatch.setattr(w, "heartbeat", lambda s: None)
+    monkeypatch.setattr(w, "_refresh_config", lambda: None)
+    # Paused for the first pass, watching after it; stop on the second monitor
+    # tick, which is one full frame into the resumed run.
+    monkeypatch.setattr(w, "state", lambda: "paused" if not ticks else "watching")
+    monkeypatch.setattr(w, "monitor", lambda *a, **k: (
+        ticks.append(1), setattr(w, "_stopping", len(ticks) >= 2)))
+    w.cfg = dict(worker.STANDIN_CONFIG, consent_camera=1)
+    w.run()
+
+    assert len(cams) == 2, "the device was never closed, or never reopened"
+    assert cams[0].closed is True, "the LED stayed on through the pause"
+    assert cams[1].n >= 1, "the reopened camera never delivered a frame"

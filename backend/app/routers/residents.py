@@ -25,7 +25,7 @@ from ..baseline import COUNT, FEATURE_META
 from .. import config as cfg
 from ..db import db
 from ..events import EVENT_TYPES, emit, recent
-from ..rag import FAMILY_EXCLUDED_TYPES
+from ..rag import FAMILY_EXCLUDED_TYPES, scrub_rooms
 
 router = APIRouter(prefix="/v1", tags=["app"])
 
@@ -437,11 +437,22 @@ async def location_history(resident_id: str, date: str = Query(..., description=
 @router.get("/events/{event_id}")
 async def get_event(event_id: str):
     """Trivial single-event lookup — saves the app a full-timeline scan for a
-    detail it already knows the id of (e.g. a notification deep link)."""
+    detail it already knows the id of (e.g. a notification deep link).
+
+    The family app opens this route (timeline/[eventId].tsx), so it is shaped
+    here like every other family-facing read: no `zone`, no `derived_from`, and
+    the prose through the same room filter. The client has a `scrubRooms` of its
+    own, but a client-side filter is not a privacy control — it only ever knew
+    seven room names, and the raw record was reaching the phone either way.
+    """
     ev = await db().events.find_one({"_id": event_id})
     if not ev:
         raise HTTPException(404, "event not found")
-    return _ser(ev)
+    out = _ser(ev)
+    out.pop("zone", None)
+    out.pop("derived_from", None)
+    out["embedding_text"] = scrub_rooms(out.get("embedding_text", "") or "")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -566,20 +577,25 @@ async def alert_response(a: dict) -> dict:
     # adapter, and carries what the alert screen actually renders: who was dialled,
     # in what role, the transcript and whether the call was simulated. Fall back to
     # reconstructing from voice events for alerts raised before that existed.
-    call_rows = await d.calls.find({"alert_id": alert_id}).sort("started_at", 1).to_list(None)
+    call_rows = await d.calls.find({"alert_id": alert_id}).sort(
+        [("started_at", 1), ("_id", 1)]).to_list(None)
     if not call_rows:
         call_rows = await d.events.find({
             "resident_id": a["resident_id"], "source": "voice",
             "payload.alert_id": alert_id,
-        }).sort("ts_epoch", 1).to_list(None)
+        }).sort([("ts_epoch", 1), ("_id", 1)]).to_list(None)
     call_events = call_rows
 
     # The alert takeover screen replays the escalation as it happened. Every FSM
     # transition already writes an event (app/alerts.py::_apply), so the ladder is
     # reconstructable rather than needing its own table.
+    # `ts_epoch` is whole seconds and a fast ladder puts three or four
+    # transitions inside one of them, so the tie-break is what keeps the
+    # replay in the order it happened: `_id` is a ULID, ordered to the
+    # millisecond.
     ladder_events = await d.events.find({
         "source": "derived", "payload.alert_id": alert_id,
-    }).sort("ts_epoch", 1).to_list(None)
+    }).sort([("ts_epoch", 1), ("_id", 1)]).to_list(None)
     ladder = [_ladder_step(e) for e in ladder_events]
 
     out = _ser(a)

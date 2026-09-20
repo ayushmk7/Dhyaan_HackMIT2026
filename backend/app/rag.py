@@ -282,9 +282,17 @@ async def daily_narrative(resident_id: str, date_local: str) -> str:
     if not narrative:
         narrative = _template_narrative(name, date_local, docs)  # no key, API hiccup, or empty day — same safe path
 
+    # A story about the 12th belongs on the 12th. Left at emit()'s default this
+    # took `now`, so a seed wrote fifteen narratives in one instant and the
+    # family timeline — which sorts by ts — opened on fifteen near-identical
+    # rows all stamped a few seconds ago. `/activity` already selects these by
+    # `date_local` rather than by ts, for exactly this reason; this makes the
+    # timestamp itself honest so both views agree.
+    end_of_day = datetime.fromtimestamp(end_epoch, tz) - timedelta(seconds=1)
     event_doc = await emit(
         resident_id=resident_id, source="derived", type="daily_summary",
         embedding_text=narrative[:400],
+        ts=min(end_of_day, datetime.now(tz)),
         payload={"narrative": narrative, "date_local": date_local},
     )
     vec = (await embed([narrative]))[0]

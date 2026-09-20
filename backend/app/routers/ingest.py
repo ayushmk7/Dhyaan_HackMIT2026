@@ -178,7 +178,12 @@ async def ingest_heartbeat(body: HeartbeatIn):
     if prev is None:
         raise HTTPException(404, f"unknown band_id {body.band_id!r}")
 
-    if body.battery_pct < LOW_BATTERY_PCT:
+    # Edge-triggered, not level-triggered. A band at 14% heartbeats every 60 s
+    # all night, and a level test turned that into ~480 identical events (and
+    # ~480 embedding tasks) by morning. `find_one_and_update` already handed us
+    # the pre-update doc, so the crossing is free to detect.
+    was = prev.get("battery_pct")
+    if body.battery_pct < LOW_BATTERY_PCT and (was is None or was >= LOW_BATTERY_PCT):
         await emit(
             resident_id=prev["resident_id"], source="band", type="band_low_battery",
             embedding_text=f"Band {body.band_id} battery at {body.battery_pct}%",
@@ -217,4 +222,12 @@ async def ingest_rf(body: RFScanIn):
         "beacons": [b.model_dump() for b in body.beacons],
         "wifi": [w.model_dump() for w in body.wifi],
     }
-    return await location.observe(resident_id, scan)
+    # The scan's own time, not ours: a band that buffered an hour offline and
+    # replays it in one burst would otherwise have every scan stamped `now`,
+    # collapsing the gap into a single zone with near-zero dwell — which both
+    # invents and misses `bathroom_prolonged`. Same tz normalisation as
+    # `ingest_band`.
+    return await location.observe(
+        resident_id, scan,
+        ts=body.ts if body.ts.tzinfo else body.ts.replace(tzinfo=timezone.utc),
+    )

@@ -32,14 +32,14 @@
 // next to them are never copy — every one is a field off the monitor tick, or
 // the one glyph that says the worker left the field empty.
 import { useQueryClient } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { router, useIsFocused } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { RefreshControl, View, ViewStyle } from 'react-native';
 import Animated, {
   Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming,
 } from 'react-native-reanimated';
 import {
-  Btn, Card, DataLabel, EmptyState, ErrorState, LoadingState, Marquee, Rule, Stagger, Screen, Txt,
+  Btn, Card, EmptyState, ErrorState, LoadingState, Marquee, Rule, Stagger, Screen, Txt,
   useReducedMotion,
 } from '@/components';
 import { family } from '@/lib/copy/family';
@@ -342,6 +342,7 @@ export default function CameraConsole() {
   const qc = useQueryClient();
   const { residentId } = useSession();
   const cameras = useCameras();
+  const isFocused = useIsFocused();
 
   const cam: CameraSummary | undefined =
     cameras.data?.find((c) => c.resident_id === residentId) ?? cameras.data?.[0];
@@ -362,7 +363,9 @@ export default function CameraConsole() {
     ? (socketTick && socketTick.ts >= polledTick.ts ? socketTick : polledTick)
     : null;
   // 1 s: the age cell counts in seconds, and the tick itself lands about that often.
-  const now = useNow(1000);
+  // Only while the console is on screen: the tab stays mounted behind you, and
+  // a clock nobody is reading is just battery.
+  const now = useNow(1000, isFocused);
 
   const [busy, setBusy] = useState<string | null>(null);
   const [trouble, setTrouble] = useState<string | null>(null);
@@ -485,42 +488,14 @@ export default function CameraConsole() {
     );
   })();
 
-  // The controls stay available in every state a camera exists in — the canned
-  // simulations are the on-stage fallback for exactly the moment the webcam
-  // sulks and the screen above is one of the empty ones.
+  // Pause is the only control here now. The three canned simulations (meal,
+  // visitor, out of view) were an on-stage fallback for a sulking webcam, and
+  // they were demo chrome sitting in the family's own floating bar: a family
+  // screen should not offer to invent observations about her.
+  // `POST /admin/simulate` still exists and the debug panel in Settings still
+  // reaches it, so the fallback is not lost, just not on this screen.
   const bar = cam ? (
     <View style={{ gap: sp(2.5) }}>
-      {/* Three 44pt tonal buttons, not chips: a chip is 30pt tall and this
-          bar is used one-handed on stage. */}
-      <View style={{ gap: sp(1.5) }}>
-        <DataLabel>{copy.simulate}</DataLabel>
-        <View style={{ flexDirection: 'row', gap: sp(2) }}>
-          <Btn
-            kind="quiet"
-            size="small"
-            label={copy.meal}
-            busy={busy === 'meal'}
-            style={{ flex: 1 }}
-            onPress={() => run('meal', () => api.simulateCamera('meal'))}
-          />
-          <Btn
-            kind="quiet"
-            size="small"
-            label={copy.visitor}
-            busy={busy === 'visitor'}
-            style={{ flex: 1 }}
-            onPress={() => run('visitor', () => api.simulateCamera('visitor'))}
-          />
-          <Btn
-            kind="quiet"
-            size="small"
-            label={copy.outOfView}
-            busy={busy === 'out'}
-            style={{ flex: 1 }}
-            onPress={() => run('out', () => api.simulateCamera('out_of_view'))}
-          />
-        </View>
-      </View>
       {pausedUntil ? (
         <Btn
           label={copy.resume}
