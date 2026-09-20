@@ -58,8 +58,20 @@ def heartbeat_payload(
     battery_pct: int = BATTERY_PCT_PLACEHOLDER,
     profile_rev: int = 0,
     activity: dict[str, Any] | None = None,
+    gait: dict[str, Any] | None = None,
+    activity_label: str | None = None,
 ) -> dict[str, Any]:
-    """POST /v1/ingest/heartbeat — matches fixtures/heartbeat.json (+ stretch fields)."""
+    """POST /v1/ingest/heartbeat — matches fixtures/heartbeat.json (+ stretch fields).
+
+    [claude] `gait` is the per-window summary from gait.summarize() (cadence,
+    interval CV, peak-g CV). Hub persists it as a gait_summary event; older
+    hubs simply drop the unknown key.
+
+    [claude] `activity_label` is the voted output of the on-device neural
+    classifier (har.py): walking / sitting / standing / lying. Rides the
+    heartbeat the same way gait does; hub stores it on the band doc and emits
+    an activity_classified event when it changes.
+    """
     body: dict[str, Any] = {
         "band_id": band_id,
         "battery_pct": int(battery_pct),
@@ -68,6 +80,10 @@ def heartbeat_payload(
     }
     if activity is not None:
         body["activity"] = activity
+    if gait is not None:
+        body["gait"] = gait
+    if activity_label is not None:
+        body["activity_label"] = activity_label  # [claude]
     return body
 
 

@@ -139,7 +139,7 @@ export const resident = {
       items: { label: string; value: string; unit: string; usual: string }[],
     ) =>
       `Different from ${firstName}’s own routine: ${items
-        .map((i) => `${i.label.toLowerCase()} at ${i.value} ${i.unit} against a usual ${i.usual}`)
+        .map((i) => `${i.label.toLowerCase()} at ${[i.value, i.unit].filter(Boolean).join(' ')} against a usual ${i.usual}`)
         .join('; ')}.`,
   },
   whereToday: {

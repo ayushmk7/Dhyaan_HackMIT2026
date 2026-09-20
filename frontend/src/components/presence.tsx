@@ -11,6 +11,7 @@ import { Animated, Easing, Pressable, StyleSheet, TextStyle, View, ViewStyle } f
 import { Icon } from '@/components/icon';
 import { Row, Txt } from '@/components/ui';
 import { useReducedMotion } from '@/components/entrance';
+import { displaySentence } from '@/lib/format';
 import type { ChatCitation, Fact, SourceKind } from '@/lib/types';
 import { useTheme } from '@/theme/theme';
 import { radius, sp, type } from '@/theme/tokens';
@@ -77,7 +78,10 @@ export function CitationChip({ citation, onPress }: {
       <KindTag kind={citation.kind} detail={detailOf(citation.label)} />
       {!!citation.text && (
         <Txt kind="caption" tone="muted" numberOfLines={2} style={{ marginTop: sp(1.5) }}>
-          {citation.text}
+          {/* Evidence arrives written for retrieval ("On Sunday 20 September
+              at 7:32 AM, …"); the tag already carries the time, so the
+              preamble goes and the sentence reads like a person's. */}
+          {displaySentence(citation.text)}
         </Txt>
       )}
     </View>

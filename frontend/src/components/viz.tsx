@@ -91,7 +91,7 @@ export function EventRow({ event, onPress }: { event: KEvent; onPress?: () => vo
     <MetricRow
       hue={event.deviation ? t.hue.heart : typeHue(event.type, t.hue)}
       icon={eventSymbol(event.type)}
-      label={eventTitle(event.type)}
+      label={eventTitle(event.type, event.payload)}
       time={timeOf(event.ts)}
       sentence={displaySentence(event.sentence ?? event.embedding_text ?? '')}
       onPress={onPress}

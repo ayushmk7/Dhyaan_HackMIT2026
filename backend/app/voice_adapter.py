@@ -222,6 +222,11 @@ class _TwilioVoice:
                 tz = ZoneInfo((res or {}).get("timezone") or "America/New_York")
                 dt = datetime.fromisoformat(str(opened).replace("Z", "+00:00"))
                 ctx["fall_time"] = dt.astimezone(tz).strftime("%-I:%M %p")
+                # Fold the room into the time phrase so every prompt template
+                # says "at 5:12 AM in the kitchen" with zero template changes.
+                if zone := alert.get("zone"):
+                    room = str(zone).replace("_", " ")
+                    ctx["fall_time"] += f" in the {room}"
             # Who we're talking TO (contact legs) or ABOUT passing a message to
             # (resident leg): the contact being dialed, else the first rung.
             q = {"resident_id": alert["resident_id"]}

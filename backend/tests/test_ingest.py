@@ -72,6 +72,101 @@ async def test_heartbeat_low_battery_emits_event(client, resident, db):
     assert evt is not None
 
 
+async def test_heartbeat_gait_persists_gait_summary_event(client, resident, db):
+    gait = {
+        "window_s": 60, "steps": 42, "cadence_spm": 42.0,
+        "step_interval_cv": 0.18, "peak_g_cv": 0.09,
+        "peak_g_p50": 1.35, "peak_g_max": 1.9,
+    }
+    r = await client.post(
+        "/v1/ingest/heartbeat",
+        json={"band_id": "band_a3f2", "battery_pct": 80, "uptime_s": 500, "gait": gait},
+    )
+    assert r.status_code == 204
+
+    evt = await db.events.find_one({"resident_id": resident, "type": "gait_summary"})
+    assert evt is not None
+    assert evt["source"] == "band"
+    assert evt["payload"]["cadence_spm"] == 42.0
+    assert evt["payload"]["step_interval_cv"] == 0.18
+    # steps/min shows up in the retrieval text, not just the payload.
+    assert "42" in evt["embedding_text"]
+
+
+async def test_heartbeat_without_gait_emits_no_gait_event(client, resident, db):
+    r = await client.post(
+        "/v1/ingest/heartbeat",
+        json={"band_id": "band_a3f2", "battery_pct": 80, "uptime_s": 500},
+    )
+    assert r.status_code == 204
+    assert await db.events.find_one({"type": "gait_summary"}) is None
+
+
+async def test_heartbeat_activity_label_stored_and_emitted_on_change(client, resident, db):
+    # First heartbeat with a label: stored on band doc + one event (change from unset).
+    r = await client.post(
+        "/v1/ingest/heartbeat",
+        json={"band_id": "band_a3f2", "battery_pct": 80, "activity_label": "walking"},
+    )
+    assert r.status_code == 204
+    band = await db.bands.find_one({"_id": "band_a3f2"})
+    assert band["last_activity_label"] == "walking"
+    evts = await db.events.find({"type": "activity_classified"}).to_list(None)
+    assert len(evts) == 1
+    assert evts[0]["source"] == "band"
+    assert evts[0]["payload"]["label"] == "walking"
+    assert evts[0]["payload"]["prev_label"] is None
+
+    # Same label again: doc updated, NO second event (edge-triggered).
+    r = await client.post(
+        "/v1/ingest/heartbeat",
+        json={"band_id": "band_a3f2", "battery_pct": 79, "activity_label": "walking"},
+    )
+    assert r.status_code == 204
+    evts = await db.events.find({"type": "activity_classified"}).to_list(None)
+    assert len(evts) == 1
+
+    # Changed label: second event with prev_label recorded.
+    r = await client.post(
+        "/v1/ingest/heartbeat",
+        json={"band_id": "band_a3f2", "battery_pct": 78, "activity_label": "lying"},
+    )
+    assert r.status_code == 204
+    evts = await db.events.find({"type": "activity_classified"}).to_list(None)
+    assert len(evts) == 2
+    new = [e for e in evts if e["payload"]["label"] == "lying"][0]
+    assert new["payload"]["prev_label"] == "walking"
+    band = await db.bands.find_one({"_id": "band_a3f2"})
+    assert band["last_activity_label"] == "lying"
+
+    # Heartbeat without a label leaves the stored label alone.
+    r = await client.post(
+        "/v1/ingest/heartbeat",
+        json={"band_id": "band_a3f2", "battery_pct": 77},
+    )
+    assert r.status_code == 204
+    band = await db.bands.find_one({"_id": "band_a3f2"})
+    assert band["last_activity_label"] == "lying"
+
+
+async def test_heartbeat_activity_label_bad_value_422(client, resident):
+    r = await client.post(
+        "/v1/ingest/heartbeat",
+        json={"band_id": "band_a3f2", "battery_pct": 80, "activity_label": "moonwalking"},
+    )
+    assert r.status_code == 422
+
+
+async def test_heartbeat_gait_bad_cadence_422(client, resident):
+    r = await client.post(
+        "/v1/ingest/heartbeat",
+        json={"band_id": "band_a3f2", "battery_pct": 80,
+              "gait": {"window_s": 60, "steps": 5, "cadence_spm": -3,
+                       "step_interval_cv": 0.1, "peak_g_cv": 0.1}},
+    )
+    assert r.status_code == 422
+
+
 async def test_heartbeat_unknown_band_404(client, resident):
     r = await client.post(
         "/v1/ingest/heartbeat",

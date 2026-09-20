@@ -415,7 +415,9 @@ export const family = {
     tryAgain: 'Try again',
     addPhoto: 'Add a photo',
     tryExample: 'Try an example',
-    added: (what: string) => `Added: ${what}.`,
+    // The summary is the model's own sentence and usually brings its own
+    // full stop; never add a second one.
+    added: (what: string) => `Added: ${/[.!?]$/.test(what.trim()) ? what.trim() : `${what.trim()}.`}`,
     unreadable: 'Couldn’t read that as a care document. Try a clearer copy.',
     needsAI: 'Reading a document needs Dhyaan’s reading service, which isn’t connected on this phone. Nothing was added.',
 

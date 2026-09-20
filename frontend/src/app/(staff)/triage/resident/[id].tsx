@@ -54,6 +54,14 @@ import { sp, useTheme } from '@/theme';
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
+/** A reading as a person would say it: seconds become hours or minutes,
+ *  a count is just the number. Everything else keeps its unit. */
+const humanReading = (v: number, unit: string): string => {
+  if (unit === 's') return v >= 5400 ? `${(v / 3600).toFixed(1)} h` : `${Math.round(v / 60)} min`;
+  if (unit === 'count') return fmt(v);
+  return fmt(v);
+};
+
 /** The real deviation test, run only on a value that exists. */
 function lastReading(b: BaselineFeature): number | null {
   const pts = b.series.filter((v) => typeof v === 'number' && Number.isFinite(v));
@@ -253,8 +261,14 @@ export default function ResidentDetail() {
               <Txt kind="body" style={{ marginTop: sp(2.5) }}>
                 {copy.deviation.summary(
                   firstName,
+                  // This card is a sentence, so the readings speak human units:
+                  // "4.4 h", not "15840 s". The Routine tiles below keep the
+                  // machine's own figures.
                   deviations.map((b) => ({
-                    label: b.label, value: fmt(lastReading(b)!), unit: b.unit, usual: fmt(b.mu),
+                    label: b.label,
+                    value: humanReading(lastReading(b)!, b.unit),
+                    unit: b.unit === 's' || b.unit === 'count' ? '' : b.unit,
+                    usual: humanReading(b.mu, b.unit),
                   })),
                 )}
               </Txt>

@@ -29,6 +29,8 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
+import gait  # noqa: E402  # [claude] gait window math (pure, unit-tested)
+import har  # noqa: E402  # [claude] neural activity classifier (walking/sitting/standing/lying)
 from ble_scan import scan_ibeacons_sync, wifi_scan_bssids  # noqa: E402
 from payloads import (  # noqa: E402
     BATTERY_PCT_PLACEHOLDER,
@@ -75,6 +77,9 @@ except ImportError:
                     time.sleep(0.05)
 
     Bridge = _StubBridge  # type: ignore
+    if os.path.exists("/.dockerenv"):
+        logging.getLogger("fallband").error(
+            "RUNNING WITH STUB BRIDGE ON DEVICE — falls will NOT be forwarded")
     App = _StubApp  # type: ignore
 
 
@@ -103,7 +108,7 @@ class FallbandAgent:
         self.uplink = Uplink(
             hub_url=cfg["hub_url"],
             band_key=cfg.get("band_key") or os.environ.get("BAND_KEY", ""),
-            spool_dir=os.environ.get("FALLBAND_SPOOL", "/tmp/fallband_spool"),
+            spool_dir=os.environ.get("FALLBAND_SPOOL", str(_HERE.parent / "spool")),
         )
         self.t0 = time.time()
         self.lock = threading.Lock()
@@ -114,6 +119,21 @@ class FallbandAgent:
         self.last_room_ts: float = 0.0
         self.profile_rev = int((cfg.get("profile") or {}).get("rev") or 0)
         self.step_buf: list[dict[str, float]] = []
+        # [claude] gait: separate ~60s window (step_buf stays 30s for the
+        # heartbeat `activity` block). Raw steps stay on-device; only the
+        # summarized scores ride the next heartbeat via _pending_gait.
+        self.gait_buf: list[dict[str, float]] = []
+        self._pending_gait: dict[str, Any] | None = None
+        self._last_gait = time.time()
+        # [claude] HAR: raw-accel stream -> numpy CNN -> voted activity label.
+        # Weights missing (fresh checkout without har_weights.npz) degrades to
+        # "no classifier", never to a crash — the fall path must not care.
+        self.har: har.HarClassifier | None = None
+        if (cfg.get("har") or {}).get("enabled", True):
+            try:
+                self.har = har.HarClassifier()
+            except Exception as e:
+                log.warning("HAR classifier unavailable (%s) — stream ignored", e)
         self._last_hb = 0.0
         self._last_ble = 0.0
         self._last_wifi = 0.0
@@ -154,6 +174,9 @@ class FallbandAgent:
             battery_pct=self.battery_pct,
         )
         log.info("FALL seq=%s peak_g=%.2f ff_ms=%s orient=%.1f → POST /band", seq, peak_g, ff_ms, orient_deg)
+        self._post_fall(seq, body)
+
+    def _post_fall(self, seq: int, body: dict) -> None:
         resp = self.uplink.post("/v1/ingest/band", body, critical=True)
         with self.lock:
             if resp and resp.get("alert_id"):
@@ -169,11 +192,40 @@ class FallbandAgent:
         self._signal_uplink()
 
     def on_impact_only(self, seq, path, peak_g, orient_deg, still_std_g, reason):
-        # A5: hub rejects impact_only today — log locally for expo ticker.
-        log.info(
-            "impact_only seq=%s path=%s peak_g=%.2f orient=%.1f reason=%s (local only until A5)",
-            seq, path, float(peak_g), float(orient_deg), reason,
+        # [claude] 2026-09-20: this used to be log-only "until A5", but the hub
+        # accepts free_fall_ms=0 fine (BandEventIn ge=0) and real falls — a slump
+        # against a wall, a pendant-worn collapse — often have no clean free-fall
+        # window at all. Detected-but-discarded was the worst option: the cancel
+        # window and Button A exist exactly to absorb the false positives this
+        # gate was afraid of. compat.impact_only_local_only=true restores the
+        # old behavior.
+        compat = (self.cfg.get("compat") or {})
+        if compat.get("impact_only_local_only"):
+            log.info(
+                "impact_only seq=%s path=%s peak_g=%.2f orient=%.1f reason=%s (local only, compat flag)",
+                seq, path, float(peak_g), float(orient_deg), reason,
+            )
+            return
+        still_ms = int((self.cfg.get("imu") or {}).get("still_window_ms", 1000))
+        body = fall_payload(
+            band_id=self.band_id,
+            peak_g=float(peak_g),
+            free_fall_ms=0,
+            post_impact_tilt_deg=float(orient_deg),
+            stillness_ms=still_ms,
+            path=int(path),
+            battery_pct=self.battery_pct,
         )
+        log.info("IMPACT->FALL seq=%s peak_g=%.2f orient=%.1f reason=%s → POST /band",
+                 seq, float(peak_g), float(orient_deg), reason)
+        self._post_fall(int(seq), body)
+        # [claude] audible feedback: impact-path falls never enter the MCU's
+        # grace state, so without this the wearer gets zero on-body signal.
+        # Code 2 = long low tone + LED, "a call is going out".
+        try:
+            Bridge.call("signal", 2)
+        except Exception as e:
+            log.warning("escalation buzz failed: %s", e)
 
     def on_cancel(self, seq, age_ms):
         seq = int(seq)
@@ -217,15 +269,56 @@ class FallbandAgent:
         self.uplink.post("/v1/ingest/band", body, critical=False)
 
     def on_step(self, peak_g, jerk, gyro_dps):
+        now = time.time()
         self.step_buf.append({
             "peak_g": float(peak_g),
             "jerk": float(jerk),
             "gyro_dps": float(gyro_dps),
-            "t": time.time(),
+            "t": now,
         })
         # Keep ~30 s window.
-        cutoff = time.time() - 30.0
+        cutoff = now - 30.0
         self.step_buf = [s for s in self.step_buf if s["t"] >= cutoff]
+        # [claude] gait window (default 60 s), pruned here and in gait_tick.
+        self.gait_buf.append({"t": now, "peak_g": float(peak_g)})
+        gait_cutoff = now - self._gait_window_s()
+        self.gait_buf = [s for s in self.gait_buf if s["t"] >= gait_cutoff]
+
+    def on_accel_win(self, csv):
+        # [claude] "accel_win" notify: one CSV batch of ~10 xyz samples @52 Hz
+        # (milli-g ints; sketch.ino HAR stream). Ring/inference in har.py.
+        if self.har is not None:
+            self.har.on_batch(str(csv))
+
+    # [claude] ---- gait -------------------------------------------------------
+
+    def _gait_window_s(self) -> float:
+        return float((self.cfg.get("gait") or {}).get("window_s", 60))
+
+    def gait_tick(self) -> None:
+        """Every ~window_s, summarize the step window into gait scores.
+
+        Only fires with >= min_steps steps in the window (a real walk, not a
+        couple of shuffles). The summary rides the next heartbeat as `gait`;
+        the raw per-step data never leaves the pendant.
+        """
+        gcfg = self.cfg.get("gait") or {}
+        window_s = self._gait_window_s()
+        now = time.time()
+        if now - self._last_gait < window_s:
+            return
+        self._last_gait = now
+        steps = [s for s in self.gait_buf if s["t"] >= now - window_s]
+        self.gait_buf = steps
+        summary = gait.summarize(
+            [s["t"] for s in steps],
+            [s["peak_g"] for s in steps],
+            window_s=window_s,
+            min_steps=int(gcfg.get("min_steps", 10)),
+        )
+        if summary is not None:
+            log.info("gait window: %s", summary)
+            self._pending_gait = summary
 
     # ---- config → MCU -------------------------------------------------------
 
@@ -253,10 +346,13 @@ class FallbandAgent:
             "step_min_peak_g": imu.get("step_min_peak_g"),
             "step_min_interval_ms": imu.get("step_min_interval_ms"),
             "demo_chirp": 1.0 if imu.get("demo_chirp_impact_only") else 0.0,
+            # [claude] HAR stream kill switch: no classifier -> stop the MCU
+            # from wasting Bridge bandwidth on accel batches nobody reads.
+            "stream_accel": 1.0 if self.har is not None else 0.0,
         }
         cal = self.cfg.get("calibration") or {}
         if cal.get("f_min"):
-            mapping["f_min"] = cal["f_min"]
+            mapping["f_min_g"] = cal["f_min"]
         bias = imu.get("accel_bias") or [0, 0, 0]
         gain = imu.get("accel_gain") or [1, 1, 1]
         mapping.update({
@@ -311,6 +407,17 @@ class FallbandAgent:
         if now - self._last_hb < period:
             return
         self._last_hb = now
+        # [claude] F2: a power cycle silently reverts the MCU to compiled
+        # thresholds (ff_max_ms=400 etc). Verify the rev every heartbeat and
+        # repush on drift — turns "running stale thresholds" into a 30s blip.
+        try:
+            st = str(Bridge.call("get_status")).split(",")
+            if len(st) > 6 and int(st[6]) != int(self.cfg.get("thresholds_rev", 0)):
+                log.warning("MCU rev %s != config rev %s — repushing thresholds",
+                            st[6], self.cfg.get("thresholds_rev"))
+                self.push_config_to_mcu()
+        except Exception as e:
+            log.warning("rev check failed: %s", e)
         activity = None
         if self.step_buf:
             peaks = [s["peak_g"] for s in self.step_buf]
@@ -319,12 +426,19 @@ class FallbandAgent:
                 "peak_g_p50": sorted(peaks)[len(peaks) // 2],
                 "peak_g_max": max(peaks),
             }
+        # [claude] gait summary (if a walk window completed) rides this
+        # heartbeat once, then is cleared — hub persists it as gait_summary.
+        gait_summary, self._pending_gait = self._pending_gait, None
         body = heartbeat_payload(
             band_id=self.band_id,
             uptime_s=int(now - self.t0),
             battery_pct=self.battery_pct,
             profile_rev=self.profile_rev,
             activity=activity,
+            gait=gait_summary,
+            # [claude] current voted activity label (walking/sitting/standing/
+            # lying) from the on-device CNN; None until the first stable vote.
+            activity_label=self.har.label if self.har is not None else None,
         )
         resp = self.uplink.post("/v1/ingest/heartbeat", body, critical=False)
         self._signal_uplink()
@@ -373,7 +487,10 @@ class FallbandAgent:
             beacons = []
         # Strip helper `n` before wire (fixture shape is uuid/major/minor/rssi).
         wire_beacons = [
-            {"uuid": b["uuid"], "major": b["major"], "minor": b["minor"], "rssi": b["rssi"]}
+            # [claude] F7: hub validates rssi >= -100; one -103 dBm row would
+            # 422 the entire scan and kill localization silently.
+            {"uuid": b["uuid"], "major": b["major"], "minor": b["minor"],
+             "rssi": max(-100, int(b["rssi"]))}
             for b in beacons
         ]
         body = rf_payload(
@@ -405,6 +522,7 @@ class FallbandAgent:
 
     def tick(self) -> None:
         self.maybe_reload_config()
+        self.gait_tick()  # [claude] before heartbeat so a fresh window rides this beat
         self.heartbeat_tick()
         self.wifi_tick()
         self.ble_tick()
@@ -441,6 +559,9 @@ def main(argv: list[str] | None = None) -> None:
     Bridge.provide("cancel", agent.on_cancel)
     Bridge.provide("button", agent.on_button)
     Bridge.provide("step", agent.on_step)
+    # [claude] raw-accel stream for the HAR classifier (same provide pattern
+    # as App Lab's real-time-accelerometer example).
+    Bridge.provide("accel_win", agent.on_accel_win)
 
     def loop():
         agent.tick()

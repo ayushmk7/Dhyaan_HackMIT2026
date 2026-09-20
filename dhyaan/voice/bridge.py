@@ -44,7 +44,7 @@ router = APIRouter()
 
 DG_URL = "wss://agent.deepgram.com/v1/agent/converse"
 KEEPALIVE_INTERVAL_S = 8.0
-SILENCE_TIMEOUT_S = 20.0  # §4.4: 20 s of silence after the greeting
+SILENCE_TIMEOUT_S = float(os.getenv("SILENCE_TIMEOUT_S", "10"))  # §4.4, stage-tuned: silence after the greeting
 
 # call_sid → live session, so /twilio/amd can reach the running bridge (B6).
 SESSIONS: dict[str, "Session"] = {}
@@ -106,7 +106,20 @@ def _arm_silence_timer(sess: Session) -> None:
             await fsm.handle_voice_tool(sess.ctx.get("alert_id", ""), sess.ctx.get("role", ""),
                                         "escalate", {"reason": "silence"})
             sess.tool_called = True
+            # Say WHY the line is about to go dead, then hang up. pending_hangup
+            # only fires on AgentAudioDone, and without an injected line there is
+            # no audio to finish — the old code left the call dangling forever.
+            await sess.dg.send(json.dumps({
+                "type": "InjectAgentMessage",
+                "message": "I couldn't hear you, so I'm asking your family to check on you right now.",
+            }))
             sess.pending_hangup = True
+
+            async def force_hangup():
+                await asyncio.sleep(8.0)  # belt-and-braces if that audio never plays
+                if sess.call_sid:
+                    await hangup_call(sess.call_sid)
+            asyncio.create_task(force_hangup())
 
     if sess.silence_timer:
         sess.silence_timer.cancel()

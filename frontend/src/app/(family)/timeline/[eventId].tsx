@@ -105,7 +105,7 @@ export default function EventDetail() {
 
         <View>
           <Txt kind="body">
-            {copy.filedAs(sensorSentence(event), eventTitle(event.type))}
+            {copy.filedAs(sensorSentence(event), eventTitle(event.type, event.payload))}
           </Txt>
           <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
             {copy.certainty(event.confidence)}

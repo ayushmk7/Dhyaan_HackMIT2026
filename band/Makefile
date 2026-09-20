@@ -16,3 +16,4 @@ test-detector:
 
 test-py:
 	$(PYTHON) $(ROOT)/tests/test_payloads.py
+	$(PYTHON) $(ROOT)/tests/test_har.py

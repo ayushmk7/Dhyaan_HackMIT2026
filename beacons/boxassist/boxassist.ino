@@ -107,9 +107,15 @@ static uint32_t lastBtnMs     = 0;
 static bool     btnWasDown    = false;
 
 #define BTN_BOOT_PIN 0            // top "Boot" button on the S3-BOX, active-low
+// [claude] 2026-09-20: DISABLED by default. On the original S3-BOX GPIO0 is
+// ALSO the panel's SPI MISO — the display drives the line and it reads LOW,
+// i.e. "pressed", forever. Live result: the box silently acked every alert
+// ~10s after it opened (by=box_kitchen, nobody touching it). Touch is the
+// confirm input; enable this only on hardware where GPIO0 is actually free.
+#define USE_BOOT_BUTTON 0
 #define POLL_MS      2000
 #define THANKS_MS    5000
-#define CHIME_MS     10000        // [claude] soft chime period while ALERT is open
+#define CHIME_MS     20000        // [claude] chime period; longer = more bus-quiet windows for touch
 
 static uint32_t nextChimeAt = 0;  // [claude] next chime while in ST_ALERT
 
@@ -242,7 +248,11 @@ static bool postAck(const String& alertId) {
 // ------------------------------- inputs ------------------------------------
 static bool confirmPressed() {
   // Physical top BOOT button (active-low), edge-triggered + debounced.
+#if !USE_BOOT_BUTTON
+  bool down = false;  // [claude] GPIO0 conflicts with panel MISO — see define above
+#else
   bool down = (digitalRead(BTN_BOOT_PIN) == LOW);
+#endif
   bool fired = false;
   if (down && !btnWasDown && millis() - lastBtnMs > 300) {
     fired = true;
@@ -252,9 +262,42 @@ static bool confirmPressed() {
   if (fired) return true;
 
   // Touch anywhere on the giant button (generously: lower 3/4 of the screen).
+  // [claude] 2026-09-20: the ES8311 codec SHARES the I2C bus with the touch
+  // controller, and audio traffic (the spoken prompt, ~4-6s into an alert)
+  // corrupts single touch reads into phantom taps — live, the box acked
+  // alerts nobody touched. Require 3 consecutive in-region samples 40ms
+  // apart: bus garbage never repeats consistently; a real finger does.
   if (haveDisplay && state == ST_ALERT) {
     int32_t x, y;
-    if (lcd.getTouch(&x, &y) && y >= BTN_Y - 20) return true;
+    if (lcd.getTouch(&x, &y) && y >= BTN_Y - 20) {
+      // [claude] v3 of this check. v1 (single read) phantom-acked during audio:
+      // the codec shares I2C with touch, and the spoken prompt corrupts reads.
+      // v2 (3 consecutive clean reads) ate REAL taps for the same reason - the
+      // bus is noisy exactly while the box is talking. v3: the first plausible
+      // hit SILENCES the audio (frees the bus), then 4 clean reads decide.
+      // A held finger persists ~200ms and passes; one-frame garbage cannot.
+      if (boxAudioBusy()) boxAudioStop();
+      delay(50);
+      // [claude] v4: two gated rounds. v3's single 2-of-4 still passed one
+      // ghost per ~18 min of chiming (observed live). A held finger sails
+      // through both rounds; bus garbage must now repeat across 600ms with
+      // the audio already silenced. Hold for about a second.
+      int hits = 0;
+      for (int i = 0; i < 4; i++) {
+        if (lcd.getTouch(&x, &y) && y >= BTN_Y - 20) hits++;
+        delay(40);
+      }
+      if (hits >= 3) {
+        delay(200);
+        int hits2 = 0;
+        for (int i = 0; i < 3; i++) {
+          if (lcd.getTouch(&x, &y) && y >= BTN_Y - 20) hits2++;
+          delay(40);
+        }
+        Serial.printf("touch confirm %d/4 then %d/3\n", hits, hits2);
+        if (hits2 >= 2) return true;
+      }
+    }
   }
   return false;
 }

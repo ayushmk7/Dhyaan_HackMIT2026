@@ -120,6 +120,46 @@ async def test_feedback_false_positive_excludes_observation(resident, db):
     assert obs["weight"] == 0.0
 
 
+def test_gait_cadence_registered_as_low_direction_feature():
+    kind, direction, floor, warn_t, urgent_t = baseline.FEATURE_META["gait_cadence_spm"]
+    assert kind == baseline.CONTINUOUS
+    assert direction == "low"  # only "walking slower than usual" alerts
+    assert floor and warn_t and urgent_t
+
+
+def test_derive_features_takes_median_gait_cadence():
+    from zoneinfo import ZoneInfo
+
+    docs = [
+        {"type": "gait_summary", "ts_epoch": 1_760_000_000 + i * 3600,
+         "payload": {"cadence_spm": c}}
+        for i, c in enumerate([90.0, 100.0, 40.0])  # one slow shuffle window
+    ]
+    feats = baseline._derive_features(docs, ZoneInfo("America/New_York"))
+    assert feats["gait_cadence_spm"] == 90.0  # median, not mean (76.7)
+
+
+async def test_gait_cadence_slower_than_usual_scores_low(resident, db):
+    # 14 days of steady ~100 spm; a 60 spm day is z=(60-100)/8 = -5 -> urgent.
+    state = None
+    for d in _dates(14):
+        state = await baseline.update_feature(resident, "gait_cadence_spm", 100.0, d)
+    assert not state["cold_start"]
+
+    slow = baseline.score("gait_cadence_spm", 60.0, state)
+    assert slow is not None
+    assert slow["severity"] == "urgent"
+    assert slow["z"] < 0
+
+    # Direction gate: walking faster than usual never alerts.
+    assert baseline.score("gait_cadence_spm", 140.0, state) is None
+
+    # Family copy says it in words, without slugs or scores.
+    text = baseline._family_text("Eleanor", "gait_cadence_spm", 60.0, slow, "2026-09-20")
+    assert "walking slower" in text
+    assert "_" not in text and "z=" not in text
+
+
 def test_deviation_family_sentence_is_plain_english():
     """`/activity` puts a deviation on the FAMILY timeline, so its sentence has
     to be readable. embedding_text keeps the raw value and the z-score for

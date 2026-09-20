@@ -51,6 +51,10 @@ FEATURE_META = {
     "first_kitchen_visit_min": (CONTINUOUS, "high", 30.0, 3.0, 4.5),
     "door_events":            (COUNT, "both", None, None, None),
     "location_unknown_frac":  (CONTINUOUS, "high", 0.05, None, None),  # data-quality only, never alerts a human
+    # Median cadence (steps/min) across the day's band gait_summary windows.
+    # 'low' only: walking slower than her usual is the signal; walking faster
+    # is not a problem. Floor 8 spm — day-to-day cadence noise is real.
+    "gait_cadence_spm":       (CONTINUOUS, "low", 8.0, 3.0, 4.5),
 }
 
 CIRCULAR_FEATURES = {"wake_time_min", "sleep_time_min", "first_walk_min"}
@@ -293,6 +297,13 @@ def _family_text(name, feature, value, result, date_local) -> str:
                     f"She usually settles for about {_hours(usual)}.")
         return f"{name} was on her feet more than she usually is."
 
+    if feature == "gait_cadence_spm":
+        usual = result.get("mu")
+        if usual is not None and value < usual:
+            return (f"{name} is walking slower than usual, about {round(value)} steps "
+                    f"a minute instead of her typical {round(usual)}.")
+        return f"{name}'s walking pace was unusual today."
+
     if feature == "night_bed_exits":
         usual = result.get("lam") or result.get("mu") or 0
         count, usual_r = round(value), round(usual)
@@ -393,13 +404,15 @@ def _derive_features(docs, tz) -> dict:
     covers: wake time, meal count, walk count, night bed-exits, longest
     inactivity, and zone_dwell room-time totals (PRD §8.1 table).
     ponytail: the PRD table has ~20 features; we derive the ones the task
-    explicitly calls out. Upgrade: add the rest (meal timing, gait, RF
-    location features) as more event producers come online.
+    explicitly calls out, plus band gait cadence (median of the day's
+    gait_summary windows). Upgrade: add the rest (meal timing, RF location
+    features) as more event producers come online.
     """
     meal_count = walk_count = night_bed_exits = 0
     wake_candidates = []
     motion_epochs = []
     zone_seconds: dict[str, float] = {}
+    cadences: list[float] = []  # band gait_summary windows (steps/min)
 
     for d in docs:
         dt_local = _local_dt(d["ts_epoch"], tz)
@@ -421,6 +434,10 @@ def _derive_features(docs, tz) -> dict:
             secs = float(p.get("dwell_s", p.get("duration_s", 0)) or 0)
             zone = d.get("zone") or "unknown"
             zone_seconds[zone] = zone_seconds.get(zone, 0.0) + secs
+        if t == "gait_summary":
+            c = (d.get("payload") or {}).get("cadence_spm")
+            if c is not None:
+                cadences.append(float(c))
 
     features: dict[str, float] = {
         "meal_count": float(meal_count),
@@ -439,6 +456,10 @@ def _derive_features(docs, tz) -> dict:
         if "bedroom" in zone_seconds:
             features["time_in_bedroom_s"] = zone_seconds["bedroom"]
         features["time_out_of_room_s"] = sum(v for z, v in zone_seconds.items() if z != "bedroom")
+    if cadences:
+        # Median across the day's walk windows — one slow shuffle to the
+        # bathroom must not define the day. Feeds "walking slower than usual".
+        features["gait_cadence_spm"] = float(sorted(cadences)[len(cadences) // 2])
     return features
 
 

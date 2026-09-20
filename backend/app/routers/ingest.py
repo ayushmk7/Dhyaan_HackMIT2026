@@ -129,12 +129,17 @@ async def ingest_band(body: BandEventIn):
     )
 
     resp = {"event_id": doc["_id"]}
-    if body.type == "fall_suspected":
+    if body.type in ("fall_suspected", "button_pressed"):
         from ..alerts import open_alert  # lazy: alerts.py may still be mid-write
 
+        # button_pressed is the bathroom help point (beacons/bathhelp): a
+        # deliberate call for help gets the same ladder as a fall. It used to
+        # be logged and discarded — a help button that only writes a log line
+        # is worse than no button.
         alert = await open_alert(
             resident_id=resident_id, trigger_event_id=doc["_id"],
-            kind="fall", severity="critical",
+            kind="fall" if body.type == "fall_suspected" else "button",
+            severity="critical",
         )
         resp["alert_id"] = alert["_id"]
         resp["cancel_window_s"] = CANCEL_WINDOW_S
@@ -161,22 +166,128 @@ async def ingest_band_cancel(body: BandCancelIn):
 
 # --- /heartbeat ---------------------------------------------------------------
 
+class GaitSummaryIn(BaseModel):
+    """Per-window gait scores computed ON the pendant (band/fallband/python/gait.py).
+
+    Raw IMU never crosses the wire — this summary is all the hub ever sees.
+    Descriptive statistics over detected steps, not a trained model.
+    """
+    window_s: float = Field(gt=0, le=600)
+    steps: int = Field(ge=1, le=10_000)
+    cadence_spm: float = Field(ge=0, le=300)
+    step_interval_cv: float = Field(ge=0, le=10)
+    peak_g_cv: float = Field(ge=0, le=10)
+    peak_g_p50: float | None = Field(default=None, ge=0, le=20)
+    peak_g_max: float | None = Field(default=None, ge=0, le=20)
+
+
 class HeartbeatIn(BaseModel):
     simulated: bool = False
     band_id: str = Field(min_length=1)
     battery_pct: int = Field(ge=0, le=100)
     uptime_s: int | None = Field(default=None, ge=0)
+    # Optional gait window summary piggybacked on the heartbeat (no new route,
+    # no new trust boundary). Persisted below as a gait_summary event so the
+    # nightly baseline rollup can learn cadence.
+    gait: GaitSummaryIn | None = None
+    # Voted label from the band's on-device neural activity classifier
+    # (band/fallband/python/har.py). Stored on the band doc; a CHANGE vs the
+    # stored label becomes an activity_classified event. Raw IMU never
+    # crosses the wire — this one word is the entire payload.
+    activity_label: Literal["walking", "sitting", "standing", "lying"] | None = None
 
 
 @router.post("/heartbeat", status_code=204)
 async def ingest_heartbeat(body: HeartbeatIn):
     now = datetime.now(timezone.utc).isoformat()
+    update = {"last_seen_at": now, "battery_pct": body.battery_pct}
+    if body.activity_label is not None:
+        update["last_activity_label"] = body.activity_label
     prev = await db().bands.find_one_and_update(
         {"_id": body.band_id},
-        {"$set": {"last_seen_at": now, "battery_pct": body.battery_pct}},
+        {"$set": update},
     )
     if prev is None:
         raise HTTPException(404, f"unknown band_id {body.band_id!r}")
+
+    # find_one_and_update returned the PRE-update doc, so this is a genuine
+    # edge detector: one event per label change, not one per heartbeat.
+    if (body.activity_label is not None
+            and body.activity_label != prev.get("last_activity_label")):
+        await emit(
+            resident_id=prev["resident_id"], source="band",
+            type="activity_classified",
+            embedding_text=(
+                f"Band {body.band_id} activity classifier: "
+                f"{prev.get('last_activity_label') or 'unknown'} -> {body.activity_label}"
+            ),
+            source_id=body.band_id, confidence=1.0,
+            payload={
+                "label": body.activity_label,
+                "prev_label": prev.get("last_activity_label"),
+                "simulated": body.simulated,
+            },
+        )
+
+    # The slow-collapse case fall detectors miss: lying down somewhere that
+    # isn't a bed, during the day, with no fall event. OFF BY DEFAULT
+    # (LYING_WARN_S=0): a lying label alone cannot tell a collapse from a
+    # couch nap or a pendant on a table — flipping this on responsibly means
+    # corroborating with the camera lane (same fusion falls already use).
+    # Set LYING_WARN_S>0 to arm it for a controlled walkthrough.
+    if body.activity_label is not None:
+        import os
+        from zoneinfo import ZoneInfo
+        lying_warn_s = int(os.getenv("LYING_WARN_S", "0"))
+        if body.activity_label != "lying":
+            if prev.get("lying_since") or prev.get("lying_flagged"):
+                await db().bands.update_one(
+                    {"_id": body.band_id},
+                    {"$unset": {"lying_since": "", "lying_flagged": ""}})
+        else:
+            since = prev.get("lying_since")
+            if since is None:
+                await db().bands.update_one(
+                    {"_id": body.band_id}, {"$set": {"lying_since": now}})
+            elif not prev.get("lying_flagged"):
+                held_s = (datetime.now(timezone.utc)
+                          - datetime.fromisoformat(str(since))).total_seconds()
+                res = await db().residents.find_one({"_id": prev["resident_id"]})
+                hour = datetime.now(ZoneInfo((res or {}).get("timezone")
+                                             or "America/New_York")).hour
+                zone_ev = await db().events.find_one(
+                    {"resident_id": prev["resident_id"], "zone": {"$ne": None}},
+                    sort=[("ts_epoch", -1)])
+                zone = (zone_ev or {}).get("zone")
+                if lying_warn_s > 0 and held_s >= lying_warn_s and 8 <= hour < 22 and zone != "bedroom":
+                    await db().bands.update_one(
+                        {"_id": body.band_id}, {"$set": {"lying_flagged": True}})
+                    mins = int(held_s // 60)
+                    where = f"in the {zone.replace('_', ' ')}" if zone else "at home"
+                    await emit(
+                        resident_id=prev["resident_id"], source="band",
+                        type="prolonged_inactivity",
+                        embedding_text=(
+                            f"She has been lying down {where} for about "
+                            f"{mins} minutes during the day, with no fall detected."
+                        )[:400],
+                        source_id=body.band_id,
+                        payload={"label": "lying", "held_s": int(held_s),
+                                 "zone": zone, "simulated": body.simulated},
+                    )
+
+    if body.gait is not None:
+        g = body.gait
+        await emit(
+            resident_id=prev["resident_id"], source="band", type="gait_summary",
+            embedding_text=(
+                f"Band {body.band_id} gait: {g.cadence_spm:.0f} steps/min over "
+                f"{g.window_s:.0f}s ({g.steps} steps), stride-interval CV "
+                f"{g.step_interval_cv:.2f}, impact CV {g.peak_g_cv:.2f}"
+            )[:400],
+            source_id=body.band_id, confidence=1.0,
+            payload={**g.model_dump(), "simulated": body.simulated},
+        )
 
     # Edge-triggered, not level-triggered. A band at 14% heartbeats every 60 s
     # all night, and a level test turned that into ~480 identical events (and

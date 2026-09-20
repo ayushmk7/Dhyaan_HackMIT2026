@@ -95,6 +95,17 @@ export default function RootLayout() {
       if (mine[0] && live.activeAlert?.id !== mine[0].id) {
         live.applyEvent({ t: 'alert.opened', alert: mine[0], resident_id: mine[0].resident_id });
       }
+      // The ladder can close without this app hearing it: an ack from the
+      // band or the demo tool calls alerts.ack directly and never reaches
+      // the socket. This list is the authority on "open", so an activeAlert
+      // it no longer carries is stale — and a stale one re-opens the
+      // takeover on every navigation, trapping the app on the alert screen.
+      // The age check keeps a poll that raced a brand-new socket alert from
+      // clearing it: anything genuinely open is in the very next list.
+      if (!open[0] && live.activeAlert
+          && Date.now() - new Date(live.activeAlert.opened_at).getTime() > 15_000) {
+        live.clearAlert();
+      }
     }).catch(() => { /* next poll or the next foreground tries again */ });
   };
 
