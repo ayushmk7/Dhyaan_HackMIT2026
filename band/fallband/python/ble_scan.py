@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import asyncio
+import json  # [claude] for the host-scan relay file
 import logging
+import os  # [claude] for the host-scan relay file
 import statistics
 import struct
 import time
 from collections import defaultdict
+from pathlib import Path  # [claude] for the host-scan relay file
 from typing import Any, Callable
 
 log = logging.getLogger("fallband.ble")
@@ -88,7 +91,35 @@ def scan_ibeacons_sync(
     *,
     min_adverts: int = 3,
 ) -> list[dict[str, Any]]:
+    # [claude] 2026-09-20: App Lab runs this app in a Docker container that has
+    # neither bleak nor the D-Bus socket, so in-container scans were silently
+    # empty. host_ble_scand.py (agent-added) scans on the board's host Linux
+    # and drops results next to config.json; prefer that file when it's fresh.
+    relay = _read_scan_relay(site_uuid)
+    if relay is not None:
+        return relay
     return asyncio.run(scan_ibeacons(site_uuid, duration_s, min_adverts=min_adverts))
+
+
+# [claude] 2026-09-20: file handoff from host_ble_scand.py (see above).
+_RELAY_PATH = Path(os.getenv(
+    "FALLBAND_BLE_RELAY",
+    str(Path(__file__).resolve().parents[1] / ".ble_latest.json"),
+))
+_RELAY_MAX_AGE_S = float(os.getenv("FALLBAND_BLE_RELAY_MAX_AGE_S", "30"))
+
+
+def _read_scan_relay(site_uuid: str) -> list[dict[str, Any]] | None:
+    """Rows from the host-side scanner, or None to scan directly."""
+    try:
+        doc = json.loads(_RELAY_PATH.read_text())
+    except (OSError, ValueError):
+        return None
+    if time.time() - float(doc.get("ts", 0)) > _RELAY_MAX_AGE_S:
+        log.warning("BLE relay file is stale — is host_ble_scand.py running?")
+        return None
+    site = site_uuid.lower()
+    return [b for b in doc.get("beacons", []) if str(b.get("uuid", "")).lower() == site]
 
 
 def wifi_scan_bssids() -> list[dict[str, Any]]:
