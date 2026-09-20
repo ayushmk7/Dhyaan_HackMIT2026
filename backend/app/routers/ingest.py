@@ -129,12 +129,17 @@ async def ingest_band(body: BandEventIn):
     )
 
     resp = {"event_id": doc["_id"]}
-    if body.type == "fall_suspected":
+    if body.type in ("fall_suspected", "button_pressed"):
         from ..alerts import open_alert  # lazy: alerts.py may still be mid-write
 
+        # button_pressed is the bathroom help point (beacons/bathhelp): a
+        # deliberate call for help gets the same ladder as a fall. It used to
+        # be logged and discarded — a help button that only writes a log line
+        # is worse than no button.
         alert = await open_alert(
             resident_id=resident_id, trigger_event_id=doc["_id"],
-            kind="fall", severity="critical",
+            kind="fall" if body.type == "fall_suspected" else "button",
+            severity="critical",
         )
         resp["alert_id"] = alert["_id"]
         resp["cancel_window_s"] = CANCEL_WINDOW_S
