@@ -8,7 +8,6 @@
 // Dhyaan says it wasn't told, rather than guessing.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
-import { View } from 'react-native';
 import { Btn, Card, Chip, DataLabel, Entrance, Field, Row, Rule, Screen, Txt } from '@/components';
 import { sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';

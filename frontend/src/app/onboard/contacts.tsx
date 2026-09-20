@@ -75,7 +75,7 @@ export default function Contacts() {
         <Marquee
           first
           title="Who should Dhyaan call?"
-          meta={contacts.length ? `${contacts.length} on the list` : undefined}
+          meta={contacts.length ? `${contacts.length} contacts` : undefined}
         />
         <Txt kind="body">
           Called in order if {residentName} doesn’t answer.

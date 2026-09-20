@@ -93,7 +93,7 @@ export default function Survey() {
       }
     >
       <Entrance index={0}>
-        <Marquee first title="Walk each room with the band" meta={`${doneCount}/3 mapped`} />
+        <Marquee first title="Walk each room with the band" meta={`${doneCount}/3`} />
         <Txt kind="body">
           30 seconds per room teaches Dhyaan where {residentName} is.
         </Txt>

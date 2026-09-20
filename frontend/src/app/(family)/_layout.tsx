@@ -22,10 +22,18 @@ export default function FamilyLayout() {
         headerShown: false,
         tabBarActiveTintColor: palette.slate,
         tabBarInactiveTintColor: palette.inkMuted,
-        tabBarStyle: {
-          backgroundColor: palette.paper,
-          borderTopColor: palette.line,
-        },
+        // No backgroundColor. An opaque fill is exactly what defeats the
+        // system's own liquid-glass tab bar on iOS 26 — the bar is glass by
+        // default and painting it flat is how you lose that for free. The
+        // hairline stays, because a floating bar still needs an edge.
+        //
+        // ponytail: the JS tab bar, not `expo-router/unstable-native-tabs`.
+        // Native tabs would additionally give `minimizeBehavior:
+        // 'onScrollDown'` (the bar shrinking away as you scroll), but the API
+        // is explicitly unstable and moving to it rewrites every tab's options
+        // — not a trade worth making the week of a demo. Upgrade there once it
+        // stabilises.
+        tabBarStyle: { borderTopColor: palette.line },
       }}
     >
       <Tabs.Screen name="home" options={{ title: 'Today', tabBarIcon: glyph('house') }} />

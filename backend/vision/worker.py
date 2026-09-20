@@ -352,7 +352,10 @@ class Worker:
         food, dishes, seating) for the same ~6 ms as asking only for a person.
         """
         self.scene = None
-        if self.synthetic:
+        # `self.cam` is only opened in run(), so a Worker built but not started
+        # (every test, and --dry-run before the first frame) has none. Ask the
+        # script only when there is one to ask.
+        if self.synthetic and self.cam is not None:
             # Scripted perception (SyntheticCamera.script): nothing reads a drawn
             # figure as a person, so this source says who is in the room and the
             # rest of the cascade — keyframe rules, the VLM call, ingest, dedup,

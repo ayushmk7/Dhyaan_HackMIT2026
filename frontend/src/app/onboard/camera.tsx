@@ -8,7 +8,9 @@
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
-import { Btn, Card, Chip, Field, Row, Screen, Txt } from '@/components';
+import {
+  Btn, Card, Chip, Entrance, Field, Marquee, Row, Rule, Screen, Txt,
+} from '@/components';
 import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
 import { palette, sp } from '@/theme/tokens';
@@ -69,49 +71,61 @@ export default function Camera() {
   };
 
   return (
-    <Screen>
-      <Txt kind="display" accessibilityRole="header">Which room is the camera in?</Txt>
-      <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(5) }}>
-        {ROOMS.map((r) => (
-          <Chip
-            key={r.zone}
-            label={r.label}
-            selected={camera.zone === r.zone}
-            onPress={() => setCamera({ zone: r.zone })}
-          />
-        ))}
-      </Row>
-
-      <Field
-        label="How is the room laid out?"
-        value={camera.zoneHint}
-        onChangeText={(zoneHint) => setCamera({ zoneHint })}
-        placeholder="The dining table is on the left, her armchair by the window on the right."
-        hint="So Dhyaan can name her spot: her armchair, the table."
-        multiline
-        maxLength={300}
-        style={{ marginTop: sp(6) }}
-      />
-
-      <Card style={{ marginTop: sp(6) }}>
-        <Txt kind="label">Before you point it anywhere, check each of these</Txt>
-        {CHECKLIST.map((line, i) => (
-          <Row
-            key={line}
-            gap={2}
-            style={{ marginTop: sp(3), alignItems: 'flex-start' }}
-          >
+    <Screen
+      wash
+      floatingBar={
+        <Btn label="Continue" disabled={!ready} onPress={() => router.push('/onboard/contacts')} />
+      }
+    >
+      <Entrance index={0}>
+        <Marquee first title="Which room is the camera in?" />
+        <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(2) }}>
+          {ROOMS.map((r) => (
             <Chip
-              label={checked[i] ? 'Checked' : 'Confirm'}
-              selected={checked[i]}
-              onPress={() => setChecked((c) => c.map((v, j) => (j === i ? !v : v)))}
+              key={r.zone}
+              label={r.label}
+              selected={camera.zone === r.zone}
+              onPress={() => setCamera({ zone: r.zone })}
             />
-            <Txt kind="caption" tone="muted" style={{ flex: 1 }}>{line}</Txt>
-          </Row>
-        ))}
-      </Card>
+          ))}
+        </Row>
+      </Entrance>
 
-      <View style={{ marginTop: sp(6), gap: sp(2) }}>
+      <Entrance index={1}>
+        <Field
+          label="How is the room laid out?"
+          value={camera.zoneHint}
+          onChangeText={(zoneHint) => setCamera({ zoneHint })}
+          placeholder="The dining table is on the left, her armchair by the window on the right."
+          hint="So Dhyaan can name her spot: her armchair, the table."
+          multiline
+          maxLength={300}
+          style={{ marginTop: sp(6) }}
+        />
+      </Entrance>
+
+      <Entrance index={2}>
+        <Card style={{ marginTop: sp(6) }}>
+          <Txt kind="label">Before you point it anywhere, check each of these</Txt>
+          <Rule style={{ marginTop: sp(2) }} />
+          {CHECKLIST.map((line, i) => (
+            <Row
+              key={line}
+              gap={2}
+              style={{ marginTop: sp(3), alignItems: 'flex-start' }}
+            >
+              <Chip
+                label={checked[i] ? 'Checked' : 'Confirm'}
+                selected={checked[i]}
+                onPress={() => setChecked((c) => c.map((v, j) => (j === i ? !v : v)))}
+              />
+              <Txt kind="caption" tone="muted" style={{ flex: 1 }}>{line}</Txt>
+            </Row>
+          ))}
+        </Card>
+      </Entrance>
+
+      <Entrance index={3} style={{ marginTop: sp(6), gap: sp(2) }}>
         <Btn
           kind="quiet"
           label="Test the camera"
@@ -144,20 +158,16 @@ export default function Camera() {
             </Txt>
           </View>
         )}
-      </View>
+      </Entrance>
 
-      <Btn
-        label="Continue"
-        disabled={!ready}
-        style={{ marginTop: sp(6) }}
-        onPress={() => router.push('/onboard/contacts')}
-      />
       {!ready && (
-        <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{/* voice-ok */}
-          {camera.zone == null
-            ? 'Pick the room the camera is in.'
-            : 'Confirm each line of the checklist.'}
-        </Txt>
+        <Entrance index={4}>
+          <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>{/* voice-ok */}
+            {camera.zone == null
+              ? 'Pick the room the camera is in.'
+              : 'Confirm each line of the checklist.'}
+          </Txt>
+        </Entrance>
       )}
     </Screen>
   );

@@ -56,12 +56,12 @@ const isBox = (b: unknown): b is NormBox =>
  * The only tick this screen will render is one that actually looks like a tick.
  *
  * `GET /cameras/{id}/monitor` on the real hub answers with the envelope
- * `{camera, online, tick}` (backend/app/routers/camera.py), while `lib/http.ts`
- * types the call as the bare `CameraMonitorTick` and the mock returns the bare
- * shape. Rather than reach into `lib/` — not this agent's files — the console
- * accepts either and refuses anything that is neither. A half-parsed tick
- * renders as `NaN fps`, which is exactly the fabricated console this screen
- * exists to not be.
+ * `{camera, online, tick}` (backend/app/routers/camera.py); `lib/http.ts`
+ * unwraps it and the mock returns the bare shape, so both hand this screen a
+ * bare tick or null. The envelope branch below is kept anyway: it costs one
+ * line and it is the difference between a contract drift showing up as an
+ * empty state and showing up as `NaN fps`, which is exactly the fabricated
+ * console this screen exists not to be.
  */
 function asTick(raw: unknown): CameraMonitorTick | null {
   if (!raw || typeof raw !== 'object') return null;

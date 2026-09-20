@@ -496,7 +496,7 @@ export default function Settings() {
         <View>
           <Marquee
             title="Her camera"
-            meta={profile?.camera ? profile.camera.state : 'not set up'}
+            meta={profile?.camera ? profile.camera.state : undefined}
           />
           <Card>
             {!profile?.camera ? (
@@ -544,7 +544,7 @@ export default function Settings() {
         <View>
           <Marquee
             title="Who Dhyaan calls, in order"
-            meta={contacts ? `${contacts.length} on the list` : undefined}
+            meta={contacts ? `${contacts.length} contacts` : undefined}
           />
           <Card style={{ paddingVertical: sp(2) }}>
             {contactsLoading && !contacts && <LoadingState label="Loading…" />}
@@ -749,7 +749,7 @@ export default function Settings() {
         </View>
       </Stagger>
 
-      <Entrance index={9} style={{ marginTop: sp(8) }}>
+      <Entrance index={8} style={{ marginTop: sp(8) }}>
         <Btn
           kind="quiet"
           label="Sign out"

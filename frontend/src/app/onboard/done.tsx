@@ -7,11 +7,9 @@
 // that the answers live on this phone until it works.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
-import { View } from 'react-native';
-import { Btn, Card, Screen, Txt } from '@/components';
-import { Entrance } from '@/components/entrance';
+import { Btn, Card, DataLabel, Entrance, Rule, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
-import { sp, type } from '@/theme/tokens';
+import { sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
 
 const EXPECT = [
@@ -61,11 +59,21 @@ export default function Done() {
   };
 
   return (
-    <Screen>
+    <Screen
+      wash
+      floatingBar={
+        <Btn
+          label={saved ? 'Open the app' : 'Save and open the app'}
+          busy={busy}
+          onPress={save}
+        />
+      }
+    >
       <Entrance index={0}>
-        <Txt style={type.hero} accessibilityRole="header">
+        <Txt kind="hero" accessibilityRole="header">
           That’s{'\n'}everything.
         </Txt>
+        <Rule weight="heavy" style={{ marginTop: sp(4) }} />
         <Txt kind="body" tone="muted" style={{ marginTop: sp(4) }}>
           Dhyaan will get to know {session.residentName} over the next week.
         </Txt>
@@ -80,40 +88,35 @@ export default function Done() {
             </Txt>
           ))}
         </Card>
+      </Entrance>
 
+      <Entrance index={2}>
         <Card style={{ marginTop: sp(3) }}>
-          <Txt kind="label">What you told Dhyaan</Txt>
-          <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{/* voice-ok */}
+          <DataLabel value={String(facts.length)}>Notes to save</DataLabel>
+          <Rule style={{ marginTop: sp(2) }} />
+          <Txt kind="caption" tone="muted" style={{ marginTop: sp(2.5) }}>{/* voice-ok */}
             {facts.length === 0
               ? 'Nothing yet. You can add notes any time in Settings.'
-              : `${facts.length} ${facts.length === 1 ? 'note' : 'notes'} about her routine. ` +
-                'Every one is editable in Settings, and Forget her profile removes all of them at once.'}
+              : 'Every one is editable in Settings, and Forget her profile removes all of them at once.'}
           </Txt>
         </Card>
       </Entrance>
 
-      <Entrance index={2} style={{ marginTop: sp(6) }}>
-        <Btn
-          label={saved ? 'Open the app' : 'Save and open the app'}
-          busy={busy}
-          onPress={save}
-        />
-        {!!error && (
-          <View style={{ marginTop: sp(3), gap: sp(2) }}>
-            <Txt kind="caption" tone="alert" accessibilityLiveRegion="polite">
-              {error}
-            </Txt>
-            <Txt kind="caption" tone="muted">{/* voice-ok */}
-              Nothing was saved. Your answers are still on this phone.
-            </Txt>
-            <Btn
-              kind="quiet"
-              label="Skip in without saving"
-              onPress={() => { session.finishOnboarding(); router.replace('/(family)/home'); }}
-            />
-          </View>
-        )}
-      </Entrance>
+      {!!error && (
+        <Entrance index={3} style={{ marginTop: sp(4), gap: sp(2) }}>
+          <Txt kind="caption" tone="alert" accessibilityLiveRegion="polite">
+            {error}
+          </Txt>
+          <Txt kind="caption" tone="muted">{/* voice-ok */}
+            Nothing was saved. Your answers are still on this phone.
+          </Txt>
+          <Btn
+            kind="quiet"
+            label="Skip in without saving"
+            onPress={() => { session.finishOnboarding(); router.replace('/(family)/home'); }}
+          />
+        </Entrance>
+      )}
     </Screen>
   );
 }
