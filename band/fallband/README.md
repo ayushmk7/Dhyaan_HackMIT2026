@@ -23,8 +23,10 @@ fallband/
 
 ## Before first POST
 
-1. Set `hub_url` to the Mac LAN IP (`ipconfig getifaddr en0`), not `127.0.0.1`.
-2. Set `band_key` to match the hub's `BAND_KEY` (`X-Band-Key`).
+1. Set `hub_url` to the DEMO hub — the public ngrok URL
+   (`https://subsystem-mushroom-grooving.ngrok-free.dev`), which works from
+   any WiFi. A Mac LAN IP only works when band and Mac share a network.
+2. `band_key` is currently ignored (hub auth was removed); leave the default.
 3. Pair the band in Mongo (do this once):
 
 ```python
@@ -44,7 +46,7 @@ await db().bands.insert_one({
 |---|---|---|
 | `fall` | seq, path, peak_g, ff_min_g, ff_ms, orient, still_std, gyro, jerk, age_ms | `POST /v1/ingest/band` `fall_suspected` |
 | `cancel` | seq, age_ms | `POST /v1/ingest/band/cancel` |
-| `impact_only` | … | logged locally until Ayush A5 |
+| `impact_only` | … | POSTs `fall_suspected` (free_fall_ms=0) — escalates like a fall; `compat.impact_only_local_only=true` restores log-only |
 | `button` / `step` | … | button → ingest; steps → heartbeat activity |
 
 Workarounds: `battery_pct: 100` (F-09/A4), `peak_g` clamped to 20 (A7).

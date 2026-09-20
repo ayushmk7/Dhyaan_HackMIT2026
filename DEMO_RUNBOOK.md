@@ -81,15 +81,25 @@ Set in the environment before `./dev.sh`.
    and chat answers fall through to the local Ollama model. Everything still
    runs; it is just less good prose.
 2. Board on venue WiFi (step above).
-3. Vision lane on Ayush's machine: `uv pip install -e ".[vision]"` once, then
-   `make -C backend vision-demo`; needs `ollama` + `qwen2.5vl:3b` pulled.
-4. Phone that will be "Asha's" charged and on ring.
+3. Vision runs on WHICHEVER machine hosts the backend — proven on Abhinav's
+   Mac this morning (`make -C backend vision-demo`; camera permission must be
+   granted interactively once). Ayush's machine needs the same one-time
+   `uv pip install -e ".[vision]"` + camera grant if it hosts.
+4. Phone that will be "Asha's" charged, ringer ON, Focus/DND OFF.
+5. Hide Expo Go's floating dev button (shake device / dev menu) — it is the
+   single most un-Apple pixel on screen.
+6. Pendant CNN caveat: trained on waist-worn data; "walking" needs the
+   pendant chest-high and steady. If it abstains it keeps the last label —
+   say "activity classification" not "guaranteed live label" if unsure.
 
 ## Hard lessons from the all-nighter (read before rehearsing)
 
 - **After ANY power change to the UNO Q, wait ~2 minutes** before demoing a
   fall: the Linux agent boots long after the chip chirps. Ready = a heartbeat
   in the API log. Drops during the boot window are silently lost.
+- **Box I'M OK is PRESS AND HOLD (~1 second)**, not a tap — the touch and
+  speaker share a wire, and the hold is what separates a finger from bus
+  noise (touch v4, two confirm rounds). Say "press and hold" on stage.
 - **The band is a silent sensor** — only a Movement Modulino is chained. No
   buzzer, no cancel button on the band. The BOX, app, and phone carry all
   alerting sound; cancel = box tap or app. (Chaining Buttons+Buzzer Modulinos

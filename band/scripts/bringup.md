@@ -8,7 +8,9 @@ Physical steps the agent cannot do from a laptop. Check each box when done.
 - [ ] **E2.1** Cold-boot (~20 s) — boot animation appears
 - [ ] **E2.2** Arduino App Lab connects over USB-C
 - [ ] **E2.3** Copy `band/scripts/radio_check.sh` to the board and run it — `hci0` UP RUNNING
-- [ ] **E2.4** Join phone hotspot (prefer **5 GHz**), note `ip -4 addr show wlan0`
+- [ ] **E2.4** Join phone hotspot — iPhone: Maximize Compatibility ON (2.4 GHz
+      only; the ESP32s cannot see 5 GHz) and COPY-PASTE the SSID (iOS uses a
+      typographic apostrophe U+2019; a retyped straight quote will not match)
 - [ ] **E2.5** Blink sketch runs (MCU toolchain OK)
 
 Hard gate: board won’t enumerate / Wi-Fi / Blink → iPhone accel fallback (`HARDWARE_SPEC` §12.1).
@@ -18,7 +20,7 @@ Hard gate: board won’t enumerate / Wi-Fi / Blink → iPhone accel fallback (`H
 - [ ] Power down. Chain **UNO Q QWIIC → Movement → Buttons → Buzzer**. Power up.
 - [ ] Flash `band/bringup/i2c_scan.ino` (or paste into App Lab). Expect bus addresses **`0x6A`, `0x3E`, `0x1E`** on **Wire1**.
 - [ ] Deploy `band/fallband/` as an App Lab app (sketch + python).
-- [ ] Edit `config.json` → `hub_url` to Mac LAN IP (`ipconfig getifaddr en0`), match `BAND_KEY`.
+- [ ] `hub_url` = the public ngrok URL (already set); verify after ANY config push: `adb shell grep hub_url /home/arduino/ArduinoApps/fallband-app/config.json`
 - [ ] Pair Mongo: `band_unoq01` → `res_eleanor` (see `band/fallband/README.md`).
 - [ ] Table slap reads **> 4 g** (proves ±16 g).
 - [ ] **0.5 m** cushion drop → buzzer → hub alert (`fall_suspected`).

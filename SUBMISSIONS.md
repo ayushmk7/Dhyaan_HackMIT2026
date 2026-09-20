@@ -12,18 +12,27 @@ treated as no-answer, and silence escalates by default. The person's own words
 choose who gets woken up. Bridge: `dhyaan/voice/` (12 offline integration
 tests); live classification matrix 5/5 on recorded clips.
 
+## OpenAI
+The app's connection layer runs on gpt-5-mini: conversation openers from her
+real day, the Sunday letter, family-thread-to-plan, and care-document
+extraction (text and photos). Genuine integration story: gpt-5's hidden
+reasoning tokens silently consumed the completion budget and returned empty
+content until reasoning_effort=minimal — documented in frontend/src/lib/ai.ts.
+
 ## Arduino — "Touch Grass"
-The wearable is an Arduino UNO Q: the STM32 side runs a 208 Hz IMU fall
-cascade; the Linux side runs the cancel window, BLE room-fingerprint scanning,
-and HTTPS uplink. Raw acceleration becomes a phone call to a daughter. Code:
-`band/`.
+UNO Q pendant, fully untethered (power bank + hotspot): 208 Hz fall cascade
+on the Cortex-M33, and a REAL neural network on the Linux core — a 1D-CNN we
+trained on UCI-HAR (94.9% held-out), running in pure numpy, classifying
+walking/sitting/standing/lying from a 52 Hz accel stream the MCU ships over
+the internal bridge. Gait metrics (cadence, stride CV) feed her personal
+baselines. Only labels and scores ever leave the device.
 
 ## Espressif — AIoT
 Both boards are active nodes, not just anchors. The S3-BOX (`beacons/boxassist/`)
 runs BLE advertising, WiFi+TLS polling, a touch UI, and speaker playback
 concurrently on one S3: it stays the kitchen iBeacon while watching the care
 backend, and on a fall it takes over its screen ("Are you OK?"), speaks the
-prompt in the same Deepgram voice that makes the phone calls, and a tap
+prompt in the same Deepgram voice that makes the phone calls, and a held press
 acknowledges the alert through the whole system — proven live on hardware
 (tap -> HTTPS through a phone hotspot -> alert acknowledged everywhere).
 The DevKitC (`beacons/bathhelp/`) is the bathroom anchor plus a nurse-call
