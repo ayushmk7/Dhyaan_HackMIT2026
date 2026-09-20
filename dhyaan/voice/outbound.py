@@ -44,7 +44,7 @@ def build_twiml(*, alert_id: str, role: str, call_id: str, attempt: int = 1) -> 
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Connect>
-    <Stream url="{_attr(_env('PUBLIC_WSS'))}">
+    <Stream url="{_attr(_env('PUBLIC_WSS').rstrip('/') + '/twilio/stream')}">
       <Parameter name="alert_id" value="{_attr(alert_id)}" />
       <Parameter name="call_id"  value="{_attr(call_id)}" />
       <Parameter name="role"     value="{_attr(role)}" />

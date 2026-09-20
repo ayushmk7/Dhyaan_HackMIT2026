@@ -237,7 +237,11 @@ async def _keepalive(dg: Any) -> None:
 
 # ---- HTTP callbacks ----------------------------------------------------------
 
-VOICEMAIL_ANSWERED_BY = {"machine_start", "machine_end_beep", "machine_end_silence",
+# Only the confident verdicts trigger the voicemail flow. `machine_start` false-
+# positives on live humans (observed on a real call 9/19: human answer classified
+# machine_start, bridge left voicemail and hung up on her). A real voicemail still
+# gets the message at the beep; a misread human just keeps talking to the agent.
+VOICEMAIL_ANSWERED_BY = {"machine_end_beep", "machine_end_silence",
                          "machine_end_other", "fax"}
 
 

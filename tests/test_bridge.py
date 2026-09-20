@@ -268,7 +268,7 @@ async def test_voicemail_advances_as_no_answer_not_incoherent(monkeypatch):
 
         class FakeReq:
             async def form(self):
-                return {"CallSid": "CA123", "AnsweredBy": "machine_start"}
+                return {"CallSid": "CA123", "AnsweredBy": "machine_end_beep"}
 
         await bridge.twilio_amd(FakeReq())
         await settle()
