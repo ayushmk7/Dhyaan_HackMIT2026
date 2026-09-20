@@ -78,7 +78,7 @@ export default function Today() {
   const qc = useQueryClient();
   const { residentId, residentName } = useSession();
   const livePresence = useLive((s) => s.presence[residentId]);
-  const { data: fetched, isLoading, isError, refetch } = usePresence(residentId);
+  const { data: fetched, isLoading, isError, error, refetch } = usePresence(residentId);
   const { data: activity, isError: activityError, refetch: refetchActivity } = useActivity(residentId);
   const { data: contacts } = useContacts();
   // Her own line rides on the roster projection now, so no extra request.
@@ -110,9 +110,18 @@ export default function Today() {
     );
   }
   if (isError && !presence) {
+    // The transport's message names the address it could not reach and why.
+    // Showing only the friendly line meant the one fact that identifies the
+    // problem never reached the person who could fix it.
+    const detail = error instanceof Error ? error.message : null;
     return (
       <Screen native wash>
         <ErrorState message={copy.loadError(residentName)} onRetry={refetch} />
+        {!!detail && (
+          <Txt kind="caption" tone="muted" style={{ textAlign: 'center', marginTop: sp(3) }}>
+            {detail}
+          </Txt>
+        )}
       </Screen>
     );
   }
