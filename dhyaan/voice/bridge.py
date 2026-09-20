@@ -213,6 +213,11 @@ async def twilio_stream(tw: WebSocket) -> None:
                         sess.greeting_done = True
                         _arm_silence_timer(sess)
                     if sess and sess.pending_hangup:
+                        # AgentAudioDone means Deepgram finished SENDING, not that
+                        # the caller finished HEARING — Twilio still holds seconds
+                        # of buffered audio. An instant hangup clips the farewell
+                        # mid-word. Let it land, plus a natural beat.
+                        await asyncio.sleep(float(os.getenv("HANGUP_GRACE_S", "2.5")))
                         await hangup_call(sess.call_sid)
 
                 elif t in ("Error", "Warning"):
