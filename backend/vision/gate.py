@@ -211,6 +211,54 @@ def remember_frame(frame):
     _LAST["frame"], _LAST["box"], _LAST["band"] = frame, None, None
 
 
+def iou(a, b):
+    """Intersection over union of two boxes. 0 when they do not overlap."""
+    if a is None or b is None:
+        return 0.0
+    ax0, ay0, ax1, ay1 = a
+    bx0, by0, bx1, by1 = b
+    ix0, iy0 = max(ax0, bx0), max(ay0, by0)
+    ix1, iy1 = min(ax1, bx1), min(ay1, by1)
+    iw, ih = max(ix1 - ix0, 0.0), max(iy1 - iy0, 0.0)
+    inter = iw * ih
+    if inter <= 0:
+        return 0.0
+    union = ((ax1 - ax0) * (ay1 - ay0)) + ((bx1 - bx0) * (by1 - by0)) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def pick_subject(boxes, previous=None, min_iou=0.2):
+    """Which of these people is the one we were already watching?
+
+    Returns (box, switched). `switched` is True when the subject we had is gone
+    and this is a DIFFERENT person - the caller should treat that as "she left",
+    not as continuous presence.
+
+    Without this, the subject was simply the largest box each frame. In a room
+    with more than one person that silently hops: the resident lies down or
+    walks out, a visitor is now the biggest box, and the system happily reports
+    her as present and sitting. Nothing looked wrong; it was watching someone
+    else. Measured the hard way - lying on the floor produced 60 of 60
+    observations saying "sitting", because a second person was in frame.
+
+    ponytail: IoU against the last box, no appearance model, no Kalman filter.
+    It holds while she is visible frame to frame at 15 fps. It cannot re-identify
+    her after she is occluded for a while - that needs the appearance descriptor
+    from VLM_PLAN §4, and until then a re-entry reads as a new subject, which is
+    the safe direction.
+    """
+    if not boxes:
+        return None, False
+    if previous is None:
+        return max(boxes, key=lambda b: (b[2] - b[0]) * (b[3] - b[1])), False
+    best = max(boxes, key=lambda b: iou(b, previous))
+    if iou(best, previous) >= min_iou:
+        return best, False
+    # Nothing here overlaps who we were watching: she is gone, even though the
+    # frame still has people in it.
+    return max(boxes, key=lambda b: (b[2] - b[0]) * (b[3] - b[1])), True
+
+
 def aspect(box):
     """bbox height/width. Taller than wide -> standing; wide -> on the floor."""
     if box is None:

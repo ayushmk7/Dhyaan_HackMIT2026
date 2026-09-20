@@ -14,7 +14,7 @@ import httpx
 
 from . import DEMO, TUNING, VLM_MODEL, FRAME_H, FRAME_W
 from .capture import Camera, SyntheticCamera, to_jpeg_b64
-from .gate import MotionGate, PersonGate, apply_mask, posture_band
+from .gate import MotionGate, PersonGate, apply_mask, pick_subject, posture_band
 from .keyframe import KeyframeSelector, RingBatch
 from . import openvocab, vlm
 
@@ -75,6 +75,7 @@ class Worker:
         # geometry worth drawing, which persists between detector runs so the
         # hub console does not strobe. It is never merged into an observation.
         self.boxes, self.people = [], 0
+        self._subject = None      # the person we are following, box coords
         self.last_obs = {"activity": None, "sentence": "", "confidence": None,
                          "latency_ms": 0, "batch_frames": 0}
         self.cam = None
@@ -445,7 +446,19 @@ class Worker:
         self.boxes = [[x0 / w, y0 / h, x1 / w, y1 / h]
                       for x0, y0, x1, y1 in self.scene["boxes"]]
         self.people = self.scene["person_count"]
-        box = self.scene["boxes"][0] if self.scene["boxes"] else None
+        # Follow the person we were already watching, not simply the biggest box.
+        # With two people in frame the biggest box hops the moment she lies down
+        # or steps out, and the system reports a visitor as her, sitting, quite
+        # happily. A switch means our subject is GONE: report not-seen this
+        # frame and let the selector's absent_after_s decide, rather than
+        # silently adopting someone else.
+        box, switched = pick_subject(self.scene["boxes"], self._subject)
+        if switched:
+            log("subject changed: the person we were following is no longer in "
+                "frame (someone else is). Treating as not seen.")
+            self._subject = None
+            return None, False
+        self._subject = box
         return box, box is not None
 
     def _openvocab(self, frame):
