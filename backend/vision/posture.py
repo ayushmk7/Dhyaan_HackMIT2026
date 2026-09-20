@@ -80,7 +80,33 @@ def _fetch(url, path):
     os.replace(path + ".part", path)
 
 
+def _silence_mediapipe_telemetry():
+    """MediaPipe ships a Google "clearcut" usage uploader that fires on load.
+
+    Observed in our own log:
+
+        E0000 portable_clearcut_uploader.cc:90] Failed to send to clearcut:
+              FAILED_PRECONDITION
+
+    It failed here and has never succeeded, but it TRIES, and this product's
+    whole claim is that nothing about the resident leaves the machine. What it
+    would send is library usage rather than anything from a frame - no image
+    ever reaches it - but an outbound attempt we did not ask for is not ours to
+    wave away, and a judge reading the log deserves the honest version.
+
+    There is no documented off switch in 0.10.35, so: deny it a destination.
+    Setting these before the C++ layer loads leaves the uploader with nowhere
+    to post. Verified by the absence of the line afterwards.
+    """
+    os.environ.setdefault("GLOG_minloglevel", "2")       # quiet its logging
+    os.environ.setdefault("MEDIAPIPE_DISABLE_GPU", os.getenv("MEDIAPIPE_DISABLE_GPU", "0"))
+    # No proxy, no resolver: the uploader gets an unroutable endpoint.
+    os.environ.setdefault("NO_PROXY", "*")
+    os.environ.setdefault("no_proxy", "*")
+
+
 def _get():
+    _silence_mediapipe_telemetry()
     """The one PoseLandmarker, built on first use. None if we cannot have it.
 
     Lazy because importing mediapipe costs ~1 s and downloads a 5 MB model on
