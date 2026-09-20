@@ -19,10 +19,10 @@ bottom, with an owner.
 | [`TECHNICAL_PRD.md`](./TECHNICAL_PRD.md) | Software design: event model, alert FSM, voice, vision, localization algorithms, baseline + walking-profile learners, RAG, app, API surface | The API surface (paths, roles, what each role may see) |
 | [`HARDWARE_SPEC.md`](./HARDWARE_SPEC.md) | The band, beacons, radios, power, the fall detector, calibration, test plan | Sensor configuration, detector thresholds, physical test procedure |
 | [`backend/fixtures/*.json`](./backend/fixtures/) | The exact wire payloads the band sends | Payload shapes — **fixtures beat prose** in any spec |
-| [`backend/README.md`](./backend/README.md) | What the backend actually runs today | What is built (the PRD describes the original design; see its build-status block) |
-| [`backend/HARDWARE_INTEGRATION.md`](./backend/HARDWARE_INTEGRATION.md) | Swapping the band simulator for the real band; per-endpoint requirements | Nothing on its own — `backend/app/routers/ingest.py` and the fixtures are the contract it describes |
+| [`./backend-README.md`](././backend-README.md) | What the backend actually runs today | What is built (the PRD describes the original design; see its build-status block) |
+| [`./HARDWARE_INTEGRATION.md`](././HARDWARE_INTEGRATION.md) | Swapping the band simulator for the real band; per-endpoint requirements | Nothing on its own — `backend/app/routers/ingest.py` and the fixtures are the contract it describes |
 | `utsavtodo.md` · `ayushneedtodo.md` · `abhinavtodo.md` | Per-person task lists for the 24 h build | Who does what, and when |
-| [`frontend/DESIGN.md`](./frontend/DESIGN.md) | App design system and screen rules | Visual design |
+| [`frontend/DESIGN.md`](./frontend-DESIGN.md) | App design system and screen rules | Visual design |
 | `distinctive-frontend.md` | General (web) design guidance that `frontend/DESIGN.md` translates to React Native | Nothing directly — `frontend/DESIGN.md` is the applied version |
 | **`DECISIONS.md`** (this file) | Why the specs say what they say | — |
 
@@ -211,7 +211,7 @@ three people, not four. The PRD still described one SQLite file with sqlite-vec,
 four-person plan.
 
 **Decision.** Don't rewrite the design sections mid-hackathon. Add a build-status block at the top of
-the PRD, mark superseded sections, and point to `backend/README.md` and the fixtures.
+the PRD, mark superseded sections, and point to `./backend-README.md` and the fixtures.
 
 **Changed.** `TECHNICAL_PRD.md` (top), §2, §13 · `HARDWARE_SPEC.md` §5.4, §11.
 
@@ -278,8 +278,8 @@ Docs were changed in the same commit as this file. **Code was not.** Each owner 
 | F-06 | Abhinav | Add the recording + AI disclosure to both greetings and a `stop_recording` client-side tool | `dhyaan/voice/settings.py:102-109`, bridge tool handling |
 | F-07 | Abhinav | The alert screen's "31 seconds" applause stat shows the measured elapsed time from the live run | `frontend/src/app/alert/[id].tsx` |
 | F-08 | Abhinav · Ayush | Home-product chips and tiles per D-010; `steps_day` baseline feature; home-product priors drop meals. The seed currently gives Eleanor (a home resident) meals — "no lunch today" is the injected anomaly — so either drop meals from her seed and use "no walk" as the anomaly, or seed a facility resident for the meal story | chat screen, tiles, `backend/app/baseline.py`, `backend/scripts/seed.py` |
-| F-09 | Ayush | Make `battery_pct` optional on `/v1/ingest/heartbeat` and `/v1/ingest/band` (currently required 0–100 — the band cannot supply it); drop it from the fixtures; fix the `battery_pct` row in the hardware integration guide (a voltage divider cannot read a power bank's charge) | `backend/app/routers/ingest.py:107`, `:167`; `backend/fixtures/*.json`; `backend/HARDWARE_INTEGRATION.md:17`, `:19`, `:97` |
-| F-13 | Ayush | `backend/HARDWARE_INTEGRATION.md:94` cites `HARDWARE_SPEC.md` §6.9 for the software free-fall detector; §6.9 is now the walking profile — the free-fall detector is §6.4–6.7 | `backend/HARDWARE_INTEGRATION.md` |
+| F-09 | Ayush | Make `battery_pct` optional on `/v1/ingest/heartbeat` and `/v1/ingest/band` (currently required 0–100 — the band cannot supply it); drop it from the fixtures; fix the `battery_pct` row in the hardware integration guide (a voltage divider cannot read a power bank's charge) | `backend/app/routers/ingest.py:107`, `:167`; `backend/fixtures/*.json`; `./HARDWARE_INTEGRATION.md:17`, `:19`, `:97` |
+| F-13 | Ayush | `./HARDWARE_INTEGRATION.md:94` cites `HARDWARE_SPEC.md` §6.9 for the software free-fall detector; §6.9 is now the walking profile — the free-fall detector is §6.4–6.7 | `./HARDWARE_INTEGRATION.md` |
 | F-10 | Utsav | Band: step detector + walking summary on each heartbeat; calibration mode; apply pushed thresholds via `set_thresholds`; demo-only chirp on `impact_only` | sketch + `python/main.py` |
 | F-11 | Ayush | Hub: walking-profile learner; heartbeat response returns `{profile_rev, profile}`; `gait_profile_updated` / `gait_profile_shift` events | backend |
 | F-12 | Abhinav | Staff resident screen (or demo page): live walking-profile readout and impact ticker for the Arduino expo demo | app |

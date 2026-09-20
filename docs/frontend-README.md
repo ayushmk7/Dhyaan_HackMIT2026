@@ -1,6 +1,6 @@
 # Dhyaan — React Native app
 
-Family + staff app for the Dhyaan elder-care sensing platform (see `../TECHNICAL_PRD.md` §10).
+Family + staff app for the Dhyaan elder-care sensing platform (see `./TECHNICAL_PRD.md` §10).
 Expo SDK 57 · RN 0.86 · expo-router · Zustand (websocket-owned state) · TanStack Query (server reads).
 
 ## Run it

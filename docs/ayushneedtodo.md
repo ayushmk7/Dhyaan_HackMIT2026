@@ -23,12 +23,12 @@ The PRD now opens with a build-status block that matches what you built (MongoDB
 - **F-08 · Home product = band + beacons only** (D-010). Add `steps_day` (from the band's walking
   summaries); home priors drop meals (`TECHNICAL_PRD.md` §8.1, §8.4).
 - **F-09 · Make `battery_pct` optional** on `/ingest/band` and `/ingest/heartbeat` and drop it from the
-  fixtures — the band can't supply it (D-013). Fix the battery row in `backend/HARDWARE_INTEGRATION.md`.
+  fixtures — the band can't supply it (D-013). Fix the battery row in `./HARDWARE_INTEGRATION.md`.
 - **F-11 · Stretch — walking-profile learner** (D-009, `TECHNICAL_PRD.md` §8.7, ~2 h): consume the
   heartbeat `activity` block, fit `impact_g_soft` within [2.5 g, `F_min` − 0.3 g], return
   `200 {profile_rev, profile}` from the heartbeat (204 when unchanged), emit `gait_profile_updated` /
   `gait_profile_shift`. Drop it if it isn't working by H18.
-- **F-13** · `backend/HARDWARE_INTEGRATION.md:94` cites `HARDWARE_SPEC.md` §6.9 for the free-fall
+- **F-13** · `./HARDWARE_INTEGRATION.md:94` cites `HARDWARE_SPEC.md` §6.9 for the free-fall
   detector; §6.9 is now the walking profile.
 - C6.4 below had the wrong expectation for λ ≈ 3.1 (D-015) — fixed.
 

@@ -528,7 +528,7 @@ observations), visitors (count/duration), *"is she OK"* (presence + open alerts)
 
 ## 6. Backend work
 
-### 6.1 Endpoints — frozen contract (`backend/API_CONTRACT_V3.md` is this table, verbatim)
+### 6.1 Endpoints — frozen contract (`./API_CONTRACT_V3.md` is this table, verbatim)
 
 Device routes take `X-Band-Key` (the existing shared device secret; ceiling: one key for band and
 camera, upgrade: per-device keys). App routes take `Authorization: Bearer <API_KEY>`. Ids come back
@@ -663,7 +663,7 @@ person + posture), `keyframe.py`, `vlm.py` (schema, prompt, Ollama call, post-ru
 `worker.py` (loop, config poll, consent gate, heartbeat, POST with retry, RAM ring),
 `backend/tests/test_vision_gate.py` (motion/keyframe rules on synthetic arrays, no camera),
 `backend/pyproject.toml` (adds `opencv-python`, `ultralytics` under a `vision` optional group),
-`backend/Makefile` (adds `vision`, `vision-demo`, `vlm` targets), `backend/README.md` (a "Camera
+`backend/Makefile` (adds `vision`, `vision-demo`, `vlm` targets), `./backend-README.md` (a "Camera
 lane" section only, appended).
 Builds against: `fixtures/camera_observation.json` (posts it in `--dry-run` to stdout) and
 `GET /camera/config`'s frozen shape (a `--config-json` flag substitutes a local file until B is up).
@@ -765,7 +765,7 @@ text fallback or, failing that, the kind-grouped template — both rehearsed.
 
 ### Agent B → A and C, hour 1 (backend API)
 
-`backend/API_CONTRACT_V3.md`, `fixtures/camera_observation.json` and
+`./API_CONTRACT_V3.md`, `fixtures/camera_observation.json` and
 `fixtures/camera_heartbeat.json` are on disk and frozen. Both fixtures are
 validated against the real Pydantic models by `tests/test_simulator.py`, so a
 drift fails there rather than as a 422 on stage.

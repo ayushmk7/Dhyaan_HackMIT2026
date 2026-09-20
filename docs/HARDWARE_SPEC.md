@@ -1536,7 +1536,7 @@ Team of 4 (original plan): **A** = firmware (sketch) · **B** = band Linux, BLE 
 ### H6–H10 · Uplink and hub (B + C, parallel)
 
 27. `python/main.py`: `Bridge.provide()` handlers for `fall_event` / `impact_only` / `fall_cancelled`; JSON per §5.5 **with the latest room fix and its `age_ms` attached**; `requests.post` with 3-retry + spool; the 20 s BLE scan timer; the 60 s Wi-Fi scan; the 30 s telemetry timer.
-28. C builds the hub: FastAPI `:8000`, the §5.4 endpoints, the localizer (**`TECHNICAL_PRD.md §7`**), and the escalation FSM (30 s hold → Twilio + Deepgram outbound → the agent classifies the answer **by tool call** (`mark_ok` / `escalate`, `TECHNICAL_PRD.md` §4.4–4.6) → escalation calls to family, where the room is named). *(Built: FastAPI + MongoDB — see `backend/README.md`.)*
+28. C builds the hub: FastAPI `:8000`, the §5.4 endpoints, the localizer (**`TECHNICAL_PRD.md §7`**), and the escalation FSM (30 s hold → Twilio + Deepgram outbound → the agent classifies the answer **by tool call** (`mark_ok` / `escalate`, `TECHNICAL_PRD.md` §4.4–4.6) → escalation calls to family, where the room is named). *(Built: FastAPI + MongoDB — see `./backend-README.md`.)*
 28a. *(Stretch, §6.9.)* Step detector on the MCU (`Bridge.notify("step", …)`), walking summary on the heartbeat, and applying the profile from the heartbeat reply. ~45 min.
 29. **Integrate with `curl` before the band is ready** — this decouples C from A entirely:
     ```bash

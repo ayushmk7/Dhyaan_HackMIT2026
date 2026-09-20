@@ -1,5 +1,5 @@
 // Real API client. Written against the backend's live OpenAPI schema plus
-// backend/API_CONTRACT_V2.md (the baselines/summaries/location-history/events/
+// docs/API_CONTRACT_V2.md (the baselines/summaries/location-history/events/
 // simulate/pairing/survey/contacts/push routes) — NOT the PRD's §10.5, which
 // describes a JWT and a different path/shape for nearly everything here (see
 // the big comment at the top of residents.py). Same function names and

@@ -4,7 +4,7 @@ FastAPI + MongoDB. One process, one database, no message broker. Everything the
 band, the app and the voice agent do becomes an **event**; alerts, baselines and
 the chat are all readers of that one collection.
 
-Specs: [`../TECHNICAL_PRD.md`](../TECHNICAL_PRD.md) · [`../HARDWARE_SPEC.md`](../HARDWARE_SPEC.md)
+Specs: [`./TECHNICAL_PRD.md`](./TECHNICAL_PRD.md) · [`./HARDWARE_SPEC.md`](./HARDWARE_SPEC.md)
 
 ## Run it
 
