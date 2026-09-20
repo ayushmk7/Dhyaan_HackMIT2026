@@ -167,7 +167,9 @@ async def test_presence_never_leaks_a_room_or_the_evidence(client, camera, db):
     assert "zone" not in blob and "living" not in blob
     assert "evidence" not in blob and "fork" not in blob
     assert body["status"] == "in_view"
-    assert body["sentence"].startswith("Eleanor is having something to eat")
+    # The sentence dropped her name (the screen shows it directly above) and the
+    # "by the look of it" hedge. What it must still carry is the activity.
+    assert body["sentence"].lower().startswith("having something to eat")
 
 
 async def test_absent_observation_flips_presence_out_of_view(client, camera, db):
@@ -176,7 +178,7 @@ async def test_absent_observation_flips_presence_out_of_view(client, camera, db)
                            plate_or_cup_present=False, hand_to_mouth_observed=False))
     r = await client.get("/v1/residents/res_eleanor/presence")
     assert r.json()["status"] == "out_of_view"
-    assert "out of view" in r.json()["sentence"]
+    assert "out of view" in r.json()["sentence"].lower()
 
 
 async def test_consent_off_shows_camera_off_not_a_stale_activity(client, camera, db):
@@ -544,10 +546,12 @@ async def test_presence_is_pushed_only_when_it_changes(client, camera, db, monke
     pushes = [m for m in sent if m.get("t") == "presence.update"]
     assert len(pushes) == 1, f"presence pushed {len(pushes)} times for one unchanged state"
 
-    # A real change still gets through.
+    # A real change still gets through, once it has been confirmed rather than
+    # seen once (see `_HOLD_N` in presence.py).
     body["activity"] = "walking"
-    body["ts"] = datetime.now(timezone.utc).isoformat()
-    assert (await client.post("/v1/ingest/camera", json=body)).status_code == 201
+    for _ in range(3):
+        body["ts"] = datetime.now(timezone.utc).isoformat()
+        assert (await client.post("/v1/ingest/camera", json=body)).status_code == 201
     assert len([m for m in sent if m.get("t") == "presence.update"]) == 2
 
 
@@ -591,9 +595,16 @@ async def test_an_uncertain_frame_does_not_rewrite_the_sentence(client, camera, 
         "an unclear frame rewrote the sentence"
     assert confident["sentence"] == (await post(spot="other"))["sentence"]
 
-    # A genuinely new, confident reading still gets through.
+    # A single differing reading is not enough: the detector reports a wrong
+    # spot roughly a third of the time, so one blip must not rewrite the line.
+    assert confident["sentence"] == (await post(spot="armchair"))["sentence"], \
+        "one stray reading rewrote the sentence"
+
+    # Repeat it and it is believed: she really did move.
+    await post(spot="armchair")
     moved = await post(spot="armchair")
-    assert moved["sentence"] != confident["sentence"], "a real move was swallowed"
+    assert moved["sentence"] != confident["sentence"], "a confirmed move was swallowed"
+    assert "armchair" in moved["sentence"] or "usual spot" in moved["sentence"]
 
 
 async def test_simulating_the_same_beat_twice_moves_the_tile_twice(client, camera, db):

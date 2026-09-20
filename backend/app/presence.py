@@ -136,7 +136,24 @@ def _episode_text(name: str, iv: dict, tz: ZoneInfo) -> str:
 
 
 def presence_sentence(name: str, presence: dict, tz: ZoneInfo, spot_is_usual: bool) -> str:
-    """The one line on the family's home screen. Never a room, ever."""
+    """The one line on the family's home screen. Never a room, ever.
+
+    Short on purpose. This used to read "Asha has been settled in her usual spot
+    since 5:38 am. Sitting, by the look of it." — fifteen words and two
+    sentences, set large, wrapping to three lines. Three things made it long and
+    twee, and all three are fixed here:
+
+    * It repeated her name, which the screen already shows directly above it.
+    * "has been settled ... Sitting, by the look of it" said the activity twice,
+      once as a state and once as a hedge.
+    * "by the look of it" hedged a claim the app never makes with certainty
+      anyway: every observation on this screen is already labelled as something
+      Dhyaan saw rather than something it knows.
+
+    What is left is the activity, where she is sitting if that is worth saying,
+    and since when. The states that are not about her ("The camera is off") keep
+    their full shape, because there is no subject to drop.
+    """
     status = presence.get("status")
     if status == "paused":
         return f"{name} paused the camera."
@@ -150,25 +167,31 @@ def presence_sentence(name: str, presence: dict, tz: ZoneInfo, spot_is_usual: bo
         with contextlib.suppress(Exception):
             since_s = f" since {_hhmm(datetime.fromisoformat(since), tz)}"
     if status == "out_of_view":
-        return f"{name} has been out of view{since_s}."
+        return f"Out of view{since_s}."
     a, spot = presence.get("activity"), presence.get("spot")
     where = _spot_phrase(spot)
     if spot_is_usual and where:
         where = "in her usual spot"
+    where_s = f" {where}" if where else ""
     if a == "eating":
-        return f"{name} is having something to eat{' ' + where if where else ''}."
+        return f"Having something to eat{where_s}."
     if a in ("walking", "exercising"):
-        return f"{name} is up and moving about."
+        return "Up and moving about."
     if a == "with_visitor":
-        return f"{name} has someone visiting."
+        return "Someone is visiting."
     if a == "lying_down":
-        return f"{name} has been resting{' ' + where if where else ''}{since_s}."
+        return f"Resting{where_s}{since_s}."
+    if a == "standing":
+        # `standing` had no line of its own and fell through to "At home",
+        # which is the least informative thing the screen can say about
+        # someone the camera can currently see. The detector reports it for
+        # roughly a fifth of observations of a seated person, so it is not a
+        # rare branch.
+        return f"On her feet{where_s}{since_s}."
     if a in ("sitting", "reading", "watching_tv", "using_phone"):
         word = _ACTIVITY_WORD.get(a, a)
-        # No em dash: this is the one sentence a family reads on the home
-        # screen, and DESIGN.md bans them in user-facing prose.
-        return f"{name} has been settled{' ' + where if where else ''}{since_s}. {word.capitalize()}, by the look of it."
-    return f"{name} is at home{since_s}."
+        return f"{word.capitalize()}{where_s}{since_s}."
+    return f"At home{since_s}."
 
 
 # --- usual spots -------------------------------------------------------------
@@ -377,6 +400,10 @@ def stop_sweeper() -> None:
 
 # --- presence state ----------------------------------------------------------
 
+# Consecutive agreeing observations before a changed reading is believed.
+_HOLD_N = 3
+
+
 async def apply_presence(camera: dict, obs: dict) -> dict:
     """Update `cameras.presence` from one observation and return it."""
     in_view = obs.get("person_count", 0) > 0 and obs["activity"] != "absent"
@@ -389,34 +416,51 @@ async def apply_presence(camera: dict, obs: dict) -> dict:
                   and (obs["_ts"] - _parse(last)).total_seconds() <= IN_VIEW_STALE_S)
     since = prev.get("since") if continuous else obs["_ts"].isoformat()
 
-    # Presence describes an ongoing state, not one frame, so a single
-    # low-information frame must not rewrite it.
+    # Presence describes an ongoing state, and the detector is noisy, so a
+    # change has to be CONFIRMED before it is shown.
     #
-    # `spot` and `activity` come back `unclear` whenever the detector cannot
-    # tell from that particular frame, and on a live camera that happens every
-    # few seconds. Rebuilding presence from the raw observation each time made
-    # the family's one sentence flap between "settled since 5:34", "settled at
-    # the table since 5:34" and "settled in her usual spot since 5:34" every
-    # few seconds: different wording, different length, reflowing the home
-    # screen while nobody touched it.
+    # Measured on 40 consecutive observations of one person sitting still at a
+    # desk: activity came back `sitting` 31 times and `standing` 9; spot came
+    # back `unclear` 24, `table` 7, `armchair` 7 and `doorway` 2. So the model
+    # reports four different places and two different postures for someone who
+    # has not moved.
     #
-    # Within a continuous run, an uncertain reading carries the previous value
-    # forward instead. This is the rule the episode record has always used
-    # (`_episode` only overwrites its spot when the new one is not unclear);
-    # presence simply never had it. A break in the run resets everything,
-    # because then it really is a new stretch of her day.
-    def _hold(field: str, value):
-        if not continuous or value not in (None, "", "unclear", "other"):
+    # An earlier version of this only suppressed `unclear`, which left every
+    # confident-but-wrong reading free to rewrite the family's one sentence two
+    # or three times a second. Now an uncertain reading is ignored outright,
+    # and a differing confident reading has to repeat `_HOLD_N` times in a row
+    # before it wins. At the worker's rate that is about a second to accept a
+    # real move, and isolated blips never land at all.
+    #
+    # State lives on the presence document (`_pending`) rather than in memory,
+    # so it survives an API restart the same way the rest of the run does.
+    pending = dict(prev.get("_pending") or {}) if continuous else {}
+
+    def _settle(field: str, value):
+        """The value to show for `field`, given this observation."""
+        current = prev.get(field) if continuous else None
+        if value in (None, "", "unclear", "other"):
+            pending.pop(field, None)          # an unknown reading is not evidence of change
+            return current if continuous else value
+        if current is None or value == current:
+            pending.pop(field, None)
             return value
-        return prev.get(field) or value
+        seen = pending.get(field)
+        n = (seen.get("n", 0) + 1) if isinstance(seen, dict) and seen.get("v") == value else 1
+        if n >= _HOLD_N:
+            pending.pop(field, None)
+            return value                       # confirmed: she really did move
+        pending[field] = {"v": value, "n": n}
+        return current                         # not yet confirmed: hold the line
 
     presence = {
         "status": status,
-        "activity": _hold("activity", obs["activity"]) if in_view else None,
-        "posture": _hold("posture", obs.get("posture")) if in_view else None,
-        "spot": _hold("spot", obs.get("spot")) if in_view else None,
+        "activity": _settle("activity", obs["activity"]) if in_view else None,
+        "posture": _settle("posture", obs.get("posture")) if in_view else None,
+        "spot": _settle("spot", obs.get("spot")) if in_view else None,
         "since": since or obs["_ts"].isoformat(),
         "last_observation_at": obs["_ts"].isoformat(),
+        "_pending": pending,
     }
 
     # Decided once per run and then held, for the same reason as `spot` above.

@@ -159,7 +159,13 @@ async def test_restart_rearms_an_in_flight_ladder(db, resident, monkeypatch):
     monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 0.05)
     alerts.start_timers()
 
-    doc = await _wait_for_state(db, alert["_id"], "CALLING_RESIDENT")
+    # A generous window on purpose. This waits on a real asyncio timer, and in a
+    # full-suite run on a loaded machine (an API and a camera worker competing
+    # for the same cores) the default 3 s occasionally lost the race. A test
+    # that fails under load is worse than no test, because people learn to
+    # ignore it; the assertion is about the timer being re-armed at all, not
+    # about how fast the box is.
+    doc = await _wait_for_state(db, alert["_id"], "CALLING_RESIDENT", timeout=15.0)
     assert doc["resident_call_attempts"] == 1
 
 
