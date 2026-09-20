@@ -52,3 +52,33 @@ backend `beacons` table): `eee6331c-6ea1-4873-83ed-ae648d10e07f` · major `1`.
 Wi-Fi-only mode still gives home/away plus coarse zones (the band scans BSSIDs
 regardless). Old phones running a beacon-simulator app are drop-in anchors —
 give each a unique minor in `config.json`.
+
+## boxassist — S3-BOX kitchen beacon + alert screen
+
+<!-- [claude] agent-added (2026-09-20) -->
+
+`boxassist/boxassist.ino` upgrades the kitchen S3-BOX: same iBeacon frame as
+`beacon.ino` (minor=1, byte-identical — safe for localization), plus a screen
+that polls the backend and takes over with "Are you OK?" when an alert is open.
+Tapping the giant button (or pressing the top **Boot** button) POSTs
+`/demo/force_ack` and shows a 5 s "glad you're safe" screen.
+
+One-time extra: `arduino-cli lib install LovyanGFX` (display autodetects the
+original BOX and BOX-3).
+
+Venue config — edit the two defines at the top of `boxassist/boxassist.ino`:
+```c
+#define WIFI_SSID "SET_ME_AT_VENUE"   // venue 2.4 GHz SSID
+#define WIFI_PASS "SET_ME_AT_VENUE"
+```
+Left as placeholders, the box runs beacon-only (IDLE screen with a red
+offline dot) — it never crashes or stops advertising without Wi-Fi.
+
+Flash (replaces the `flash.sh ... 1 box` step for the kitchen box):
+```sh
+arduino-cli compile --fqbn esp32:esp32:esp32s3box beacons/boxassist
+arduino-cli upload -p /dev/cu.usbmodemXXXX --fqbn esp32:esp32:esp32s3box beacons/boxassist
+```
+Status dot (bottom-left, IDLE only): green = polling OK, red = offline.
+Backend URL and the `dev-key-change-me` bearer are `#define`s near the top if
+the ngrok tunnel name changes.
