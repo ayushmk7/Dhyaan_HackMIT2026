@@ -387,7 +387,7 @@ def hit(label, box, conf=0.9):
 
 def test_the_vocabulary_stays_short_and_names_what_the_pipeline_reads():
     """YOLO-World's confidence is a cosine against the prompt list, so the list
-    length IS a threshold. Same crisp packet, same weights (testcam/FOOD.md):
+    length IS a threshold. Same crisp packet, same weights (the bench in git history, commit 56e2237):
     ["snack bag"] 0.48, 22 food words 0.11, a 62-word list 0.09. This bound is
     the only thing between a working detector and a confidently blind one."""
     assert len(gate.PROMPTS) <= gate.MAX_PROMPTS <= 24

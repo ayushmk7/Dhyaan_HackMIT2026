@@ -351,7 +351,6 @@ make -C band test                         # fall detector + payload shapes
 | [`band/`](band/) | Arduino UNO Q band: 208 Hz fall cascade + BLE/Wi-Fi uplink |
 | [`beacons/`](beacons/) | ESP32-S3 iBeacon room anchors |
 | [`dhyaan/voice/`](dhyaan/voice/) | Twilio ↔ Deepgram bridge for the escalation call |
-| [`testcam/`](testcam/) | Standalone detector bench. The evidence behind every latency number above |
 | [`scripts/`](scripts/) + [`test_audio/`](test_audio/) | The voice lane's offline dev loop: replay a wav at the agent, no phone call |
 | [`docs/`](docs/) | Specs, decisions, contracts. Start at [`docs/README.md`](docs/README.md) |
 
@@ -455,8 +454,8 @@ Bring-up, hands on hardware:
 [`beacons/README.md`](beacons/README.md) · [`DEMO_RUNBOOK.md`](DEMO_RUNBOOK.md)
 
 Why the detector stack is what it is:
-[`testcam/README.md`](testcam/README.md) benchmarks every backend on the same
-frames, and [`testcam/FOOD.md`](testcam/FOOD.md) is the finding that drove the
+[`the bench (git history, 56e2237).md`](the bench (git history, 56e2237).md) benchmarks every backend on the same
+frames, and [`the bench in git history, commit 56e2237`](the bench in git history, commit 56e2237) is the finding that drove the
 whole open-vocabulary gate — COCO has exactly ten food classes, so a crisp
 packet, a noodle box, a wrapper and a mug of soup are all invisible to a plain
 YOLO. "Did she eat?" is unanswerable with a closed vocabulary.

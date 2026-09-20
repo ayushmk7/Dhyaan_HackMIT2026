@@ -14,7 +14,7 @@ and no COCO model swap fixes it.
 
 YOLO-World replaces the fixed classifier head with CLIP text embeddings, so
 `set_classes([...])` re-specifies what the detector is looking for at runtime.
-Measured in testcam/FOOD.md on this machine:
+Measured in the bench in git history, commit 56e2237 on this machine:
 
   * `yolov8s-worldv2` 9-11.5 ms median vs the COCO baseline's 5.7-7.2 ms, so an
     open vocabulary costs about 4 ms.

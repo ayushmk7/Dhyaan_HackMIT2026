@@ -111,7 +111,7 @@ class MotionGate:
 # COCO's entire food vocabulary is ten words (banana, apple, sandwich, orange,
 # broccoli, carrot, hot dog, pizza, donut, cake). A crisp packet, a mug of soup,
 # a bowl of cereal or a slice of toast has no output neuron, so no threshold
-# and no bigger COCO model can ever report them. testcam/FOOD.md measured it:
+# and no bigger COCO model can ever report them. the bench in git history, commit 56e2237 measured it:
 # on five photographs of real food the COCO detector reported food once, and
 # that once was wrong. YOLO-World takes its class list as free text at runtime
 # and named the cereal and the soup, for ~7 ms a frame at the lane's 448x252.
@@ -129,7 +129,7 @@ COCO_FALLBACK = "yolo11s.pt"
 # KEEP THIS SHORT, and read this before adding a word. YOLO-World's confidence
 # is a cosine between an image region and a text embedding, so every score is
 # RELATIVE TO THE PROMPT LIST. Same crisp packet, same weights, only the list
-# differing (testcam/FOOD.md):
+# differing (the bench in git history, commit 56e2237):
 #
 #     ["bag"]                       bag        0.75
 #     ["snack bag"]                 snack bag  0.48
@@ -144,7 +144,7 @@ COCO_FALLBACK = "yolo11s.pt"
 # measurably dropped. Anything in it is never reported.
 #
 # Threshold, calibrated to THIS list on this machine (448x252 frames, imgsz
-# 640, the seven testcam fixtures, a flat grey frame and 20 live webcam frames
+# 640, the seven bench fixtures, a flat grey frame and 20 live webcam frames
 # of a room with a person and no food):
 #
 #     cereal 0.64  snack bag 0.26  soup 0.14  food 0.26-0.53  cup 0.91

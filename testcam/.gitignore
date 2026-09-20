@@ -1,7 +1,0 @@
-.venv/
-models/
-*.pt
-*.onnx
-*.mlpackage/
-__pycache__/
-fixtures/*.jpg

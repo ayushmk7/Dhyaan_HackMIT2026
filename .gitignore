@@ -4,14 +4,11 @@ __pycache__/
 .env
 beacons/build-*/
 
-# Model weights and benchmark artifacts. testcam/ is a standalone bench whose
+# Model weights and benchmark artifacts. (The standalone bench that produced
+# the food and latency numbers was removed; it is in git history at 56e2237.)
 # SOURCE is worth keeping (it is the evidence behind the detector choice), but
 # its venv, downloaded weights and sample frames are 1.5 GB of things that
 # re-download. Same for the CLIP weights the vision lane pulls.
-testcam/.venv/
-testcam/models/
-testcam/weights/
-testcam/fixtures/
 weights/
 
 # Ultralytics auto-downloads these by name on first run; never commit a weight.

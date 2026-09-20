@@ -36,7 +36,7 @@ def _fresh_openvocab():
 def test_the_vocabulary_stays_short():
     """YOLO-World's confidence is a cosine against the prompt list, so the list
     length IS a threshold. Measured on one crisp packet, same weights, same
-    image, only the vocabulary differing (testcam/FOOD.md):
+    image, only the vocabulary differing (the bench in git history, commit 56e2237):
 
         ["snack bag"]            -> 0.48
         22 food words            -> 0.11
