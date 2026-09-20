@@ -12,9 +12,9 @@ export const palette = {
 
   // Brand: one confident, saturated green (care = growth = "she's okay").
   // Washed-out palettes are the intern-firing offense; commit.
-  slate: '#1E7A5A',      // primary brand (name kept to avoid a repo-wide rename)
-  slateDeep: '#14573F',
-  slateWash: '#DDF2E7',
+  slate: '#3478F6',      // interactive tint = iOS system blue (name is historical)
+  slateDeep: '#2A66D9',
+  slateWash: '#EAF1FE',
 
   moss: '#2E9968',
   mossWash: '#DFF4E8',

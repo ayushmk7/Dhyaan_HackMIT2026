@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: sp(5),
   },
-  btnLabel: { fontFamily: 'Fraunces_600SemiBold', fontSize: 17 },
+  btnLabel: { fontSize: 17, fontWeight: '600' as const },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -116,9 +116,6 @@ export default function Login() {
           >
             <Txt kind="label" tone="slate">Use the demo account</Txt>
           </Pressable>
-          <Txt kind="caption" tone="muted" style={{ textAlign: 'center' }}>{/* voice-ok */}
-            Demo sign-in. The password is not checked.
-          </Txt>
         </Entrance>
       </ScrollView>
     </KeyboardAvoidingView>
