@@ -14,7 +14,7 @@ import httpx
 
 from . import DEMO, TUNING, VLM_MODEL, FRAME_H, FRAME_W
 from .capture import Camera, SyntheticCamera, to_jpeg_b64
-from .gate import MotionGate, PersonGate, apply_mask, pick_subject, posture_band
+from .gate import MotionGate, PersonGate, apply_mask, iou, pick_subject, posture_band
 from .keyframe import KeyframeSelector, RingBatch
 from . import openvocab, vlm
 
@@ -76,6 +76,7 @@ class Worker:
         # hub console does not strobe. It is never merged into an observation.
         self.boxes, self.people = [], 0
         self._subject = None      # the person we are following, box coords
+        self._last_obs = None     # what the preview window prints
         self.last_obs = {"activity": None, "sentence": "", "confidence": None,
                          "latency_ms": 0, "batch_frames": 0}
         self.cam = None
@@ -356,6 +357,7 @@ class Worker:
                         self._last_shape = shape
                         quick = vlm.post_rules(
                             vlm.from_scene(self.scene, posture_band(box, self.tuning)))
+                        self._last_obs = quick
                         self.post_async(vlm.to_payload(
                             self.camera_id, self.cfg["resident_id"],
                             datetime.now(timezone.utc).isoformat(), 0.0, 1, quick,
@@ -586,12 +588,32 @@ class Worker:
             iw, ih = max(w // 4, 40), max(h // 4, 24)
             small = cv2.cvtColor(cv2.resize(fg, (iw, ih)), cv2.COLOR_GRAY2BGR)
             view[4:4 + ih, w - iw - 4:w - 4] = small
-        if box:
-            x0, y0, x1, y1 = (int(v) for v in box)
-            cv2.rectangle(view, (x0, y0), (x1, y1), (60, 200, 60), 2)
-        cv2.rectangle(view, (0, h - 30), (w, h), (0, 0, 0), -1)
-        cv2.putText(view, f"{self.state()} | {status}", (8, h - 9),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (240, 240, 240), 1, cv2.LINE_AA)
+        # Every person, not just the subject: the one we are following in green,
+        # anyone else in grey. Without this you cannot see WHY it decided what it
+        # decided - a hopping subject looked identical to a steady one.
+        for b in (self.scene or {}).get("boxes", []):
+            x0, y0, x1, y1 = (int(v) for v in b)
+            same = box is not None and iou(b, box) > 0.9
+            cv2.rectangle(view, (x0, y0), (x1, y1),
+                          (60, 200, 60) if same else (120, 120, 120), 2 if same else 1)
+            if same:
+                cv2.putText(view, "subject", (x0, max(y0 - 6, 12)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (60, 200, 60), 1, cv2.LINE_AA)
+
+        # What it currently believes, in words, so the window answers "is it
+        # seeing this?" without reading a log or the database.
+        last = getattr(self, "_last_obs", None)
+        sc = self.scene or {}
+        lines = []
+        if last:
+            lines.append(f"activity {last['activity']}   posture {last['posture']}")
+        seen = (sc.get("food") or []) + (sc.get("dishes") or [])
+        lines.append(f"people {sc.get('person_count', 0)}   food {', '.join(sc.get('food') or []) or '-'}"
+                     f"   objects {', '.join(seen[:3]) or '-'}")
+        cv2.rectangle(view, (0, h - 30 - 18 * len(lines)), (w, h), (0, 0, 0), -1)
+        for i, line in enumerate(lines):
+            cv2.putText(view, line, (8, h - 36 - 18 * (len(lines) - 1 - i)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.42, (200, 220, 255), 1, cv2.LINE_AA)
         cv2.imshow("dhyaan hub - the only screen a frame reaches", view)
         k = cv2.waitKey(1) & 0xFF
         if k in (ord("q"), 27):
