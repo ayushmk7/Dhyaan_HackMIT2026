@@ -207,7 +207,7 @@ class Worker:
             q = self._postq = queue.Queue(maxsize=32)
 
             def drain():
-                while True:
+                while not getattr(self, '_stopping', False):
                     item = q.get()
                     if item is None:
                         return
@@ -254,6 +254,29 @@ class Worker:
 
     # --- the run --------------------------------------------------------------
 
+    def _install_signals(self):
+        """SIGTERM must unwind through `finally`, not kill us where we stand.
+
+        pkill, a supervisor, and macOS at logout all send SIGTERM, and Python's
+        default action for it is immediate death: the finally below never runs,
+        so the camera is never released, posture.close() never happens, and -
+        worst - the "offline" heartbeat is never sent. The backend then keeps
+        reporting `camera.online: true` with the last sentence frozen in place,
+        which is this product looking like it is watching someone when it has
+        stopped. Verified before the fix: worker killed, app still said online.
+        """
+        import signal
+
+        def stop(signum, _frame):
+            log(f"signal {signum}: stopping")
+            self._stopping = True
+
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                signal.signal(sig, stop)
+            except (ValueError, OSError):
+                pass        # not the main thread; the loop check still applies
+
     def run(self):
         # Consent gate BEFORE the camera device is opened. No consent, no camera.
         self._refresh_config()
@@ -291,10 +314,12 @@ class Worker:
         last_poll = last_hb = last_person_check = 0.0
         last_seq, n_new = 0, 0
         status = "idle"
+        self._stopping = False
+        self._install_signals()
         self.heartbeat("watching")
 
         try:
-            while True:
+            while not self._stopping:
                 now = time.monotonic()
 
                 if now - last_poll >= self.tuning["config_poll_s"]:
@@ -412,6 +437,15 @@ class Worker:
             cam.close()
             self.heartbeat("offline")
             self._http.close()
+            # Before the interpreter starts tearing down modules: MediaPipe's
+            # dispatcher shutdown runs from __del__ and explodes if it gets
+            # there after globals are gone (see posture.close).
+            try:
+                from . import posture
+
+                posture.close()
+            except Exception as e:                  # noqa: BLE001
+                log(f"posture shutdown: {type(e).__name__}: {e}")
             log("stopped. no frame was written to disk.")
 
     def _detect(self, person_gate, frame, run_it, moved, motion):

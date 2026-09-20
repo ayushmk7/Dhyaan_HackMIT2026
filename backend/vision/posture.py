@@ -26,6 +26,7 @@ YOLO for boxes, so this is the ~13.8 ms half. Ceiling: one pose per frame
 num_poses=N plus matching each pose to its YOLO box.
 """
 
+import logging
 import os
 import threading
 import urllib.error
@@ -55,6 +56,8 @@ L_KNEE, R_KNEE = 25, 26
 Landmark = namedtuple("Landmark", "x y visibility")
 
 UNCLEAR = ("unclear", 0.0)
+
+log = logging.getLogger("dhyaan.posture")
 
 _lock = threading.Lock()
 _landmarker = False          # False = not tried yet, None = unavailable
@@ -238,3 +241,31 @@ def posture(frame, box):
         return UNCLEAR
 
     return posture_from_landmarks(lm, h, w)
+
+
+def close():
+    """Shut the landmarker down while Python still exists.
+
+    MediaPipe's PoseLandmarker owns a C++ dispatcher thread whose shutdown
+    handler runs from __del__. Leave that to interpreter teardown and it fires
+    after module globals have been cleared, so the handler it wants to call is
+    already None:
+
+        TypeError: 'NoneType' object is not callable
+          in mediapipe/tasks/python/core/serial_dispatcher.py, shutdown_aware_handler
+
+    Harmless in the sense that the work is done, ugly in the sense that the
+    worker exits with a traceback every single time - and on a laptop that
+    sleeps mid-demo, an unclean exit is one more thing that can go wrong.
+    Closing it explicitly makes shutdown boring.
+
+    Idempotent: safe to call twice, and safe when MediaPipe was never loaded.
+    """
+    global _landmarker
+    with _lock:
+        lm, _landmarker = _landmarker, False
+        if lm and hasattr(lm, "close"):
+            try:
+                lm.close()
+            except Exception as e:                  # noqa: BLE001
+                log.debug("pose landmarker close failed: %s", e)
