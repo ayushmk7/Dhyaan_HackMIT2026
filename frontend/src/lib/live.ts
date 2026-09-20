@@ -2,11 +2,8 @@
 // with the token query param baked into WS_URL (see config.ts), reconnects
 // with capped exponential backoff, and hands parsed messages to subscribers.
 //
-// ponytail: store/live.ts already opens its own raw `new WebSocket(WS_URL)`
-// and isn't a file I own, so this isn't wired in anywhere yet — it exists as
-// the real building block the task asked for (reconnect-with-backoff +
-// subscribe), ready for whoever swaps store/live.ts's raw socket for it.
-// Upgrade path if that never happens: delete this file, it's dead weight.
+// store/live.ts owns the single instance. Nothing else should construct one:
+// two clients means two sockets and every message applied twice.
 import { WS_URL } from './config';
 import type { WsEnvelope } from './types';
 

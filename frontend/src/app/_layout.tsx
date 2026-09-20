@@ -4,21 +4,18 @@ import {
   Fraunces_300Light, Fraunces_400Regular, Fraunces_400Regular_Italic, Fraunces_600SemiBold,
   Fraunces_700Bold, Fraunces_900Black, useFonts,
 } from '@expo-google-fonts/fraunces';
-import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, QueryClientProvider } from '@tanstack/react-query';
 import { router, Stack, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { api } from '@/lib/api';
+import { queryClient } from '@/lib/queryClient';
 import { useLive } from '@/store/live';
 import { palette } from '@/theme/tokens';
 
 SplashScreen.preventAutoHideAsync();
-
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 15_000, retry: 1 } },
-});
 
 // Push handling is a no-op in Expo Go; guarded so the demo never crashes on it.
 try {

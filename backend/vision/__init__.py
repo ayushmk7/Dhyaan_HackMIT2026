@@ -47,6 +47,10 @@ TUNING = dict(
     # a single frame cannot judge — presence.py sees movement across consecutive
     # observations anyway, so the field was doing little work.
     batch_size=1,             # frames per VLM call
+    # YOLO answers person/visitor/food/posture every cycle at ~6 ms. The model
+    # only writes the sentence, so it runs every 4th cycle. 1 = a model call
+    # every time, as it used to be.
+    vlm_every_n=4,
     max_batch_wait_s=30,      # ...flushed after this long even if short
     absent_after_s=30,        # no person for this long -> "absent", no VLM call
     # --- worker cadence ---

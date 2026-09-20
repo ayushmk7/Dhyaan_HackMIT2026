@@ -232,6 +232,7 @@ export type WsEnvelope =
   | { t: 'resident.state'; resident_id: string; state: ResidentState; reason?: string }
   | { t: 'alert.update'; alert: Alert; resident_id: string | null } // real: live.py broadcast_alert
   | { t: 'presence.update'; resident_id: string; presence: Presence } // VLM_PLAN §6.1
+  | { t: 'camera.monitor'; tick: CameraMonitorTick } // the console's live feed
   | { t: 'ping' }; // real: live.py's 25s keepalive
 
 // ---------------------------------------------------------------------------
@@ -241,6 +242,47 @@ export type WsEnvelope =
 // D-001). If a room name can reach a family screen it is a bug, so there is
 // deliberately no field here to put one in.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// The camera console (the in-app CCTV). Telemetry about the WORKER, not about
+// her: this is the only surface in the app that speaks in machine terms, and
+// it still carries no pixels. `boxes` are normalized 0..1 rectangles, which is
+// geometry, not an image — there is deliberately no field here that could hold
+// a frame, because the worker is the only process that ever holds one (§5.3).
+// ---------------------------------------------------------------------------
+
+/** What the pipeline is doing right now — the cascade of VLM_PLAN §3.3. */
+export type GateState = 'idle' | 'motion' | 'person' | 'thinking';
+
+/** Normalized [x0, y0, x1, y1], each 0..1 of the frame. */
+export type NormBox = [number, number, number, number];
+
+export interface CameraMonitorTick {
+  camera_id: string;
+  ts: string;
+  fps: number;
+  person_count: number;
+  boxes: NormBox[];
+  gate: GateState;
+  model: string;
+  latency_ms: number | null;
+  batch_frames: number;
+  activity: CameraActivity | null;
+  /** The worker's own evidence line. Machine-facing; never rendered to family. */
+  sentence: string;
+  confidence: number | null;
+  simulated: boolean;
+}
+
+export interface CameraSummary {
+  id: string;
+  resident_id: string;
+  state: string;
+  consent: boolean;
+  paused_until: string | null;
+  last_heartbeat_at: string | null;
+  online: boolean;
+}
 
 export type PresenceStatus =
   | 'in_view' | 'out_of_view' | 'paused' | 'camera_off' | 'no_camera';

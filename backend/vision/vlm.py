@@ -154,6 +154,46 @@ def _strip_fence(raw):
     return t[i:j + 1] if i != -1 and j > i else t
 
 
+def from_scene(scene, posture_hint=None):
+    """An observation from YOLO alone, in ~6 ms and no language model.
+
+    Everything the app needs structurally - is she there, is someone with her,
+    is there food, is she up or seated - is a detection problem, not a language
+    problem. The VLM is only needed for the sentence, so it runs on its own
+    slower cadence and this carries the rest.
+    """
+    n = scene["person_count"]
+    posture = {"tall": "upright", "mid": "seated", "wide": "on_floor"}.get(posture_hint, "unclear")
+    items = scene["food"] + scene["dishes"]
+    if n == 0:
+        activity, evidence = "absent", "no one in view"
+    elif n >= 2:
+        activity, evidence = "with_visitor", f"{n} people in view"
+    elif scene["food"]:
+        activity, evidence = "eating", f"one person, {', '.join(scene['food'][:2])} in view"
+    elif posture == "upright":
+        activity, evidence = "walking", "one person, upright"
+    else:
+        activity, evidence = "sitting", "one person, seated"
+    if items and "in view" not in evidence:
+        evidence = f"{evidence} ({', '.join(items[:3])})"
+    return dict(
+        ABSENT,
+        activity=activity,
+        person_count=n,
+        posture=posture,
+        movement="unclear",
+        spot="table" if "dining table" in scene["seating"] else (
+             "armchair" if "chair" in scene["seating"] else "unclear"),
+        plate_or_cup_present=bool(scene["dishes"]),
+        food_visible=bool(scene["food"]),
+        hand_to_mouth_observed=False,     # a detector cannot see a gesture
+        changed_between_frames=False,
+        confidence=0.75 if n else 0.6,
+        evidence=evidence[:70],
+    )
+
+
 def post_rules(obs):
     """The five rules §3.5 says are not the model's job.
 
@@ -181,6 +221,37 @@ def post_rules(obs):
         o["activity"] = "eating"
     if o.get("movement") == "unsteady":
         o["movement"] = "unclear"
+    return o
+
+
+def merge_scene(obs, scene):
+    """Fold YOLO's structural facts into the VLM's answer, before `post_rules`.
+
+    YOLO saw the same frame at ~6 ms. It counts people better than a 3B model
+    asked to do it in prose, so `person_count` is simply overruled — that is
+    counting, not naming, and it is what the whole absent/with_visitor split
+    hangs off. Objects go the other way: YOLO may only ADD. COCO has no class
+    for toast, porridge or soup, so a YOLO miss is not a refutation, and
+    zeroing `food_visible` on one would lose exactly the hand-held meals §3.5
+    added that field for.
+
+    `scene` is None whenever no detector ran on the frames in this batch. Then
+    this is the identity — a stale scene must never reach a later observation.
+    """
+    if not scene:
+        return dict(obs)
+    o = dict(obs)
+    o["person_count"] = scene["person_count"]
+    o["food_visible"] = bool(obs.get("food_visible")) or bool(scene["food"])
+    o["plate_or_cup_present"] = bool(obs.get("plate_or_cup_present")) or bool(scene["dishes"])
+    seen = (scene["food"] + scene["dishes"])[:3]
+    if seen:
+        # Name what the detector actually saw. The family never reads this —
+        # `evidence` is staff/audit only (§5.2) — but a wrong sentence in the
+        # observations table is a wrong review of the demo.
+        items = ", ".join(seen)
+        if items not in o.get("evidence", ""):
+            o["evidence"] = f"{o.get('evidence', '')[:100]} ({items})".strip()
     return o
 
 
