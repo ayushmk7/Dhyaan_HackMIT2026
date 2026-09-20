@@ -245,8 +245,8 @@ export default function Settings() {
       }
       await qc.invalidateQueries({ queryKey: ['profile', residentId] });
       closeFactForm();
-    } catch (e) {
-      setFactError(errorText(e, copy.told.saveError));
+    } catch {
+      setFactError(copy.told.saveError);
     } finally {
       setFactBusy(false);
     }
@@ -262,8 +262,8 @@ export default function Settings() {
       await api.deleteFact(residentId, editing.id);
       await qc.invalidateQueries({ queryKey: ['profile', residentId] });
       closeFactForm();
-    } catch (e) {
-      setFactError(errorText(e, copy.told.deleteError));
+    } catch {
+      setFactError(copy.told.deleteError);
     } finally {
       setFactBusy(false);
     }
@@ -276,8 +276,8 @@ export default function Settings() {
       await api.putProfile(residentId, { consent: { camera: false } });
       await qc.invalidateQueries();
       setConfirmStop(false);
-    } catch (e) {
-      setCameraError(errorText(e, copy.camera.stopError));
+    } catch {
+      setCameraError(copy.camera.stopError);
     } finally {
       setCameraBusy(false);
     }
@@ -292,8 +292,8 @@ export default function Settings() {
       setDestructive('none');
       setConfirmName('');
       await qc.invalidateQueries();
-    } catch (e) {
-      setForgetError(errorText(e, copy.profile.nothingDeleted));
+    } catch {
+      setForgetError(copy.profile.nothingDeleted);
     } finally {
       setForgetBusy(false);
     }
@@ -312,18 +312,18 @@ export default function Settings() {
         await api.putProfile(residentId, {
           consent: { falls: false, camera: false, memory: false },
         });
-      } catch (e) {
+      } catch {
         setForgetError(copy.profile.stillRunning(
           deleted.profile_facts, deleted.observations, deleted.camera_events,
-          errorText(e, copy.profile.hubNoAnswer),
+          copy.profile.hubNoAnswer,
         ));
         return;
       }
       qc.clear();
       signOut();
       router.replace('/login');
-    } catch (e) {
-      setForgetError(errorText(e, copy.profile.nothingDeleted));
+    } catch {
+      setForgetError(copy.profile.nothingDeleted);
     } finally {
       setForgetBusy(false);
     }
@@ -350,8 +350,8 @@ export default function Settings() {
           days: activity,
         }, null, 2),
       });
-    } catch (e) {
-      setExportError(errorText(e, copy.profile.exportError));
+    } catch {
+      setExportError(copy.profile.exportError);
     }
   };
 
@@ -643,7 +643,15 @@ export default function Settings() {
               lines={2}
               onPress={exportData}
             />
-            {exportError && <ErrorState inline message={exportError} style={{ marginBottom: sp(2) }} />}
+            {exportError && (
+              <ErrorState
+                inline
+                message={exportError}
+                retryLabel={copy.profile.tryAgain}
+                onRetry={exportData}
+                style={{ marginBottom: sp(2) }}
+              />
+            )}
           </View>
         </RowGroup>
       </Entrance>

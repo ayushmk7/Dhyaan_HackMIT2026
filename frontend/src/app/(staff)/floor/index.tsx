@@ -151,6 +151,7 @@ export default function Floor() {
   // contract, and it rides the safe-area inset the floating tab bar raises.
   const key = (
     <Row gap={3} style={{ justifyContent: 'center', flexWrap: 'wrap', paddingVertical: sp(1) }}>
+      <DataLabel>{copy.keyLabel}</DataLabel>
       {(['alerting', 'attention', 'offline', 'ok'] as ResidentState[]).map((s) => (
         <Row key={s} gap={1.5}>
           <StatusDot state={s} size={8} />
@@ -191,7 +192,9 @@ export default function Floor() {
         </View>
 
         {rooms.length === 0 && (
-          <EmptyState style={{ marginTop: sp(4) }}>{copy.empty}</EmptyState>
+          <EmptyState style={{ marginTop: sp(4) }} title={copy.empty}>
+            {copy.emptyHint}
+          </EmptyState>
         )}
       </Stagger>
     </Screen>

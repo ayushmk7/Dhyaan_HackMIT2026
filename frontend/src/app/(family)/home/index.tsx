@@ -16,8 +16,8 @@ import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Linking, RefreshControl, View } from 'react-native';
 import {
-  DataLabel, Entrance, ErrorState, IconBtn, LoadingState, MetricRow, PresenceHero, Row, RowGroup,
-  Screen, Slab, StatusDot, Txt,
+  Btn, Chevron, DataLabel, Entrance, ErrorState, IconBtn, LoadingState, MetricRow, PresenceHero, Row,
+  RowGroup, Screen, Slab, StatusDot, Txt,
 } from '@/components';
 import { Avatar } from '@/components/avatar';
 import { family } from '@/lib/copy/family';
@@ -61,7 +61,8 @@ function subline(p: Presence | undefined): string {
 
 /** When the server has no sentence yet, the answer says so plainly. */
 function emptySentence(p: Presence | undefined, name: string): string {
-  if (!p || p.status === 'no_camera') return copy.empty.nothingYet;
+  if (!p) return copy.empty.nothingYet;
+  if (p.status === 'no_camera') return copy.empty.noCamera;
   if (!p.camera.consent) return copy.empty.cameraOff;
   if (p.status === 'paused') {
     return p.camera.paused_by === 'family' ? copy.empty.cameraPaused : copy.empty.pausedBy(name);
@@ -152,12 +153,24 @@ export default function Today() {
             <Avatar name={residentName} size={32} />
             <Txt kind="label" numberOfLines={1} style={{ flexShrink: 1 }}>{residentName}</Txt>
           </Row>
-          <IconBtn
-            name="phone.fill"
-            label={phone ? copy.call(residentName) : copy.noPhoneFor(residentName)}
-            disabled={!phone}
-            onPress={() => phone && Linking.openURL(`tel:${phone}`)}
-          />
+          {/* The one thing a worried person wants at 3am, named: not a bare
+              phone glyph. With no number saved, the glyph stays, disabled,
+              and VoiceOver says why. */}
+          {phone ? (
+            <Btn
+              kind="quiet"
+              size="small"
+              label={copy.call(residentName)}
+              onPress={() => Linking.openURL(`tel:${phone}`)}
+            />
+          ) : (
+            <IconBtn
+              name="phone.fill"
+              label={copy.noPhoneFor(residentName)}
+              disabled
+              onPress={() => {}}
+            />
+          )}
         </Row>
         <PresenceHero
           sentence={presence?.sentence ?? ''}
@@ -178,12 +191,24 @@ export default function Today() {
           <ErrorState
             inline
             message={copy.todayError}
+            retryLabel={copy.tryAgain}
             onRetry={() => refetchActivity()}
             style={{ marginBottom: sp(3) }}
           />
         )}
-        <Slab>
-          <DataLabel>{localDayKey()}</DataLabel>
+        {/* The plate opens her day: the figures are the summary, the tab is
+            the detail, and the label on the plate says so. */}
+        <Slab
+          onPress={() => router.push('/(family)/timeline')}
+          accessibilityLabel={copy.openHerDay}
+        >
+          <Row style={{ justifyContent: 'space-between' }} gap={3}>
+            <DataLabel>{localDayKey()}</DataLabel>
+            <Row gap={1}>
+              <Txt kind="label">{copy.seeHerDay}</Txt>
+              <Chevron tone="ink" />
+            </Row>
+          </Row>
           <Row gap={2} style={{ marginTop: sp(3.5), alignItems: 'flex-start' }}>
             {figures.map((f) => (
               <View key={f.label} style={{ flex: 1 }}>
@@ -219,18 +244,27 @@ export default function Today() {
               />
             )}
             {herMessage && (
-              <MetricRow
-                icon="bubble.left"
-                label={copy.fromHer(residentName)}
-                time={ago(herMessage.at)}
-                sentence={herMessage.text}
-                lines={1}
-                onPress={
-                  phone
-                    ? () => Linking.openURL(`sms:${phone}&body=${encodeURIComponent(copy.replyBody)}`)
-                    : undefined
-                }
-              />
+              <View>
+                {/* Her words are the row; the reply is its own named button
+                    under them, so tapping her message never silently opens
+                    the Messages app. */}
+                <MetricRow
+                  icon="bubble.left"
+                  label={copy.fromHer(residentName)}
+                  time={ago(herMessage.at)}
+                  sentence={herMessage.text}
+                  lines={2}
+                />
+                {!!phone && (
+                  <Btn
+                    kind="quiet"
+                    size="small"
+                    label={copy.replyByText}
+                    style={{ alignSelf: 'flex-start', marginBottom: sp(3) }}
+                    onPress={() => Linking.openURL(`sms:${phone}&body=${encodeURIComponent(copy.replyBody)}`)}
+                  />
+                )}
+              </View>
             )}
             {!!prompts?.length && (
               <View>
@@ -248,6 +282,15 @@ export default function Today() {
                       <Txt key={p} kind="body">{p}</Txt>
                     ))}
                     <Txt kind="caption" tone="muted">{copy.whenYouCallNote}</Txt>
+                    {!!phone && (
+                      <Btn
+                        kind="quiet"
+                        size="small"
+                        label={copy.call(residentName)}
+                        style={{ alignSelf: 'flex-start', marginTop: sp(1) }}
+                        onPress={() => Linking.openURL(`tel:${phone}`)}
+                      />
+                    )}
                   </View>
                 )}
               </View>

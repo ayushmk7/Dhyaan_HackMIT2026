@@ -53,16 +53,21 @@ export const family = {
 
     // The hero, when the server has no sentence yet.
     empty: {
-      nothingYet: 'Nothing yet today',
-      cameraOff: 'The camera is off',
-      cameraPaused: 'The camera is paused',
-      pausedBy: (name: string) => `${name} paused the camera`,
+      nothingYet: 'Nothing noticed yet today',
+      noCamera: 'No camera yet, so only her band is watching',
+      cameraOff: 'The camera is off, so only her band is watching',
+      cameraPaused: 'The camera is paused for now',
+      pausedBy: (name: string) => `${name} paused the camera for now`,
     },
 
     call: (name: string) => `Call ${name}`,
-    noPhoneFor: (name: string) => `No phone number saved for ${name}`,
+    noPhoneFor: (name: string) => `No phone number saved for ${name}, so there is nothing to dial from here`,
 
-    todayError: 'Couldn’t load today.',
+    todayError: 'Couldn’t load today’s figures. The rest of the screen is still current.',
+    tryAgain: 'Try again',
+    // The figures plate opens her day; this is the label on it.
+    seeHerDay: 'Her day',
+    openHerDay: 'Open her day, hour by hour',
     // Four figures on one plate, a quarter of the screen each: short words.
     tiles: {
       meals: 'Meals',
@@ -74,7 +79,8 @@ export const family = {
     // The collapsed rows under the plate. Each is one line and a tap.
     lastNoticed: 'Last noticed',
     fromHer: (name: string) => `From ${name}`,
-    replyBody: 'Got your message! ',
+    replyBody: 'Got your message. ',
+    replyByText: 'Reply by text',
     whenYouCall: 'When you call',
     whenYouCallNote: 'Drafted from what Dhyaan saw today, not from things she has said.',
     appointment: 'Appointment',
@@ -97,6 +103,7 @@ export const family = {
       unreachable: (name: string) => `Dhyaan couldn’t reach far enough to write ${name}’s week. Nothing was shared.`,
     },
     dismiss: 'Dismiss',
+    tryAgain: 'Try again',
 
     previousDay: 'Previous day',
     nextDay: 'Next day',
@@ -118,14 +125,16 @@ export const family = {
         ? 'Dhyaan writes the day’s story each evening. Today’s isn’t written yet.'
         : 'Dhyaan writes the day’s story each evening. There isn’t one for this day.',
     writeNote: 'It takes a few seconds. Dhyaan normally does this overnight.',
-    writeError: 'Dhyaan couldn’t write it just now. Try again in a moment.',
+    writeError: 'Dhyaan couldn’t write it just now. Nothing was lost.',
 
     whatItNoticed: 'What it noticed',
     shownOf: (shown: number, total: number) => `${shown} of ${total}`,
     noActivity: (isToday: boolean) =>
       `No activity noticed ${isToday ? 'yet today' : 'on this day'}. Dhyaan only writes a line when it is confident enough to say a whole sentence.`,
     nothingUnder: (filter: string, isToday: boolean) =>
-      `Nothing filed under “${filter}” ${isToday ? 'today' : 'on this day'}.`,
+      `Nothing filed under “${filter}” ${isToday ? 'today' : 'on this day'}. Everything else from the day is still here.`,
+    showAll: 'Show the whole day',
+    openRow: (sentence: string) => `${sentence} Opens the details.`,
     rowLabel: (sentence: string, time: string) => `${sentence} ${time}`,
   },
 
@@ -133,7 +142,8 @@ export const family = {
   event: {
     loadError: 'Couldn’t load that observation.',
     loading: 'Looking that up…',
-    gone: 'That observation isn’t here any more.',
+    gone: 'That observation isn’t here any more. It may have been deleted from her profile, or the link is out of date.',
+    backToDay: 'Back to her day',
 
     // Who noticed it, by the event's source. Never a room.
     source: {
@@ -157,7 +167,8 @@ export const family = {
 
     didItGetThisRight: 'Did Dhyaan get this right?',
     feedbackSaved: 'Got it. That’s recorded against this observation.',
-    feedbackError: 'Couldn’t save that. Try again.',
+    feedbackError: 'Couldn’t save that. Nothing was recorded.',
+    tryAgain: 'Try again',
     wasExpected: 'This was expected',
     didNotHappen: 'This didn’t happen',
   },
@@ -172,7 +183,7 @@ export const family = {
       'Did anyone visit this week?',
       'How were her nights this week?',
     ],
-    planFromChat: 'Plan from group chat',
+    planFromChat: 'Turn a family group chat into a plan',
 
     // The empty screen's one big sentence, and the law under it.
     hero: (name: string) => `Ask anything about ${name}’s week.`,
@@ -191,7 +202,8 @@ export const family = {
     placeholder: (name: string) => `A question about ${name}`,
     ask: 'Ask',
     thinking: 'Reading her day…',
-    sendError: 'Couldn’t reach Dhyaan. Try again.',
+    sendError: 'Couldn’t reach Dhyaan, so your question wasn’t answered. It is still typed below the answer.',
+    tryAgain: 'Ask again',
   },
 
   // ---- Family plan ----------------------------------------------------------
@@ -201,7 +213,8 @@ export const family = {
     threadLabel: 'The family thread',
     threadPlaceholder: 'Paste the family group chat',
     threadHint: 'It is read once to write the plan below. Dhyaan doesn’t keep it.',
-    make: 'Make a plan',
+    make: 'Write the plan',
+    tryAgain: 'Try again',
     tryExample: 'Try an example',
 
     unreadable: 'Dhyaan couldn’t read that thread just now. Nothing was sent anywhere. Try again in a moment.',
@@ -209,11 +222,12 @@ export const family = {
 
     // The machine reading under the decision: WHEN  Saturday 2pm.
     when: 'When',
-    startOver: 'Start over',
+    startOver: 'Start over with another thread',
+    startOverNote: 'This clears the plan above. The thread you pasted was never kept, so paste it again if you want it back.',
     whoDoingWhat: 'Who’s doing what',
     nobodyAnswered: 'Nobody answered yet',
     replyReady: 'A reply, ready to send',
-    copyOut: 'Copy it out to your thread',
+    copyOut: 'Share this reply',
     shareNote: 'This opens your share sheet. Dhyaan doesn’t post to your group chat itself.',
   },
 
@@ -237,10 +251,10 @@ export const family = {
       sentencePlaceholder: 'A whole sentence',
       cancel: 'Cancel',
       save: 'Save',
-      saveError: 'Couldn’t save that.',
+      saveError: 'Couldn’t save that note. What you typed is still here.',
       deleteWarning: 'Dhyaan will stop knowing this. Answers it already gave keep the words they quoted.',
       deleteNote: 'Delete this note',
-      deleteError: 'Couldn’t delete that note.',
+      deleteError: 'Couldn’t delete that note. It is still there.',
       keepIt: 'Keep it',
       addNote: 'Add a note',
     },
@@ -261,7 +275,7 @@ export const family = {
               : 'Consent off',
       stop: 'Stop the camera',
       stopExplained: 'This turns the camera consent off. The camera on her computer stops within ten seconds. Fall detection is unaffected. There is no switch here to turn it back on; that takes setup again, with her.',
-      stopError: 'Couldn’t reach her home hub.',
+      stopError: 'Couldn’t reach her home hub, so the camera is still running.',
       leaveRunning: 'Leave it running',
     },
 
@@ -314,7 +328,8 @@ export const family = {
       shareJson: 'Share her data as JSON',
       shareJsonNote: 'Opens the share sheet with JSON text: her daily summaries, the last seven days of her timeline, and the notes you typed. It is not a printable report.',
       exportTitle: (name: string) => `${name} export`,
-      exportError: 'Couldn’t put that together. Try again.',
+      exportError: 'Couldn’t put that together. Nothing was shared.',
+      tryAgain: 'Try again',
 
       // Over the three irreversible controls, which sit apart from everything else.
       cannotUndo: 'None of these can be undone.',
@@ -325,7 +340,7 @@ export const family = {
       keepProfile: 'Keep her profile',
       forgot: (notes: number, observations: number, cameraEvents: number) =>
         `Deleted ${count(notes, 'note', 'notes')}, ${count(observations, 'observation', 'observations')} and ${count(cameraEvents, 'camera event', 'camera events')}. There was never a picture to delete.`,
-      nothingDeleted: 'Nothing was deleted.',
+      nothingDeleted: 'Nothing was deleted. Check the connection and try again.',
 
       wipe: 'Delete everything and stop Dhyaan',
       wipeExplained: 'This deletes everything above, then turns off fall detection, the camera and her profile, and signs this phone out. Dhyaan stops watching and stops calling. It cannot be undone.',
@@ -376,7 +391,9 @@ export const family = {
     intro: 'Paste or photograph a care document.',
     introNote: 'What it finds stays on this phone until the app is closed. It is not sent to her home hub.',
     placeholder: 'Paste a document here',
-    readIt: 'Read it',
+    fieldLabel: 'The care document',
+    readIt: 'Read this document',
+    tryAgain: 'Try again',
     addPhoto: 'Add a photo',
     tryExample: 'Try an example',
     added: (what: string) => `Added: ${what}.`,
@@ -433,7 +450,7 @@ export const family = {
     outOfView: 'Out of view',
     resume: 'Resume the camera',
     pauseTwoHours: 'Pause for 2 hours',
-    trouble: 'That didn’t go through. The hub may not be reachable.',
+    trouble: 'That didn’t go through, so nothing changed. The hub may not be reachable.',
   },
 
   // ---- The live alert -------------------------------------------------------
@@ -454,10 +471,11 @@ export const family = {
     actorStaff: 'Staff',
     actorFamily: 'Family',
 
-    loadError: 'Couldn’t reach Dhyaan to load this alert.',
-    backHome: 'Back to home',
+    loading: 'Loading the alert…',
+    loadError: 'Couldn’t reach Dhyaan to load this alert. If you can’t wait, call her directly.',
+    backHome: 'Back to Today',
     alreadyHandled: 'That alert has already been handled.',
-    actionError: 'That didn’t go through. Someone else may already be on it.',
+    actionError: 'That didn’t go through. Someone else may already be on it; this screen is checking.',
 
     /**
      * How it ended, from the FSM's closing state. Only one of the five ways an
@@ -554,7 +572,7 @@ export const family = {
     wentThrough: 'The rehearsal went through, and nothing needed an alert.',
     didNotGoThrough: 'The rehearsal didn’t go through.',
     recorded: 'Dhyaan recorded the event. It only opens an alert when the ladder has a reason to start, so there is nothing here to take over the screen.',
-    requestFailed: 'The request didn’t go through.',
+    requestFailed: 'The request didn’t reach her home hub. Nothing was recorded.',
     backToToday: 'Back to Today',
     tryAgain: 'Try the rehearsal again',
   },

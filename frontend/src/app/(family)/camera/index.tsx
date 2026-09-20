@@ -38,7 +38,7 @@ import Animated, {
   Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming,
 } from 'react-native-reanimated';
 import {
-  Btn, Card, Chip, CornerTicks, DataLabel, EmptyState, ErrorState,
+  Btn, Card, CornerTicks, DataLabel, EmptyState, ErrorState,
   LoadingState, Marquee, Rule, Stagger, Screen, Txt, useReducedMotion,
 } from '@/components';
 import { family } from '@/lib/copy/family';
@@ -510,11 +510,36 @@ export default function CameraConsole() {
   // sulks and the screen above is one of the empty ones.
   const bar = cam ? (
     <View style={{ gap: sp(2.5) }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: sp(2), flexWrap: 'wrap' }}>
+      {/* Three 44pt tonal buttons, not chips: a chip is 30pt tall and this
+          bar is used one-handed on stage. */}
+      <View style={{ gap: sp(1.5) }}>
         <DataLabel>{copy.simulate}</DataLabel>
-        <Chip label={copy.meal} onPress={() => run('meal', () => api.simulateCamera('meal'))} />
-        <Chip label={copy.visitor} onPress={() => run('visitor', () => api.simulateCamera('visitor'))} />
-        <Chip label={copy.outOfView} onPress={() => run('out', () => api.simulateCamera('out_of_view'))} />
+        <View style={{ flexDirection: 'row', gap: sp(2) }}>
+          <Btn
+            kind="quiet"
+            size="small"
+            label={copy.meal}
+            busy={busy === 'meal'}
+            style={{ flex: 1 }}
+            onPress={() => run('meal', () => api.simulateCamera('meal'))}
+          />
+          <Btn
+            kind="quiet"
+            size="small"
+            label={copy.visitor}
+            busy={busy === 'visitor'}
+            style={{ flex: 1 }}
+            onPress={() => run('visitor', () => api.simulateCamera('visitor'))}
+          />
+          <Btn
+            kind="quiet"
+            size="small"
+            label={copy.outOfView}
+            busy={busy === 'out'}
+            style={{ flex: 1 }}
+            onPress={() => run('out', () => api.simulateCamera('out_of_view'))}
+          />
+        </View>
       </View>
       {pausedUntil ? (
         <Btn

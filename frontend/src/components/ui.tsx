@@ -298,7 +298,16 @@ export function Btn({
         onPress={onPress}
         hitSlop={8}
         style={({ pressed }) => [
-          { alignSelf: 'flex-start', paddingVertical: sp(1), opacity: disabled ? 0.45 : pressed ? 0.55 : 1 },
+          {
+            alignSelf: 'flex-start',
+            // A real 44pt row, not 28pt plus hitSlop. An invisible hit area is
+            // a fix for a mis-tap; it is not a fix for a target that looks too
+            // small to aim at in the first place.
+            minHeight: S.hit,
+            justifyContent: 'center',
+            paddingVertical: sp(1),
+            opacity: disabled ? 0.45 : pressed ? 0.55 : 1,
+          },
           style,
         ]}
       >
@@ -768,9 +777,12 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: sp(1.5),
-    paddingHorizontal: sp(3),
-    paddingVertical: sp(1.5),
+    paddingHorizontal: sp(3.5),
+    // 44pt, not 30. These are the timeline's filters and the camera console's
+    // simulate controls: things people aim at while holding a phone one-handed.
+    minHeight: S.hit,
     borderRadius: radius.pill,
     alignSelf: 'flex-start',
   },

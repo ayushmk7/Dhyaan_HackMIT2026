@@ -8,19 +8,21 @@
 // ever be one somebody typed.
 //
 // The people are rows, not cards, and the number is the loudest thing in each
-// row because the number is the point. The add form is the same column of
-// fields on the paper, not a box.
+// row because the number is the point. The reorder and remove controls are
+// filled 40pt circles with a 44pt hit area, so they look like what they are.
+// The add form is the same column of fields on the paper, not a box.
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 import {
-  Btn, Entrance, ErrorState, Field, IconBtn, Marquee, Row, Rule, Screen, Txt,
+  Btn, Entrance, ErrorState, Field, IconBtn, Row, Rule, Screen, Txt,
 } from '@/components';
 import { Avatar, avatarTone } from '@/components/avatar';
 import { api } from '@/lib/api';
 import { onboard } from '@/lib/copy/staff';
-import { sp } from '@/theme/tokens';
+import { size as S, sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
+import { StepHeader } from './_layout';
 
 const copy = onboard.contacts;
 
@@ -28,7 +30,7 @@ type Draft = { name: string; phone: string; relationship: string };
 const emptyDraft: Draft = { name: '', phone: '', relationship: '' };
 
 export default function Contacts() {
-  const { residentName } = useSession();
+  const { residentName, grants } = useSession();
   const [contacts, setContacts] = useState<Draft[]>([]);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [adding, setAdding] = useState(false);
@@ -43,8 +45,10 @@ export default function Contacts() {
     setContacts(next);
   };
 
+  const draftReady = draft.name.trim().length > 0 && draft.phone.trim().length > 0;
+
   const addDraft = () => {
-    if (!draft.name.trim() || !draft.phone.trim()) return;
+    if (!draftReady) return;
     setContacts((c) => [...c, draft]);
     setDraft(emptyDraft);
     setAdding(false);
@@ -77,18 +81,17 @@ export default function Contacts() {
       }
     >
       <Entrance index={0}>
-        <Marquee
-          first
+        <StepHeader
+          step="contacts"
+          grants={grants}
           title={copy.title}
           meta={contacts.length ? copy.meta(contacts.length) : undefined}
+          purpose={copy.calledInOrder(residentName)}
         />
-        <Txt kind="caption" tone="muted">
-          {copy.calledInOrder(residentName)}
-        </Txt>
       </Entrance>
 
       {contacts.length === 0 && !adding && (
-        <Entrance index={1} style={{ marginTop: sp(8) }}>
+        <Entrance index={1} style={{ marginTop: sp(6) }}>
           <Txt kind="body">{/* voice-ok */}
             {copy.emptyBody}
           </Txt>
@@ -104,7 +107,7 @@ export default function Contacts() {
         {contacts.map((c, i) => (
           <Entrance key={`${c.name}-${i}`} index={1 + i}>
             {i > 0 && <Rule weight="hair" />}
-            <Row style={{ justifyContent: 'space-between', paddingVertical: sp(3) }}>
+            <Row style={{ justifyContent: 'space-between', paddingVertical: sp(3) }} gap={3}>
               <Row gap={3} style={{ flex: 1 }}>
                 {/* Numbered because this list is genuinely sequential: the
                     one place in the app where a number means an order. */}
@@ -115,26 +118,26 @@ export default function Contacts() {
                   <Txt kind="caption" tone="muted">{copy.contactLine(c.relationship, c.phone)}</Txt>
                 </View>
               </Row>
-              <Row gap={1}>
+              <Row gap={1.5}>
                 <IconBtn
-                  kind="ghost"
-                  size={34}
+                  kind="quiet"
+                  size={S.control}
                   name="chevron.up"
                   label={copy.moveEarlier(c.name)}
                   disabled={i === 0}
                   onPress={() => move(i, -1)}
                 />
                 <IconBtn
-                  kind="ghost"
-                  size={34}
+                  kind="quiet"
+                  size={S.control}
                   name="chevron.down"
                   label={copy.moveLater(c.name)}
                   disabled={i === contacts.length - 1}
                   onPress={() => move(i, 1)}
                 />
                 <IconBtn
-                  kind="ghost"
-                  size={34}
+                  kind="quiet"
+                  size={S.control}
                   name="xmark"
                   label={copy.remove(c.name)}
                   onPress={() => setContacts((cs) => cs.filter((_, j) => j !== i))}
@@ -143,6 +146,9 @@ export default function Contacts() {
             </Row>
           </Entrance>
         ))}
+        {contacts.length > 1 && (
+          <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>{copy.orderHint}</Txt>
+        )}
       </View>
 
       {adding ? (
@@ -161,16 +167,19 @@ export default function Contacts() {
             style={{ marginTop: sp(3) }}
             value={draft.relationship} onChangeText={(relationship) => setDraft((d) => ({ ...d, relationship }))}
           />
+          {!draftReady && (
+            <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{copy.needNameAndPhone}</Txt>
+          )}
           <Row gap={3} style={{ marginTop: sp(4) }}>
-            <Btn kind="quiet" label={copy.cancel} onPress={() => setAdding(false)} style={{ flex: 1 }} />
-            <Btn label={copy.add} onPress={addDraft} disabled={!draft.name.trim() || !draft.phone.trim()} style={{ flex: 1 }} />
+            <Btn kind="quiet" label={copy.cancel} onPress={() => { setAdding(false); setDraft(emptyDraft); }} style={{ flex: 1 }} />
+            <Btn label={copy.add} onPress={addDraft} disabled={!draftReady} style={{ flex: 1 }} />
           </Row>
         </View>
       ) : contacts.length > 0 ? (
-        <Btn kind="link" label={copy.addAnother} onPress={() => setAdding(true)} style={{ marginTop: sp(4), alignSelf: 'flex-start' }} />
+        <Btn kind="quiet" label={copy.addAnother} onPress={() => setAdding(true)} style={{ marginTop: sp(5) }} />
       ) : null}
 
-      {!!error && <ErrorState inline message={error} style={{ marginTop: sp(6) }} />}
+      {!!error && <ErrorState inline message={error} onRetry={finish} style={{ marginTop: sp(6) }} />}
     </Screen>
   );
 }

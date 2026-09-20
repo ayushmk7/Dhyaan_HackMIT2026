@@ -27,6 +27,7 @@ import { onboard } from '@/lib/copy/staff';
 import type { Profile } from '@/lib/types';
 import { sp } from '@/theme/tokens';
 import { useSession, type Grants } from '@/store/session';
+import { stepOf } from './_layout';
 
 const copy = onboard.done;
 
@@ -109,8 +110,9 @@ export default function Done() {
         />
       }
     >
-      <Entrance index={0} style={{ marginTop: sp(6) }}>
-        <Txt kind="hero" accessibilityRole="header">
+      <Entrance index={0} style={{ marginTop: sp(2) }}>
+        <DataLabel value={stepOf('done', session.grants)}>{onboard.step.label}</DataLabel>
+        <Txt kind="hero" accessibilityRole="header" style={{ marginTop: sp(4) }}>
           {copy.hero}
         </Txt>
         <Txt kind="body" tone="muted" style={{ marginTop: sp(4) }}>
@@ -141,7 +143,7 @@ export default function Done() {
 
       {!!error && (
         <Entrance index={3} style={{ marginTop: sp(4), gap: sp(2) }}>
-          <ErrorState inline message={error} />
+          <ErrorState inline message={error} onRetry={save} />
           <Txt kind="caption" tone="muted">{/* voice-ok */}
             {copy.nothingSaved}
           </Txt>

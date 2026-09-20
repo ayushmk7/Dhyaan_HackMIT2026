@@ -5,7 +5,7 @@
 // Every sentence this screen says lives in lib/copy/family.ts under `carefile`.
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Linking, View } from 'react-native';
 import { Btn, Card, ErrorState, Field, Row, RowGroup, Screen, SectionTitle, Slab, Txt } from '@/components';
 import { family } from '@/lib/copy/family';
@@ -23,6 +23,8 @@ export default function CareFileScreen() {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
   const [note, setNote] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  // Whichever of paste or photo failed last, so the retry does the same thing.
+  const retry = useRef<() => void>(() => {});
 
   // dhyaan://carefile?demo=1 — loads the example document (demo + headless testing,
   // same precedent as /simulate).
@@ -57,11 +59,13 @@ export default function CareFileScreen() {
 
   const addText = async () => {
     if (!draft.trim() || file.busy) return;
+    retry.current = addText;
     setNote(null);
     finish(await file.addDocument({ text: draft }));
   };
 
   const addPhoto = async () => {
+    retry.current = addPhoto;
     setNote(null);
     const picked = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: 'images',
@@ -92,6 +96,7 @@ export default function CareFileScreen() {
           )}
           {/* The sentence above names the field, so it carries no label of its own. */}
           <Field
+            accessibilityLabel={copy.fieldLabel}
             value={draft}
             onChangeText={setDraft}
             placeholder={copy.placeholder}
@@ -116,7 +121,13 @@ export default function CareFileScreen() {
         note.kind === 'ok' ? (
           <Txt kind="body" tone="ok" style={{ marginTop: sp(3) }}>{note.text}</Txt>
         ) : (
-          <ErrorState inline message={note.text} style={{ marginTop: sp(3) }} />
+          <ErrorState
+            inline
+            message={note.text}
+            retryLabel={copy.tryAgain}
+            onRetry={() => retry.current()}
+            style={{ marginTop: sp(3) }}
+          />
         )
       )}
 

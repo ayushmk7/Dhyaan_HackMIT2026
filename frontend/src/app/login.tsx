@@ -12,7 +12,8 @@
 //
 // The identifier is a username, not an email (the seeded account is `user`),
 // so the field asks for one: default keyboard, no capitalisation, no
-// autocorrect.
+// autocorrect. An empty field is caught here, before the network, with the
+// sentence that names the field.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
@@ -33,6 +34,8 @@ export default function Login() {
   const submit = async (withUsername = username, withPassword = password) => {
     if (busy) return;
     setError(null);
+    if (!withUsername.trim()) { setError(auth.errors.enterUsername); return; }
+    if (!withPassword) { setError(auth.errors.enterPassword); return; }
     setBusy(true);
     try {
       const res = await api.login(withUsername, withPassword);
@@ -53,8 +56,6 @@ export default function Login() {
       scrollProps={{ keyboardShouldPersistTaps: 'handled' }}
     >
       <Entrance index={0} style={{ alignItems: 'center', marginTop: sp(2) }}>
-        {/* Black plate, white mark: the one uncompromising note on a screen
-            that is otherwise glass over atmosphere. */}
         <Mark size={72} />
         <Txt kind="hero" style={{ marginTop: sp(4), textAlign: 'center' }} accessibilityRole="header">
           {auth.appName}
@@ -68,7 +69,7 @@ export default function Login() {
           <Field
             label={auth.identifierLabel}
             value={username}
-            onChangeText={setUsername}
+            onChangeText={(v) => { setUsername(v); setError(null); }}
             placeholder={auth.identifierPlaceholder}
             keyboardType="default"
             autoCapitalize="none"
@@ -78,7 +79,7 @@ export default function Login() {
           <Field
             label={auth.passwordLabel}
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(v) => { setPassword(v); setError(null); }}
             placeholder={auth.passwordPlaceholder}
             secureTextEntry
             autoCapitalize="none"
@@ -91,16 +92,17 @@ export default function Login() {
         </Glass>
       </Entrance>
 
-      <Entrance index={2} style={{ marginTop: sp(5), alignItems: 'center', gap: sp(3) }}>
+      <Entrance index={2} style={{ marginTop: sp(5), gap: sp(3) }}>
+        {/* A real button, not a line of text: the one thing a judge or a new
+            family member taps on this screen after the form. */}
         <Btn
-          kind="link"
+          kind="quiet"
           label={auth.demoShortcut}
           onPress={() => {
             setUsername(auth.demo.username);
             setPassword(auth.demo.password);
             submit(auth.demo.username, auth.demo.password);
           }}
-          style={{ alignSelf: 'center' }}
         />
         <Txt kind="caption" tone="muted" style={{ textAlign: 'center', paddingHorizontal: sp(4) }}>{/* voice-ok */}
           {auth.note}

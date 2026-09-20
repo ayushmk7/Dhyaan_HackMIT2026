@@ -41,12 +41,11 @@ export default function Simulate() {
         if (alert) router.replace(`/alert/${alert.id}`);
         else setOutcome({ t: 'no_alert' });
       })
-      .catch((e: unknown) => {
+      .catch(() => {
         if (!live) return;
-        setOutcome({
-          t: 'failed',
-          why: e instanceof Error ? e.message : copy.requestFailed,
-        });
+        // The transport's own words never reach the screen; this says what
+        // did not happen and the button under it offers the retry.
+        setOutcome({ t: 'failed', why: copy.requestFailed });
       });
     return () => { live = false; };
   }, [attempt]);

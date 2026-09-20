@@ -17,7 +17,7 @@ import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
 import {
-  Chip, CitationChip, Entrance, ErrorState, IconBtn, LoadingState, Refusal, Row, Rule, Screen, Txt,
+  Btn, CitationChip, Entrance, ErrorState, IconBtn, LoadingState, Refusal, Row, Rule, Screen, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { family } from '@/lib/copy/family';
@@ -54,8 +54,10 @@ export default function Ask() {
     try {
       const answer = await api.chat(q);
       setMessages((m) => [...m, answer]);
-    } catch (e) {
-      setSendError(e instanceof Error ? e.message : copy.sendError);
+    } catch {
+      // Never the transport's own words: a person at 3am needs to know the
+      // question went unanswered and that asking again is safe.
+      setSendError(copy.sendError);
     } finally {
       setThinking(false);
     }
@@ -72,7 +74,7 @@ export default function Ask() {
         placeholder={copy.placeholder(residentName)}
         placeholderTextColor={t.inkMuted}
         style={{
-          flex: 1, minHeight: 40, maxHeight: 110,
+          flex: 1, minHeight: 44, maxHeight: 110,
           paddingHorizontal: sp(3), paddingVertical: sp(2),
           ...type.body, color: t.ink,
         }}
@@ -83,7 +85,7 @@ export default function Ask() {
         name="arrow.up"
         label={copy.ask}
         kind="primary"
-        size={38}
+        size={44}
         disabled={!draft.trim() || thinking}
         onPress={() => send(draft)}
       />
@@ -112,12 +114,17 @@ export default function Ask() {
           </Entrance>
 
           <Entrance index={1}>
+            {/* Openers are 44pt tonal buttons, not 30pt chips: at this hour
+                a question should be hard to miss and easy to hit. */}
             <View style={{ marginTop: sp(7), gap: sp(2), alignItems: 'flex-start' }}>
               {copy.suggestions.map((s) => (
-                <Chip key={s} label={s} onPress={() => send(s)} />
+                <Btn key={s} kind="quiet" size="small" label={s} onPress={() => send(s)} />
               ))}
-              <Chip
+              <Btn
+                kind="quiet"
+                size="small"
                 label={copy.planFromChat}
+                style={{ marginTop: sp(2) }}
                 onPress={() => router.push('/(family)/chat/plan')}
               />
             </View>
@@ -172,7 +179,12 @@ export default function Ask() {
         {thinking && <LoadingState label={copy.thinking} />}
 
         {sendError && !thinking && (
-          <ErrorState inline message={sendError} onRetry={() => send(lastQuestion)} />
+          <ErrorState
+            inline
+            message={sendError}
+            retryLabel={copy.tryAgain}
+            onRetry={() => send(lastQuestion)}
+          />
         )}
       </View>
     </Screen>

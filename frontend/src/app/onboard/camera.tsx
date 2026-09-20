@@ -6,14 +6,15 @@
 // The room chosen here is installer config. It rides on events for the
 // baseline learner and never reaches a family screen as "where she is" (D-001).
 //
-// The question owns the screen: the title and the four chips under it. The
+// The question owns the screen: the title and the four rooms under it. The
 // layout note, the checklist and the test are quieter, in that order, and
-// none of them sits in a card.
+// none of them sits in a card. The checklist lines are the rows; the
+// confirmation is a 44pt choice at the end of each.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
 import {
-  Btn, Chip, Entrance, ErrorState, Field, Marquee, Row, Rule, Screen, Txt,
+  Btn, Entrance, ErrorState, Field, Row, Rule, Screen, Txt,
 } from '@/components';
 import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
@@ -21,6 +22,7 @@ import { onboard } from '@/lib/copy/staff';
 import { sp, useTheme } from '@/theme';
 import { useSession } from '@/store/session';
 import type { CameraZone } from '@/lib/types';
+import { ChoiceChip, StepHeader } from './_layout';
 
 const copy = onboard.camera;
 
@@ -37,12 +39,12 @@ type TestState =
 
 export default function Camera() {
   const t = useTheme();
-  const { residentId, camera, setCamera } = useSession();
+  const { residentId, camera, setCamera, grants } = useSession();
   const [checked, setChecked] = useState<boolean[]>(CHECKLIST.map(() => false));
   const [test, setTest] = useState<TestState>({ kind: 'idle' });
 
-  const allChecked = checked.every(Boolean);
-  const ready = camera.zone != null && allChecked;
+  const unchecked = checked.filter((v) => !v).length;
+  const ready = camera.zone != null && unchecked === 0;
 
   // Polls GET /presence for up to 20 s. Never a preview: no endpoint returns
   // image bytes, and the API process never has one to return.
@@ -78,10 +80,10 @@ export default function Camera() {
       }
     >
       <Entrance index={0}>
-        <Marquee first title={copy.title} />
-        <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(1) }}>
+        <StepHeader step="camera" grants={grants} title={copy.title} purpose={copy.purpose} />
+        <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(4) }}>
           {ROOMS.map((zone) => (
-            <Chip
+            <ChoiceChip
               key={zone}
               label={copy.rooms[zone]}
               selected={camera.zone === zone}
@@ -110,8 +112,8 @@ export default function Camera() {
           <React.Fragment key={line}>
             {i > 0 && <Rule weight="hair" />}
             <Row gap={3} style={{ paddingVertical: sp(3), alignItems: 'center' }}>
-              <Txt kind="caption" tone={checked[i] ? 'ink' : 'muted'} style={{ flex: 1 }}>{line}</Txt>
-              <Chip
+              <Txt kind="body" tone={checked[i] ? 'ink' : 'muted'} style={{ flex: 1 }}>{line}</Txt>
+              <ChoiceChip
                 label={checked[i] ? copy.checked : copy.confirm}
                 selected={checked[i]}
                 onPress={() => setChecked((c) => c.map((v, j) => (j === i ? !v : v)))}
@@ -134,20 +136,20 @@ export default function Camera() {
           </Txt>
         )}
         {test.kind === 'testing' && (
-          <Txt kind="caption" tone="muted">{copy.listening}</Txt>
+          <Txt kind="caption" tone="muted" accessibilityLiveRegion="polite">{copy.listening}</Txt>
         )}
         {test.kind === 'online' && (
           <Row gap={2}>
             {/* OK has no colour: the tick is ink. */}
             <Icon name="checkmark.circle" size={14} color={t.ink} />
-            <Txt kind="caption" tone="ok">
+            <Txt kind="caption" tone="ok" accessibilityLiveRegion="polite">
               {test.inView ? copy.onlineInView : copy.onlineEmpty}
             </Txt>
           </Row>
         )}
         {test.kind === 'unreachable' && (
           <View style={{ gap: sp(1) }}>
-            <ErrorState inline message={copy.notReachableWith(test.message)} />
+            <ErrorState inline message={copy.notReachableWith(test.message)} onRetry={runTest} />
             <Txt kind="caption" tone="muted">{/* voice-ok */}
               {copy.finishLater}
             </Txt>
@@ -156,9 +158,10 @@ export default function Camera() {
       </Entrance>
 
       {!ready && (
+        // Why the button is still grey, in ink, above it.
         <Entrance index={4}>
-          <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>{/* voice-ok */}
-            {camera.zone == null ? copy.pickRoom : copy.confirmChecklist}
+          <Txt kind="body" accessibilityLiveRegion="polite" style={{ marginTop: sp(5) }}>{/* voice-ok */}
+            {camera.zone == null ? copy.pickRoom : copy.confirmChecklist(unchecked)}
           </Txt>
         </Entrance>
       )}

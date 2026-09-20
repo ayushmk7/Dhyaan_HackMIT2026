@@ -26,7 +26,7 @@ import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 import {
-  Btn, Card, Chevron, Chip, DataLabel, ErrorState, LoadingState, Marquee, Row, RowGroup, Rule,
+  Btn, Card, Chevron, DataLabel, ErrorState, LoadingState, Marquee, Row, RowGroup, Rule,
   Screen, Slab, Stagger, StatusDot, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
@@ -38,7 +38,7 @@ import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
 import { sp, useTheme } from '@/theme';
 import type { ResidentState } from '@/theme/tokens';
-import { NEEDS_EYES, TIER, deriveState, pad2, triageReason } from '../_layout';
+import { NEEDS_EYES, OFFLINE_AFTER_MIN, TIER, deriveState, pad2, triageReason } from '../_layout';
 
 type TriageItem = Resident & { state: ResidentState; alert?: Alert; reason: string | null };
 
@@ -106,8 +106,9 @@ function WatchRow({ r, onPress }: { r: TriageItem; onPress: () => void }) {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={copy.row.a11y(r.display_name, r.room)}
+      accessibilityHint={copy.openRowHint}
       onPress={onPress}
-      style={({ pressed }) => [{ paddingVertical: sp(3) }, pressed && { opacity: 0.6 }]}
+      style={({ pressed }) => [{ paddingVertical: sp(3), minHeight: 44 }, pressed && { opacity: 0.6 }]}
     >
       <Row gap={3} style={{ alignItems: 'flex-start' }}>
         <View style={{ paddingTop: sp(1.5) }}>
@@ -135,14 +136,19 @@ function WatchRow({ r, onPress }: { r: TriageItem; onPress: () => void }) {
   );
 }
 
-// Doing fine: one dense line. Name, room, last signal. Nothing to read twice.
+// Doing fine: one dense line. Name, room, last signal, and the chevron that
+// says the line opens, the same as every other row here.
 function QuietRow({ r, onPress }: { r: TriageItem; onPress: () => void }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={copy.row.a11y(r.display_name, r.room)}
+      accessibilityHint={copy.openRowHint}
       onPress={onPress}
-      style={({ pressed }) => [{ paddingVertical: sp(2.5) }, pressed && { opacity: 0.6 }]}
+      style={({ pressed }) => [
+        { paddingVertical: sp(2.5), minHeight: 44, justifyContent: 'center' },
+        pressed && { opacity: 0.6 },
+      ]}
     >
       <Row style={{ justifyContent: 'space-between' }} gap={3}>
         <Row gap={2} style={{ flex: 1 }}>
@@ -152,6 +158,7 @@ function QuietRow({ r, onPress }: { r: TriageItem; onPress: () => void }) {
         <Row gap={3}>
           <Txt kind="stamp" tone="muted">{stamp(r)}</Txt>
           <Txt kind="stamp" tone="muted">{seen(r)}</Txt>
+          <Chevron />
         </Row>
       </Row>
     </Pressable>
@@ -296,10 +303,16 @@ export default function Triage() {
           )}
 
           {needing === 0 && (
-            // The calm state is the one large sentence, not a grey line.
-            <Txt kind="title" style={{ marginTop: sp(2), paddingRight: sp(6) }}>
-              {residents.length === 0 ? copy.emptyNoResidents : copy.emptyNobody}
-            </Txt>
+            // The calm state is the one large sentence, with what it rests
+            // on and what to do next under it. Never a bare "all quiet".
+            <View style={{ marginTop: sp(2), paddingRight: sp(6), gap: sp(2) }}>
+              <Txt kind="title">
+                {residents.length === 0 ? copy.emptyNoResidents : copy.emptyNobody}
+              </Txt>
+              <Txt kind="body" tone="muted">
+                {residents.length === 0 ? copy.emptyNoResidentsHint : copy.emptyNobodyHint(OFFLINE_AFTER_MIN)}
+              </Txt>
+            </View>
           )}
         </View>
 
@@ -308,8 +321,10 @@ export default function Triage() {
             <Marquee
               title={copy.doingFine}
               right={
-                <Chip
-                  label={showOk ? copy.hide : copy.showN(pad2(normal.length))}
+                <Btn
+                  kind="quiet"
+                  size="small"
+                  label={showOk ? copy.hide : copy.showN(String(normal.length))}
                   onPress={() => setShowOk((v) => !v)}
                 />
               }

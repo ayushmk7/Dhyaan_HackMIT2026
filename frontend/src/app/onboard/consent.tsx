@@ -6,6 +6,8 @@
 // The grant copy itself is `onboard.consent.grants` in `lib/copy/staff.ts`,
 // where it is marked verbatim from the spec. Nothing in a grant's `title`,
 // `line` or `detail` may be reworded. Only the surface around it is design.
+// The "if you say no" line under each answer is design copy (`copy.ifNo`),
+// kept separate from the script on purpose.
 //
 // The three grants are the screen. They are not cards: a card each made three
 // equal boxes and nothing owned the page. Now they sit on the paper, separated
@@ -17,12 +19,13 @@ import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import {
-  Btn, Entrance, Field, Marquee, Row, Rule, Screen, Stagger, Txt,
+  Btn, Entrance, Field, Row, Rule, Screen, Stagger, Txt,
 } from '@/components';
 import { Icon } from '@/components/icon';
 import { onboard } from '@/lib/copy/staff';
 import { sp, radius, useTheme } from '@/theme';
 import { useSession, type Grants } from '@/store/session';
+import { StepHeader } from './_layout';
 
 const copy = onboard.consent;
 const GRANTS = copy.grants;
@@ -42,18 +45,19 @@ function YesNo({ value, onChange, label }: {
         onPress={() => onChange(v)}
         style={({ pressed }) => ({
           flex: 1,
-          minHeight: 48,
+          minHeight: 52,
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: radius.card,
           // The answer is the one filled shape: the accent wash when chosen,
-          // nothing at all when not, so an unanswered grant is visibly open.
-          backgroundColor: on ? t.accentWash : pressed ? t.line : 'transparent',
-          borderWidth: 1,
-          borderColor: on ? t.accent : t.line,
+          // a quiet wash when not, so both read as buttons and the chosen one
+          // reads as chosen.
+          backgroundColor: on ? t.accentWash : pressed ? t.slateWashDeep : t.slateWash,
+          borderWidth: 1.5,
+          borderColor: on ? t.accent : 'transparent',
         })}
       >
-        <Txt kind="label" tone={on ? 'accent' : 'muted'}>{word}</Txt>
+        <Txt kind="button" tone={on ? 'accent' : 'ink'}>{word}</Txt>
       </Pressable>
     );
   };
@@ -74,11 +78,15 @@ function Grant({ g, value, onChange }: {
         accessibilityState={{ expanded: open }}
         accessibilityLabel={copy.howItWorksA11y(g.title)}
         onPress={() => setOpen((v) => !v)}
-        style={{ marginTop: sp(1), alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' }}
+        hitSlop={8}
+        style={({ pressed }) => ({
+          marginTop: sp(1), alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center',
+          opacity: pressed ? 0.55 : 1,
+        })}
       >
-        <Row gap={1}>
-          <Icon name={open ? 'chevron.down' : 'chevron.right'} size={11} color={t.accent} />
-          <Txt kind="tag" tone="accent">{copy.howItWorks}</Txt>
+        <Row gap={1.5}>
+          <Icon name={open ? 'chevron.down' : 'chevron.right'} size={12} color={t.accent} weight="semibold" />
+          <Txt kind="label" tone="accent">{copy.howItWorks}</Txt>
         </Row>
       </Pressable>
       {open && (
@@ -91,6 +99,10 @@ function Grant({ g, value, onChange }: {
         </View>
       )}
       <YesNo label={g.title} value={value} onChange={onChange} />
+      {/* What a no means, said before it is chosen, so no one has to guess. */}
+      <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{/* voice-ok */}
+        {copy.ifNo[g.key]}
+      </Txt>
     </View>
   );
 }
@@ -133,12 +145,8 @@ export default function Consent() {
       floatingBar={<Btn label={copy.agree} disabled={!ready} onPress={agree} />}
     >
       <Stagger>
-        <View>
-          <Marquee first title={copy.title} />
-          <Txt kind="caption" tone="muted">
-            {copy.intro}
-          </Txt>
-        </View>
+        {/* The step total follows the answers: each no shortens the setup. */}
+        <StepHeader step="consent" grants={grants} title={copy.title} purpose={copy.intro} />
 
         <Field
           label={copy.herName}
@@ -162,7 +170,7 @@ export default function Consent() {
         </View>
 
         <View style={{ marginTop: sp(4) }}>
-          <Txt kind="caption" tone="muted">{copy.whoIsAgreeing}</Txt>
+          <Txt kind="label">{copy.whoIsAgreeing}</Txt>
           <Field
             label={copy.yourName}
             value={signer}
@@ -181,8 +189,9 @@ export default function Consent() {
       </Stagger>
 
       {!ready && (
+        // Why the button below is still grey, in ink, not a whisper.
         <Entrance index={5}>
-          <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>{/* voice-ok */}
+          <Txt kind="body" accessibilityLiveRegion="polite" style={{ marginTop: sp(5) }}>{/* voice-ok */}
             {!answeredAll
               ? copy.needAnswers
               : !anyYes

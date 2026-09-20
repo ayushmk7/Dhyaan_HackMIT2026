@@ -1,7 +1,8 @@
-// Night rounds: 23:00 to 07:00 mode. Only what deviated tonight, on the
-// darkest screen in the app. Marcus reads this in a dim corridor, so it is the
-// most instrument-like surface on the staff side: light on the night ground,
-// tabular figures, hard rules, no decoration.
+// Night rounds: 23:00 to 07:00 mode. Only what deviated tonight. Marcus
+// reads this in a dim corridor, so it is the most instrument-like surface on
+// the staff side: tabular figures, hard rules, no decoration. It is on paper
+// like every other screen now (the app is light-only); size and position do
+// the ranking, not a dark ground.
 //
 // The weights, top to bottom: one large count; whoever is alerting on a white
 // plate (the only inversion on the night ground); whoever is worth a look or
@@ -21,8 +22,8 @@ import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 import {
-  Card, DataLabel, EmptyState, ErrorState, LoadingState, Marquee, Row, RowGroup, Rule, Screen,
-  Slab, Stagger, StatusDot, Txt,
+  Card, Chevron, DataLabel, EmptyState, ErrorState, LoadingState, Marquee, Row, RowGroup, Rule,
+  Screen, Slab, Stagger, StatusDot, Txt,
 } from '@/components';
 import { readout, rounds as copy } from '@/lib/copy/staff';
 import { timeOf } from '@/lib/format';
@@ -31,7 +32,7 @@ import type { Resident } from '@/lib/types';
 import { useLive } from '@/store/live';
 import { sp, useTheme } from '@/theme';
 import type { ResidentState } from '@/theme/tokens';
-import { NEEDS_EYES, TIER, deriveState, pad2, triageReason } from '../_layout';
+import { NEEDS_EYES, OFFLINE_AFTER_MIN, TIER, deriveState, pad2, triageReason } from '../_layout';
 
 type RoundsItem = Resident & { state: ResidentState; reason: string | null };
 
@@ -64,7 +65,7 @@ export default function Rounds() {
   }, [qc]);
 
   const refreshControl = (
-    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.nightMuted} />
+    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.inkMuted} />
   );
 
   const rows: RoundsItem[] = (data ?? [])
@@ -81,7 +82,7 @@ export default function Rounds() {
   const open = (r: RoundsItem) => router.push(`/(staff)/triage/resident/${r.id}`);
 
   return (
-    <Screen native tone="night" wash refreshControl={refreshControl}>
+    <Screen native wash refreshControl={refreshControl}>
       {isLoading && !data && <LoadingState label={copy.loading} />}
       {isError && !data && (
         <ErrorState message={copy.loadError} onRetry={refetch} />
@@ -109,12 +110,11 @@ export default function Rounds() {
           <View>
             <Marquee title={copy.needsLookTonight} meta={pad2(deviating)} style={{ marginTop: sp(5) }} />
 
-            {/* Inverted: a white plate on the night ground, for whoever is
-                alerting. The only takeover-tier surface outside the alert. */}
+            {/* Whoever is alerting: the one focal plate on the screen, on
+                the light blue step, lifted above everything else. */}
             {urgent.map((r) => (
               <Slab
                 key={r.id}
-                tone="cream"
                 lift="takeover"
                 onPress={() => open(r)}
                 accessibilityLabel={copy.card.a11y(r.display_name, r.room)}
@@ -144,6 +144,7 @@ export default function Rounds() {
                             {r.display_name}
                           </Txt>
                           <Txt kind="stamp" tone="muted">{t.stateColor[r.state].word}</Txt>
+                          <Chevron />
                         </Row>
                         {!!r.reason && (
                           <Txt kind="body" style={{ marginTop: sp(2) }}>{r.reason}</Txt>
@@ -157,10 +158,12 @@ export default function Rounds() {
             )}
 
             {deviating === 0 && rows.length > 0 && (
-              // The quiet night is the large sentence.
-              <Txt kind="title" style={{ marginTop: sp(2), paddingRight: sp(6) }}>
-                {copy.emptyQuiet}
-              </Txt>
+              // The quiet night is the large sentence, with what "quiet"
+              // means and where to look next under it.
+              <View style={{ marginTop: sp(2), paddingRight: sp(6), gap: sp(2) }}>
+                <Txt kind="title">{copy.emptyQuiet}</Txt>
+                <Txt kind="body" tone="muted">{copy.emptyQuietHint(OFFLINE_AFTER_MIN)}</Txt>
+              </View>
             )}
           </View>
 
@@ -174,7 +177,10 @@ export default function Rounds() {
                     accessibilityRole="button"
                     accessibilityLabel={copy.quietA11y(r.display_name)}
                     onPress={() => open(r)}
-                    style={({ pressed }) => [{ paddingVertical: sp(2.5) }, pressed && { opacity: 0.6 }]}
+                    style={({ pressed }) => [
+                      { paddingVertical: sp(2.5), minHeight: 44, justifyContent: 'center' },
+                      pressed && { opacity: 0.6 },
+                    ]}
                   >
                     <Row style={{ justifyContent: 'space-between' }} gap={3}>
                       <Row gap={2} style={{ flex: 1 }}>
@@ -188,6 +194,7 @@ export default function Rounds() {
                           {r.room ? copy.roomStamp(r.room) : readout.blank}
                         </Txt>
                         <Txt kind="stamp" tone="muted">{seen(r)}</Txt>
+                        <Chevron />
                       </Row>
                     </Row>
                   </Pressable>
@@ -197,7 +204,9 @@ export default function Rounds() {
           )}
 
           {rows.length === 0 && (
-            <EmptyState style={{ marginTop: sp(4) }}>{copy.emptyNoResidents}</EmptyState>
+            <EmptyState style={{ marginTop: sp(4) }} title={copy.emptyNoResidents}>
+              {copy.emptyNoResidentsHint}
+            </EmptyState>
           )}
         </Stagger>
       )}

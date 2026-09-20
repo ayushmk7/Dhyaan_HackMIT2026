@@ -80,7 +80,11 @@ function ItemRow({ item, onPress }: { item: ActivityItem; onPress?: () => void }
   return (
     <Pressable
       accessibilityRole={onPress ? 'button' : 'text'}
-      accessibilityLabel={copy.rowLabel(familySentence(item), timeOf(item.ts))}
+      accessibilityLabel={
+        onPress
+          ? copy.openRow(copy.rowLabel(familySentence(item), timeOf(item.ts)))
+          : copy.rowLabel(familySentence(item), timeOf(item.ts))
+      }
       onPress={onPress}
       disabled={!onPress}
       style={({ pressed }) => ({ paddingVertical: sp(3.5), opacity: pressed ? 0.6 : 1 })}
@@ -92,7 +96,7 @@ function ItemRow({ item, onPress }: { item: ActivityItem; onPress?: () => void }
       </Row>
       <Row gap={2} style={{ marginTop: sp(2), justifyContent: 'space-between' }}>
         <KindTag kind={item.kind} />
-        {!!onPress && <Chevron size={11} />}
+        {!!onPress && <Chevron size={13} tone="ink" />}
       </Row>
     </Pressable>
   );
@@ -339,7 +343,13 @@ export default function HerDay() {
               {copy.writeNote}
             </Txt>
             {writeError?.date === date && (
-              <ErrorState inline message={writeError.text} style={{ marginTop: sp(2) }} />
+              <ErrorState
+                inline
+                message={writeError.text}
+                retryLabel={copy.tryAgain}
+                onRetry={writeStory}
+                style={{ marginTop: sp(2) }}
+              />
             )}
           </Card>
         )}
@@ -351,7 +361,13 @@ export default function HerDay() {
           meta={shown.length === total ? String(total) : copy.shownOf(shown.length, total)}
         />
         {shown.length === 0 ? (
-          <EmptyState>
+          <EmptyState
+            action={
+              total > 0
+                ? <Btn kind="quiet" label={copy.showAll} onPress={() => setFilterIdx(0)} />
+                : undefined
+            }
+          >
             {total === 0 ? copy.noActivity(isToday) : copy.nothingUnder(filter.label, isToday)}
           </EmptyState>
         ) : (

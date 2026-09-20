@@ -41,6 +41,9 @@ export function MetricRow({
       disabled={!onPress}
       onPress={onPress}
       accessibilityRole={onPress ? 'button' : undefined}
+      // A disclosure row has to announce whether it is open, or a screen-reader
+      // user taps it and is told nothing changed.
+      accessibilityState={expanded === undefined ? undefined : { expanded }}
       style={({ pressed }) => [{ paddingVertical: sp(2.5) }, pressed && onPress ? { opacity: 0.55 } : null]}
     >
       <Row style={{ justifyContent: 'space-between' }}>

@@ -53,20 +53,24 @@ export default function Welcome() {
         </Entrance>
       </View>
 
-      <Entrance index={2}>
+      <Entrance index={2} style={{ gap: sp(3) }}>
+        {/* What pressing the button starts, before it is pressed. */}
+        <Txt kind="caption" tone="muted" style={{ textAlign: 'center', paddingHorizontal: sp(4) }}>{/* voice-ok */}
+          {onboard.step.overview}
+        </Txt>
         <Btn label={copy.getStarted} onPress={() => router.push('/onboard/consent')} />
         {/* The Pressable owns both gestures so the long-press dev affordance
-            (staff demo) survives; the link inside it is the visible control
+            (staff demo) survives; the button inside it is the visible control
             and never the responder. */}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={copy.exploreDemoA11y}
           onPress={familyDemo}
           onLongPress={staffDemo}
-          style={{ paddingVertical: sp(3), alignItems: 'center', gap: sp(1.5) }}
+          style={{ alignItems: 'center', gap: sp(2) }}
         >
-          <View pointerEvents="none" style={{ alignItems: 'center', gap: sp(1.5) }}>
-            <Btn kind="link" label={copy.exploreDemo} onPress={familyDemo} style={{ alignSelf: 'center' }} />
+          <View pointerEvents="none" style={{ alignSelf: 'stretch', alignItems: 'center', gap: sp(2) }}>
+            <Btn kind="quiet" label={copy.exploreDemo} onPress={familyDemo} style={{ alignSelf: 'stretch' }} />
             <DataLabel value={USE_MOCKS ? copy.sourceSample : copy.sourceLive}>{copy.source}</DataLabel>
           </View>
         </Pressable>

@@ -9,23 +9,28 @@
 // as connected the moment the band sends its first reading.
 //
 // The code field owns the screen until the hub answers; then the recorded
-// band id does, on the one tinted plate this screen ever draws.
+// band id does, on the one tinted plate this screen ever draws. While the
+// code is short the screen says how many digits are still to come, so a grey
+// button is never a mystery.
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 import {
-  Btn, DataLabel, Entrance, ErrorState, Field, Marquee, Screen, Txt,
+  Btn, DataLabel, Entrance, ErrorState, Field, Txt,
+  Screen,
 } from '@/components';
 import { api } from '@/lib/api';
 import { onboard } from '@/lib/copy/staff';
 import { radius, sp, useTheme } from '@/theme';
 import { useSession } from '@/store/session';
+import { StepHeader } from './_layout';
 
 const copy = onboard.pair;
+const CODE_LEN = 6;
 
 export default function Pair() {
   const t = useTheme();
-  const { residentName } = useSession();
+  const { residentName, grants } = useSession();
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,41 +49,46 @@ export default function Pair() {
     }
   };
 
+  const missing = CODE_LEN - code.length;
+
   return (
     <Screen
       native
       wash
       floatingBar={
         paired
-          ? <Btn label={copy.continue} onPress={() => router.push('/onboard/survey')} />
-          : <Btn label={copy.pair} onPress={pair} busy={busy} disabled={code.length !== 6} />
+          ? <Btn label={copy.toSurvey} onPress={() => router.push('/onboard/survey')} />
+          : <Btn label={copy.pair} onPress={pair} busy={busy} disabled={missing > 0} />
       }
     >
       <Entrance index={0}>
-        <Marquee first title={copy.title(residentName)} />
-        <Txt kind="caption" tone="muted">
-          {copy.intro}
-        </Txt>
+        <StepHeader step="pair" grants={grants} title={copy.title(residentName)} purpose={copy.purpose} />
       </Entrance>
 
       <Entrance index={1}>
+        <Txt kind="label" style={{ marginTop: sp(6) }}>{copy.intro}</Txt>
         {/* The code is a machine reading, so the field wears the machine face. */}
         <Field
           code
           value={code}
-          onChangeText={(v) => { setCode(v.replace(/\D/g, '').slice(0, 6)); setError(null); }}
+          onChangeText={(v) => { setCode(v.replace(/\D/g, '').slice(0, CODE_LEN)); setError(null); }}
           keyboardType="number-pad"
-          maxLength={6}
+          maxLength={CODE_LEN}
           placeholder={copy.codePlaceholder}
           editable={!paired}
           accessibilityLabel={copy.codeA11y}
-          style={{ marginTop: sp(8) }}
+          style={{ marginTop: sp(3) }}
         />
+        {!paired && missing > 0 && (
+          <Txt kind="caption" tone="muted" accessibilityLiveRegion="polite" style={{ marginTop: sp(2) }}>
+            {copy.needDigits(missing)}
+          </Txt>
+        )}
       </Entrance>
 
       {!!error && (
         <Entrance index={2}>
-          <ErrorState inline message={error} style={{ marginTop: sp(3) }} />
+          <ErrorState inline message={error} onRetry={pair} style={{ marginTop: sp(3) }} />
         </Entrance>
       )}
 
@@ -101,9 +111,10 @@ export default function Pair() {
             {copy.checkDigits}
           </Txt>
           <Btn
-            kind="link"
+            kind="quiet"
+            size="small"
             label={copy.differentCode}
-            style={{ marginTop: sp(2), alignSelf: 'flex-start' }}
+            style={{ marginTop: sp(3), alignSelf: 'flex-start' }}
             onPress={() => { setPaired(null); setCode(''); }}
           />
         </Entrance>

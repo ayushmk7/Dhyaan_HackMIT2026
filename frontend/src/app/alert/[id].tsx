@@ -24,7 +24,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Vibration, View } from 'react-native';
 import {
-  Btn, DataLabel, Entrance, ErrorState, LadderTimeline, Marquee, Rule, Screen, Slab, Stagger, Txt,
+  Btn, DataLabel, Entrance, ErrorState, LadderTimeline, LoadingState, Marquee, Rule, Screen, Slab,
+  Stagger, Txt,
 } from '@/components';
 import { CancelCountdownRing, ElapsedStat, RingingPulse } from '@/components/alert-extras';
 import { api } from '@/lib/api';
@@ -175,7 +176,23 @@ export default function AlertTakeover() {
     return (
       <Screen scroll={false} style={{ justifyContent: 'center' }}>
         <ErrorState message={copy.loadError} onRetry={refetch} />
-        <Btn label={copy.backHome} kind="quiet" onPress={goHome} style={{ marginTop: sp(3) }} />
+        <View style={{ gap: sp(2.5), marginTop: sp(3) }}>
+          {/* The two ways to reach her do not depend on the alert loading. */}
+          {!!herPhone && <Btn label={copy.call(name)} onPress={callHer} />}
+          <Btn label={copy.call911} kind="outline" onPress={call911} />
+          <Btn label={copy.backHome} kind="quiet" onPress={goHome} />
+        </View>
+      </Screen>
+    );
+  }
+
+  // Loading the alert is not the same as there being none: say so, and keep
+  // her number in reach while the hub answers.
+  if (!alert && isLoading) {
+    return (
+      <Screen scroll={false} style={{ justifyContent: 'center' }}>
+        <LoadingState label={copy.loading} />
+        {!!herPhone && <Btn label={copy.call(name)} kind="quiet" onPress={callHer} style={{ marginTop: sp(3) }} />}
       </Screen>
     );
   }

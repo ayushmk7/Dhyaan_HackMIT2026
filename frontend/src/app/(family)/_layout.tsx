@@ -89,13 +89,14 @@ export function FloatingTabBar({
   }, [state.index, slot, reduced, x]);
   const pillStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
 
-  const night = tone !== 'neutral';
-  const ink = night ? t.nightInk : t.ink;
-  const dim = night ? t.nightMuted : t.inkMuted;
+  // The bar used to switch to a night palette when Rounds was focused. Rounds
+  // is not dark any more and the app is light-only, so both callers pass
+  // `neutral` and that branch was unreachable. Deleted rather than recoloured.
+  const ink = t.ink;
+  const dim = t.inkMuted;
   // Chrome carries no hue: the selection is ink at low alpha, borrowing the
-  // rest of its colour from whatever the glass is refracting. Ink is light on
-  // a night bar and in the dark scheme, so the pill goes light with it.
-  const pillFill = night || t.isDark ? 'rgba(255,255,255,0.10)' : 'rgba(28,28,30,0.07)';
+  // rest of its colour from whatever the glass is refracting.
+  const pillFill = 'rgba(28,28,30,0.07)';
 
   return (
     <View

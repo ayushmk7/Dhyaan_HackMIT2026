@@ -6,7 +6,7 @@
 // audit it against.
 //
 // Every sentence this screen says lives in lib/copy/family.ts under `event`.
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
 import {
@@ -56,6 +56,7 @@ export default function EventDetail() {
   const [verdict, setVerdict] = useState<'expected' | 'false_positive' | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [lastVerdict, setLastVerdict] = useState<'expected' | 'false_positive' | null>(null);
 
   if (!event) {
     return (
@@ -65,7 +66,9 @@ export default function EventDetail() {
         ) : isLoading ? (
           <LoadingState label={copy.loading} />
         ) : (
-          <EmptyState>{copy.gone}</EmptyState>
+          <EmptyState action={<Btn kind="quiet" label={copy.backToDay} onPress={() => router.back()} />}>
+            {copy.gone}
+          </EmptyState>
         )}
       </Screen>
     );
@@ -74,6 +77,7 @@ export default function EventDetail() {
   const give = async (v: 'expected' | 'false_positive') => {
     setBusy(true);
     setFeedbackError(null);
+    setLastVerdict(v);
     try {
       await api.feedback(event.id, v);
       setVerdict(v);
@@ -125,7 +129,14 @@ export default function EventDetail() {
             <View style={{ gap: sp(2) }}>
               <Btn label={copy.wasExpected} kind="quiet" busy={busy} onPress={() => give('expected')} />
               <Btn label={copy.didNotHappen} kind="quiet" busy={busy} onPress={() => give('false_positive')} />
-              {feedbackError && <ErrorState inline message={feedbackError} />}
+              {feedbackError && (
+                <ErrorState
+                  inline
+                  message={feedbackError}
+                  retryLabel={copy.tryAgain}
+                  onRetry={() => lastVerdict && give(lastVerdict)}
+                />
+              )}
             </View>
           )}
         </View>

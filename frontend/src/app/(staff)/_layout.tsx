@@ -86,12 +86,8 @@ export default function StaffLayout() {
       <Tabs
         initialRouteName="triage"
         tabBar={(props) => (
-          // Rounds runs dark; the bar follows the ground it floats over.
-          <FloatingTabBar
-            {...props}
-            bottomInset={insets.bottom}
-            tone={props.state.routes[props.state.index]?.name === 'rounds' ? 'night' : 'neutral'}
-          />
+          // Every staff screen is on paper now, Rounds included; one bar tone.
+          <FloatingTabBar {...props} bottomInset={insets.bottom} tone="neutral" />
         )}
         screenOptions={{
           headerShown: false,

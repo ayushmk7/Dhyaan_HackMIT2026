@@ -80,7 +80,9 @@ export default function Plan() {
           {!thread && (
             <Btn label={copy.tryExample} kind="quiet" onPress={() => setThread(EXAMPLE_THREAD)} />
           )}
-          {!!error && <ErrorState inline message={error} />}
+          {!!error && (
+            <ErrorState inline message={error} retryLabel={copy.tryAgain} onRetry={make} />
+          )}
         </Entrance>
       </Screen>
     );
@@ -143,6 +145,7 @@ export default function Plan() {
 
       <Entrance index={3} style={{ marginTop: sp(8) }}>
         <Btn label={copy.startOver} kind="quiet" onPress={() => { setPlan(null); setError(null); }} />
+        <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{copy.startOverNote}</Txt>
       </Entrance>
     </Screen>
   );

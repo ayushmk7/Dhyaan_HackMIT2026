@@ -13,18 +13,21 @@
 //
 // The rooms are rows on the paper, not cards. The room being walked right now
 // is the one thing on the screen: it lifts onto a tinted plate and the
-// countdown is set in the readout face. Everything else is a line.
+// countdown is set in the readout face. Every other row ends in a real
+// button, because "Map this room" is the thing to do here and a line of text
+// did not look like it.
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 import {
-  Btn, DataLabel, Entrance, Marquee, Row, Rule, Screen, Txt,
+  Btn, DataLabel, Entrance, Row, Rule, Screen, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { onboard } from '@/lib/copy/staff';
 import { homeZones } from '@/lib/mock/data';
 import { radius, sp, useTheme } from '@/theme';
 import { useSession } from '@/store/session';
+import { StepHeader } from './_layout';
 
 const copy = onboard.survey;
 
@@ -52,6 +55,7 @@ export default function Survey() {
 
   const doneCount = Object.values(rooms).filter((r) => r.kind === 'done').length;
   const surveying = Object.values(rooms).some((r) => r.kind === 'surveying');
+  const remaining = ROOMS_NEEDED - doneCount;
 
   const stop = async (zoneId: string) => {
     try {
@@ -97,17 +101,20 @@ export default function Survey() {
       wash
       floatingBar={
         <Btn
-          label={doneCount >= ROOMS_NEEDED ? copy.continue : copy.mapMore(ROOMS_NEEDED - doneCount)}
-          disabled={doneCount < ROOMS_NEEDED}
+          label={remaining <= 0 ? copy.continue : copy.mapMore(remaining)}
+          disabled={remaining > 0}
           onPress={() => router.push(grants.camera ? '/onboard/camera' : '/onboard/contacts')}
         />
       }
     >
       <Entrance index={0}>
-        <Marquee first title={copy.title} meta={copy.progress(doneCount, ROOMS_NEEDED)} />
-        <Txt kind="caption" tone="muted">
-          {copy.intro(residentName)}
-        </Txt>
+        <StepHeader
+          step="survey"
+          grants={grants}
+          title={copy.title}
+          meta={copy.progress(doneCount, ROOMS_NEEDED)}
+          purpose={copy.intro(residentName)}
+        />
       </Entrance>
 
       <View style={{ marginTop: sp(4) }}>
@@ -123,9 +130,9 @@ export default function Survey() {
                   padding: sp(4.5),
                   borderRadius: radius.glass,
                   backgroundColor: t.accentWash,
-                } : { paddingVertical: sp(3.5) }}
+                } : { paddingVertical: sp(3) }}
               >
-                <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <Row style={{ justifyContent: 'space-between', alignItems: 'center' }} gap={3}>
                   <View style={{ flex: 1 }}>
                     <Txt kind={live ? 'title' : 'label'}>{z.label}</Txt>
                     {s.kind === 'done' && (
@@ -138,22 +145,22 @@ export default function Survey() {
                       </Txt>
                     )}
                     {s.kind === 'failed' && (
-                      <Txt kind="caption" tone="alert" style={{ marginTop: sp(0.5) }}>
+                      <Txt kind="caption" style={{ marginTop: sp(0.5), fontWeight: '600' }}>
                         {s.message}
                       </Txt>
                     )}
                   </View>
                   {s.kind === 'idle' && (
-                    <Btn kind="link" label={copy.mapRoom} disabled={surveying} onPress={() => start(z.id)} />
+                    <Btn kind="quiet" size="small" label={copy.mapRoom} disabled={surveying} onPress={() => start(z.id)} />
                   )}
                   {s.kind === 'done' && !s.warning && (
                     <DataLabel value={String(s.scans)}>{copy.readings}</DataLabel>
                   )}
                   {s.kind === 'done' && !!s.warning && (
-                    <Btn kind="link" label={copy.walkAgain} disabled={surveying} onPress={() => start(z.id)} />
+                    <Btn kind="quiet" size="small" label={copy.walkAgain} disabled={surveying} onPress={() => start(z.id)} />
                   )}
                   {s.kind === 'failed' && (
-                    <Btn kind="link" label={copy.tryAgain} disabled={surveying} onPress={() => start(z.id)} />
+                    <Btn kind="quiet" size="small" label={copy.tryAgain} disabled={surveying} onPress={() => start(z.id)} />
                   )}
                 </Row>
 
@@ -171,8 +178,14 @@ export default function Survey() {
         })}
       </View>
 
-      <Entrance index={1 + homeZones.length}>
-        <Txt kind="caption" tone="muted" style={{ marginTop: sp(6) }}>{/* voice-ok */}
+      <Entrance index={1 + homeZones.length} style={{ marginTop: sp(6), gap: sp(3) }}>
+        {/* Why the button is still grey, or why the other rooms are. */}
+        {surveying ? (
+          <Txt kind="body" accessibilityLiveRegion="polite">{copy.oneAtATime}</Txt>
+        ) : remaining > 0 ? (
+          <Txt kind="body" accessibilityLiveRegion="polite">{copy.needMore(remaining)}</Txt>
+        ) : null}
+        <Txt kind="caption" tone="muted">{/* voice-ok */}
           {copy.honesty}
         </Txt>
       </Entrance>
