@@ -85,6 +85,40 @@ def main() -> None:
     assert p["peak_g"] == 20.0, p["peak_g"]
     print("ok  peak_g clamp ≤ 20")
 
+    # [claude] gait math: known step times -> known cadence/CV
+    import gait
+
+    # 30 perfectly regular steps, 0.5 s apart, in a 60 s window:
+    # cadence = 30 steps / 60 s * 60 = 30 spm, both CVs exactly 0.
+    times = [i * 0.5 for i in range(30)]
+    peaks = [1.4] * 30
+    s = gait.summarize(times, peaks, window_s=60.0, min_steps=10)
+    assert s is not None
+    assert s["steps"] == 30 and s["cadence_spm"] == 30.0, s
+    assert s["step_interval_cv"] == 0.0 and s["peak_g_cv"] == 0.0, s
+    assert s["peak_g_p50"] == 1.4 and s["peak_g_max"] == 1.4, s
+
+    # Alternating 0.4/0.6 s intervals: mean 0.5, pop std 0.1 -> CV 0.2.
+    t, times2 = 0.0, [0.0]
+    for i in range(20):
+        t += 0.4 if i % 2 == 0 else 0.6
+        times2.append(t)
+    s2 = gait.summarize(times2, [1.0 + 0.1 * (i % 2) for i in range(21)], window_s=60.0)
+    assert abs(s2["step_interval_cv"] - 0.2) < 0.005, s2["step_interval_cv"]
+
+    # Below the step floor -> no summary (shuffles are not a walk).
+    assert gait.summarize([0.0, 0.5, 1.0], [1.2] * 3, window_s=60.0, min_steps=10) is None
+    # Mismatched inputs / degenerate window -> None, never garbage.
+    assert gait.summarize(times, peaks[:-1], window_s=60.0) is None
+    assert gait.summarize(times, peaks, window_s=0.0) is None
+    print("ok  gait summarize cadence/CV")
+
+    # [claude] heartbeat carries the gait summary under "gait" (optional key).
+    hb = heartbeat_payload(band_id="band_unoq01", uptime_s=10, gait=s)
+    assert hb["gait"]["cadence_spm"] == 30.0
+    assert "gait" not in heartbeat_payload(band_id="band_unoq01", uptime_s=10)
+    print("ok  heartbeat gait passthrough")
+
     # ble parse unit (no adapter needed)
     from ble_scan import parse_ibeacon, median_rssi
 

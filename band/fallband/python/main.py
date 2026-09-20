@@ -29,6 +29,7 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
+import gait  # noqa: E402  # [claude] gait window math (pure, unit-tested)
 from ble_scan import scan_ibeacons_sync, wifi_scan_bssids  # noqa: E402
 from payloads import (  # noqa: E402
     BATTERY_PCT_PLACEHOLDER,
@@ -117,6 +118,12 @@ class FallbandAgent:
         self.last_room_ts: float = 0.0
         self.profile_rev = int((cfg.get("profile") or {}).get("rev") or 0)
         self.step_buf: list[dict[str, float]] = []
+        # [claude] gait: separate ~60s window (step_buf stays 30s for the
+        # heartbeat `activity` block). Raw steps stay on-device; only the
+        # summarized scores ride the next heartbeat via _pending_gait.
+        self.gait_buf: list[dict[str, float]] = []
+        self._pending_gait: dict[str, Any] | None = None
+        self._last_gait = time.time()
         self._last_hb = 0.0
         self._last_ble = 0.0
         self._last_wifi = 0.0
@@ -252,15 +259,50 @@ class FallbandAgent:
         self.uplink.post("/v1/ingest/band", body, critical=False)
 
     def on_step(self, peak_g, jerk, gyro_dps):
+        now = time.time()
         self.step_buf.append({
             "peak_g": float(peak_g),
             "jerk": float(jerk),
             "gyro_dps": float(gyro_dps),
-            "t": time.time(),
+            "t": now,
         })
         # Keep ~30 s window.
-        cutoff = time.time() - 30.0
+        cutoff = now - 30.0
         self.step_buf = [s for s in self.step_buf if s["t"] >= cutoff]
+        # [claude] gait window (default 60 s), pruned here and in gait_tick.
+        self.gait_buf.append({"t": now, "peak_g": float(peak_g)})
+        gait_cutoff = now - self._gait_window_s()
+        self.gait_buf = [s for s in self.gait_buf if s["t"] >= gait_cutoff]
+
+    # [claude] ---- gait -------------------------------------------------------
+
+    def _gait_window_s(self) -> float:
+        return float((self.cfg.get("gait") or {}).get("window_s", 60))
+
+    def gait_tick(self) -> None:
+        """Every ~window_s, summarize the step window into gait scores.
+
+        Only fires with >= min_steps steps in the window (a real walk, not a
+        couple of shuffles). The summary rides the next heartbeat as `gait`;
+        the raw per-step data never leaves the pendant.
+        """
+        gcfg = self.cfg.get("gait") or {}
+        window_s = self._gait_window_s()
+        now = time.time()
+        if now - self._last_gait < window_s:
+            return
+        self._last_gait = now
+        steps = [s for s in self.gait_buf if s["t"] >= now - window_s]
+        self.gait_buf = steps
+        summary = gait.summarize(
+            [s["t"] for s in steps],
+            [s["peak_g"] for s in steps],
+            window_s=window_s,
+            min_steps=int(gcfg.get("min_steps", 10)),
+        )
+        if summary is not None:
+            log.info("gait window: %s", summary)
+            self._pending_gait = summary
 
     # ---- config → MCU -------------------------------------------------------
 
@@ -365,12 +407,16 @@ class FallbandAgent:
                 "peak_g_p50": sorted(peaks)[len(peaks) // 2],
                 "peak_g_max": max(peaks),
             }
+        # [claude] gait summary (if a walk window completed) rides this
+        # heartbeat once, then is cleared — hub persists it as gait_summary.
+        gait_summary, self._pending_gait = self._pending_gait, None
         body = heartbeat_payload(
             band_id=self.band_id,
             uptime_s=int(now - self.t0),
             battery_pct=self.battery_pct,
             profile_rev=self.profile_rev,
             activity=activity,
+            gait=gait_summary,
         )
         resp = self.uplink.post("/v1/ingest/heartbeat", body, critical=False)
         self._signal_uplink()
@@ -454,6 +500,7 @@ class FallbandAgent:
 
     def tick(self) -> None:
         self.maybe_reload_config()
+        self.gait_tick()  # [claude] before heartbeat so a fresh window rides this beat
         self.heartbeat_tick()
         self.wifi_tick()
         self.ble_tick()

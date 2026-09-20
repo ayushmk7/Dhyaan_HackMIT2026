@@ -166,11 +166,30 @@ async def ingest_band_cancel(body: BandCancelIn):
 
 # --- /heartbeat ---------------------------------------------------------------
 
+class GaitSummaryIn(BaseModel):
+    """Per-window gait scores computed ON the pendant (band/fallband/python/gait.py).
+
+    Raw IMU never crosses the wire — this summary is all the hub ever sees.
+    Descriptive statistics over detected steps, not a trained model.
+    """
+    window_s: float = Field(gt=0, le=600)
+    steps: int = Field(ge=1, le=10_000)
+    cadence_spm: float = Field(ge=0, le=300)
+    step_interval_cv: float = Field(ge=0, le=10)
+    peak_g_cv: float = Field(ge=0, le=10)
+    peak_g_p50: float | None = Field(default=None, ge=0, le=20)
+    peak_g_max: float | None = Field(default=None, ge=0, le=20)
+
+
 class HeartbeatIn(BaseModel):
     simulated: bool = False
     band_id: str = Field(min_length=1)
     battery_pct: int = Field(ge=0, le=100)
     uptime_s: int | None = Field(default=None, ge=0)
+    # Optional gait window summary piggybacked on the heartbeat (no new route,
+    # no new trust boundary). Persisted below as a gait_summary event so the
+    # nightly baseline rollup can learn cadence.
+    gait: GaitSummaryIn | None = None
 
 
 @router.post("/heartbeat", status_code=204)
@@ -182,6 +201,19 @@ async def ingest_heartbeat(body: HeartbeatIn):
     )
     if prev is None:
         raise HTTPException(404, f"unknown band_id {body.band_id!r}")
+
+    if body.gait is not None:
+        g = body.gait
+        await emit(
+            resident_id=prev["resident_id"], source="band", type="gait_summary",
+            embedding_text=(
+                f"Band {body.band_id} gait: {g.cadence_spm:.0f} steps/min over "
+                f"{g.window_s:.0f}s ({g.steps} steps), stride-interval CV "
+                f"{g.step_interval_cv:.2f}, impact CV {g.peak_g_cv:.2f}"
+            )[:400],
+            source_id=body.band_id, confidence=1.0,
+            payload={**g.model_dump(), "simulated": body.simulated},
+        )
 
     if body.battery_pct < LOW_BATTERY_PCT:
         await emit(

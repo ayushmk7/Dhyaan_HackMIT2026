@@ -58,8 +58,14 @@ def heartbeat_payload(
     battery_pct: int = BATTERY_PCT_PLACEHOLDER,
     profile_rev: int = 0,
     activity: dict[str, Any] | None = None,
+    gait: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """POST /v1/ingest/heartbeat — matches fixtures/heartbeat.json (+ stretch fields)."""
+    """POST /v1/ingest/heartbeat — matches fixtures/heartbeat.json (+ stretch fields).
+
+    [claude] `gait` is the per-window summary from gait.summarize() (cadence,
+    interval CV, peak-g CV). Hub persists it as a gait_summary event; older
+    hubs simply drop the unknown key.
+    """
     body: dict[str, Any] = {
         "band_id": band_id,
         "battery_pct": int(battery_pct),
@@ -68,6 +74,8 @@ def heartbeat_payload(
     }
     if activity is not None:
         body["activity"] = activity
+    if gait is not None:
+        body["gait"] = gait
     return body
 
 

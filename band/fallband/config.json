@@ -42,7 +42,7 @@
     "worn_std_g": 0.01,
     "impact_g_floor": 2.5,
     "impact_g_ceil_margin": 0.3,
-    "steps_enabled": false,
+    "steps_enabled": true,
     "step_min_peak_g": 1.1,
     "step_min_interval_ms": 300,
     "step_rate_hz": [
@@ -50,6 +50,10 @@
       2.5
     ],
     "demo_chirp_impact_only": false
+  },
+  "gait": {
+    "window_s": 60,
+    "min_steps": 10
   },
   "calibration": {
     "f_min": 0.0,
