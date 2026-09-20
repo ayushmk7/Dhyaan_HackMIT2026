@@ -14,7 +14,7 @@ import { api } from '@/lib/api';
 import { useHydrateResident } from '@/lib/hooks';
 import { queryClient } from '@/lib/queryClient';
 import { useLive } from '@/store/live';
-import { useTheme } from '@/theme';
+import { ThemeProvider, themes } from '@/theme';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -56,6 +56,16 @@ function SessionHydrator() {
   return null;
 }
 
+// The app is light-only. `app.json`'s `userInterfaceStyle: "light"` tells iOS,
+// and this forces it everywhere else — Android and web still report the system
+// scheme through `useColorScheme()` regardless of that setting, which is how a
+// navy Slab and a near-black ground reached the home screen on a phone set to
+// dark. The dark palette is still built and still passes its contrast checks;
+// re-enabling it is this wrapper plus one word in app.json.
+function LightOnly({ children }: { children: React.ReactNode }) {
+  return <ThemeProvider scheme="light">{children}</ThemeProvider>;
+}
+
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     // 300 Light carries all body copy, 900 Black the one hero sentence per
@@ -64,9 +74,10 @@ export default function RootLayout() {
     Fraunces_700Bold, Fraunces_900Black,
   });
   const connect = useLive((s) => s.connect);
-  // Resolved for the current colour scheme; called before the fonts early
-  // return so the hook order never changes.
-  const t = useTheme();
+  // Read directly rather than through `useTheme()`: RootLayout renders the
+  // provider, so a hook here would resolve ABOVE it and report the system
+  // scheme, which is exactly the bug being fixed.
+  const t = themes.light;
 
   useEffect(() => { connect(); }, [connect]);
 
@@ -105,10 +116,10 @@ export default function RootLayout() {
   if (!fontsLoaded) return null;
 
   return (
+    <LightOnly>
     <QueryClientProvider client={queryClient}>
-      {/* Follows the scheme the theme resolved, so a forced <ThemeProvider>
-          is honoured too: light glyphs on the night ground, dark on paper. */}
-      <StatusBar style={t.isDark ? 'light' : 'dark'} />
+      {/* Dark glyphs, because the ground is always paper now. */}
+      <StatusBar style="dark" />
       <AlertWatcher />
       <SessionHydrator />
       <Stack
@@ -123,5 +134,6 @@ export default function RootLayout() {
         />
       </Stack>
     </QueryClientProvider>
+    </LightOnly>
   );
 }
