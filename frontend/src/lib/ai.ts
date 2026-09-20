@@ -7,7 +7,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ANTHROPIC_KEY, OPENAI_KEY, OPENAI_MODEL } from './config';
 
-export const hasAI = OPENAI_KEY.length > 0 || ANTHROPIC_KEY.length > 0;
+// Defensive on purpose. `process.env.EXPO_PUBLIC_*` is inlined by Metro at
+// bundle time, and a variable that is absent from .env does not always arrive
+// as the empty string the `?? ''` in config.ts expects. Reading `.length` off
+// it threw at MODULE scope, which takes the whole screen down before anything
+// renders rather than degrading to "no AI configured".
+export const hasAI = !!OPENAI_KEY || !!ANTHROPIC_KEY;
 
 const anthropic = ANTHROPIC_KEY
   ? new Anthropic({ apiKey: ANTHROPIC_KEY, dangerouslyAllowBrowser: true })

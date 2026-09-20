@@ -9,7 +9,7 @@
 // screen. Where the real backend still has no equivalent endpoint at all,
 // the function says so and throws or degrades instead of faking data.
 import { draftOpeners, planFromThread as aiPlanFromThread, polishLetter, type FamilyPlan } from './ai';
-import { API_BASE, API_KEY } from './config';
+import { API_BASE } from './config';
 import { family } from './copy/family';
 import { scrubRooms } from './format';
 import { useSession } from '@/store/session';
@@ -52,7 +52,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         'Content-Type': 'application/json',
         // The deployed backend generation may still check this shared key; the
         // no-auth HEAD backend ignores it. Unconditional, so either answers.
-        Authorization: `Bearer ${API_KEY}`,
         ...init?.headers,
       },
     });

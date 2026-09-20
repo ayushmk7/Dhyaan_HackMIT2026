@@ -37,16 +37,15 @@ export const API_BASE =
   process.env.EXPO_PUBLIC_API_BASE
   ?? (devHost() ? `http://${devHost()}:8000/v1` : 'http://localhost:8000/v1');
 
-// The HEAD backend has no authentication, but the backend PROCESS serving the
-// demo predates that change and still 401s any request without this shared
-// key (and closes a websocket without the token param). Sending both is
-// harmless against a no-auth server — an unused header and an unused query
-// param — and required against the one that is actually running, so the app
-// sends them unconditionally rather than betting the demo on which build is
-// behind port 8000.
-export const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? 'dev-key-change-me';
+// No key, no token. The backend has no authentication at all: see the notice at
+// the top of backend/app/main.py. This briefly carried a bearer token again,
+// on the grounds that the process behind port 8000 predated the no-auth change
+// and still 401d. That is no longer true, verified against the running server:
+// every route answers 200 with no headers and the socket takes no token.
+// Shipping a credential nothing checks is worse than shipping none, because
+// the next reader assumes something is being authenticated.
 const wsBase = API_BASE.replace(/^http/, 'ws'); // http->ws, https->wss
-export const WS_URL = `${wsBase}/live?token=${encodeURIComponent(API_KEY)}`;
+export const WS_URL = `${wsBase}/live`;
 
 // Client-side Claude key for the connection layer (demo only — see src/lib/ai.ts).
 export const ANTHROPIC_KEY = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '';
