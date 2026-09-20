@@ -8,7 +8,7 @@ import time
 from typing import Literal
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from . import OLLAMA_HOST, VLM_MODEL
 
@@ -50,7 +50,20 @@ PROMPT = """You are looking at {n} still frames from one fixed camera in the {zo
 Report only what is visible in these frames. Do not describe clothing, body, hair, race, age, or health. Do not guess what anyone is thinking or saying. If two or more people are visible, set person_count and use activity "with_visitor", and describe nothing about the other person.
 Choose the single activity that best describes what {name} is doing across the frames. If the frames do not support one, use "unclear" with confidence below 0.4.
 Set food_visible true if any food or drink is visible anywhere in the frames, including food held in a hand, a wrapper, a piece of fruit, a snack or a takeaway container - not only food on a plate or in a cup.
-"evidence" is one short clause, under 70 characters, naming only objects and actions."""
+"evidence" is one short clause, under 70 characters, naming only objects and actions.
+Reply with a single JSON object and nothing else - no prose, no code fence. Use exactly these keys and only these values:
+  activity: one of {activities}
+  person_count: integer 0-6
+  posture: one of upright, seated, reclined, on_floor, unclear      (seated, NOT "sitting")
+  movement: one of stationary, slow, normal, unsteady, unclear      (stationary, NOT "still")
+  spot: one of table, armchair, sofa, doorway, counter, window, floor, other, unclear
+  assistive_device: one of none, cane, walker, wheelchair, unclear
+  plate_or_cup_present: true or false
+  food_visible: true or false
+  hand_to_mouth_observed: true or false
+  changed_between_frames: true or false                             (a boolean, NOT a sentence)
+  confidence: number between 0 and 1
+  evidence: string under 70 characters"""
 
 
 def build_prompt(cfg, n, span_s, times_local):
@@ -64,6 +77,7 @@ def build_prompt(cfg, n, span_s, times_local):
     appearance = (cfg.get("appearance") or "").strip()
     spots = (cfg.get("spots_line") or "").strip()
     return PROMPT.format(
+        activities=", ".join(ACTIVITIES),
         n=n,
         zone_label=cfg.get("zone_label") or cfg.get("zone") or "main room",
         name=name,
@@ -75,46 +89,69 @@ def build_prompt(cfg, n, span_s, times_local):
     )
 
 
+def _post(images_b64, prompt, model, host, timeout, use_schema):
+    body = {
+        "model": model,
+        "stream": False,
+        "keep_alive": -1,          # the model stays resident; a cold load is ~10 s
+        # qwen3-vl is a thinking model and MUST be told not to. Measured on this
+        # machine: think off = 2.5-4.5 s, think on = 24 s and the JSON never
+        # arrives (the chain of thought eats num_predict).
+        "think": False,
+        "options": {"temperature": 0, "num_predict": 150},
+        "messages": [{"role": "user", "content": prompt, "images": list(images_b64)}],
+    }
+    if use_schema:
+        body["format"] = Observation.model_json_schema()
+    r = httpx.post(f"{host}/api/chat", json=body, timeout=timeout)
+    r.raise_for_status()
+    msg = r.json()["message"]
+    # ponytail: with think=False, some Ollama builds put the JSON in `thinking`
+    # and leave `content` empty. Read both rather than picking one.
+    return msg.get("content") or msg.get("thinking") or ""
+
+
 def call(images_b64, prompt, model=VLM_MODEL, host=OLLAMA_HOST, timeout=60.0):
     """One /api/chat call. Returns (observation_dict, latency_ms).
 
-    Raises on transport error or a response that does not satisfy the schema —
-    the caller drops the batch and counts it. A half-understood observation is
-    worse than none.
+    Fast path first, schema second. Measured on this machine, same frame and
+    model, warm:
+
+        long prompt + schema   1.54 s      <- what this used to always do
+        long prompt, no schema 0.14 s
+
+    Ollama's structured-output constraint costs about 1.4 s per call, and that
+    was ~90 % of the latency of this whole lane. Prompt length turned out to be
+    irrelevant (931 chars bought nothing), so shortening the conditioning would
+    have been the wrong fix.
+
+    The schema is not decoration though: it is the only reason the JSON is
+    always valid, and dropping it outright is what truncated answers mid-field
+    earlier. So: ask for JSON in the prompt, validate with Pydantic, and pay for
+    the constrained decode only on the rare reply that does not parse. Fast
+    normally, correct always.
+
+    Raises if even the constrained retry fails — the caller drops the batch and
+    counts it. A half-understood observation is worse than none.
     """
     t0 = time.monotonic()
-    r = httpx.post(
-        f"{host}/api/chat",
-        json={
-            "model": model,
-            "stream": False,
-            "keep_alive": -1,          # the 6 GB stays resident; a cold load is ~10 s
-            # qwen3-vl is a thinking model and MUST be told not to. Measured on
-            # this machine, 3 frames + this schema: think off = 2.5-4.5 s, think
-            # on = 24 s and the JSON never arrives (the chain of thought eats
-            # num_predict). 24 s is not a presence layer.
-            "think": False,
-            # 120 truncated the JSON mid-`evidence` once food_visible was added — the
-            # schema is a hard constraint, so a tight budget does not shorten the
-            # answer, it invalidates it. 200 fits all 11 fields with slack.
-            "options": {"temperature": 0, "num_predict": 150},
-            "format": Observation.model_json_schema(),
-            "messages": [{"role": "user", "content": prompt, "images": list(images_b64)}],
-        },
-        timeout=timeout,
-    )
-    r.raise_for_status()
-    latency_ms = int((time.monotonic() - t0) * 1000)
-    msg = r.json()["message"]
-    # ponytail: with think=False, Ollama 0.32.9 + qwen3-vl:8b puts the
-    # schema-constrained JSON in `thinking` and leaves `content` empty. It is
-    # their bug, the output is valid either way, and `format` guarantees the
-    # shape whichever field it lands in. Ceiling: an Ollama release that fixes
-    # the routing changes which field is populated, not what is in it — which is
-    # why this reads both instead of picking one. Upgrade: drop the fallback
-    # once `ollama --version` is past the fix.
-    raw = msg.get("content") or msg.get("thinking") or ""
-    return Observation.model_validate_json(raw).model_dump(), latency_ms
+    raw = _post(images_b64, prompt, model, host, timeout, use_schema=False)
+    try:
+        obs = Observation.model_validate_json(_strip_fence(raw))
+    except ValidationError:
+        raw = _post(images_b64, prompt, model, host, timeout, use_schema=True)
+        obs = Observation.model_validate_json(raw)
+    return obs.model_dump(), int((time.monotonic() - t0) * 1000)
+
+
+def _strip_fence(raw):
+    """Unconstrained replies often arrive as ```json ... ``` or with prose
+    around the object. Take the outermost braces."""
+    t = raw.strip()
+    if "```" in t:
+        t = t.split("```")[1].removeprefix("json").strip()
+    i, j = t.find("{"), t.rfind("}")
+    return t[i:j + 1] if i != -1 and j > i else t
 
 
 def post_rules(obs):

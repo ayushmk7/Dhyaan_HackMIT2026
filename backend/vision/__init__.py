@@ -64,10 +64,13 @@ DEMO = dict(min_gap_s=6, on_dwell_s=15, max_batch_wait_s=15, absent_after_s=12)
 FRAME_W, FRAME_H = 448, 252   # nothing larger is ever kept
 JPEG_QUALITY = 70             # ~18 KB/frame to Ollama
 
-# Measured on this machine against a live webcam frame, same prompt and
-# num_predict: 8b warm 7.3 s, 4b warm 1.7 s - about 4x, with no loss of
-# description quality on a person-at-a-table scene. The plan called 4b the
-# fallback; the measurement made it the default. Override with VLM_MODEL.
+# Measured on this machine, same live frame, same prompt, warm:
+#   qwen3-vl:8b   7.3 s
+#   qwen3-vl:4b   1.95 s   (spends tokens on a <think> preamble)
+#   qwen2.5vl:3b  0.69 s   <- shipped
+#   moondream     returned nothing usable on this schema
+# 2.5vl:3b answers in clean JSON with no thinking tax and got the same scene
+# right (person_count 1, sitting). Override with VLM_MODEL.
 import os
-VLM_MODEL = os.getenv("VLM_MODEL", "qwen3-vl:4b")
+VLM_MODEL = os.getenv("VLM_MODEL", "qwen2.5vl:3b")
 OLLAMA_HOST = "http://localhost:11434"
