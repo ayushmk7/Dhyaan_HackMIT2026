@@ -3,7 +3,9 @@
 import { create } from 'zustand';
 import { USE_MOCKS, WS_URL } from '@/lib/config';
 import { dhyaan } from '@/lib/mock/dhyaan';
-import type { Alert, LadderStep, ResidentLocation, TranscriptLine, WsEnvelope } from '@/lib/types';
+import type {
+  Alert, LadderStep, Presence, ResidentLocation, TranscriptLine, WsEnvelope,
+} from '@/lib/types';
 import type { ResidentState } from '@/theme/tokens';
 
 type DwellWarning = { zone: string; dwell_s: number; escalating: boolean };
@@ -12,6 +14,9 @@ type LiveState = {
   status: 'connecting' | 'open' | 'closed';
   states: Record<string, ResidentState>;
   locations: Record<string, ResidentLocation>;
+  // VLM_PLAN §6.1: pushed after every observation and heartbeat state change.
+  // Today reads this first and falls back to the 15 s GET /presence refetch.
+  presence: Record<string, Presence>;
   dwellWarnings: Record<string, DwellWarning>;
   activeAlert: Alert | null;
   ladder: LadderStep[];
@@ -27,6 +32,7 @@ export const useLive = create<LiveState>((set, get) => ({
   status: 'closed',
   states: {},
   locations: {},
+  presence: {},
   dwellWarnings: {},
   activeAlert: null,
   ladder: [],
@@ -87,6 +93,9 @@ export const useLive = create<LiveState>((set, get) => ({
         set((s) => ({
           activeAlert: s.activeAlert && s.activeAlert.id === m.alert_id ? null : s.activeAlert,
         }));
+        break;
+      case 'presence.update':
+        set((s) => ({ presence: { ...s.presence, [m.resident_id]: m.presence } }));
         break;
       case 'location.changed':
         set((s) => ({ locations: { ...s.locations, [m.resident_id]: m.location } }));

@@ -4,16 +4,21 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import db
-from .routers import chat, ingest, live, residents, setup
+from .routers import camera, chat, ingest, live, residents, setup
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.connect()
     from .alerts import start_timers, stop_timers
+    from .presence import start_sweeper, stop_sweeper
 
     start_timers()
+    # Closes camera episodes nobody has sent an observation for in a while —
+    # she stops eating without anyone telling us she stopped (VLM_PLAN §3.6).
+    start_sweeper()
     yield
+    stop_sweeper()
     stop_timers()
     await db.close()
 
@@ -34,6 +39,9 @@ app.include_router(residents.router)
 app.include_router(setup.router)
 app.include_router(chat.router)
 app.include_router(live.router)
+app.include_router(camera.device)
+app.include_router(camera.family)
+app.include_router(camera.public)
 
 
 @app.get("/health")

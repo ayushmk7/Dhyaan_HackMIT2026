@@ -32,9 +32,40 @@ RESIDENT = {
     "phone_e164": "+15551230000",
     "consent_camera": 1,
     "consent_voice": 1,
-    "consent_signed_by": "Priya (daughter)",
+    "consent_memory": 1,
+    "consent_signed_by": "Priya Sharma",
+    "consent_relationship": "daughter",
+    "consent_signed_at": "2026-09-19T15:02:11-04:00",
+    "appearance": "short grey hair, glasses, usually a blue cardigan",
     "prior_profile": "independent_senior",
 }
+
+CAMERA = {
+    "_id": "cam_mac_01", "resident_id": "res_eleanor",
+    "zone": "living_room",
+    "zone_hint": ("Living room. The dining table is on the left, her armchair by the "
+                  "window on the right."),
+    "state": "offline", "paused_until": None, "paused_by": None,
+    "fps": 0.0, "dropped_batches": 0, "presence": {},
+}
+
+# VLM_PLAN §4.2: what the family told us at onboarding. These are the `told`
+# half of the three-source retrieval pool — without them the chat has nothing to
+# contrast an observation against and every answer is just "Dhyaan saw ...".
+FACTS = [
+    ("wake", "Eleanor is usually up around 6:30."),
+    ("breakfast", "Eleanor usually has toast and tea for breakfast at about 8."),
+    ("lunch", "Lunch is usually soup and bread around 12:30."),
+    ("dinner", "Dinner is early, usually around 5:30, and she cooks it herself."),
+    ("walk", "She walks to the shops around 10 most mornings."),
+    ("mobility", "Uses a cane outdoors, steady indoors."),
+    ("afternoon", "She spends her afternoons in the armchair by the window, reading."),
+    ("evening", "She watches television in the evening, usually until about 9."),
+    ("visitors", "Her neighbour Cheryl comes on Tuesdays, usually for an hour."),
+    ("appearance", "Short grey hair, glasses, usually a blue cardigan."),
+    ("private", "Never note bathroom trips."),
+    ("nights", "She sleeps lightly and is often up once in the night."),
+]
 
 CONTACTS = [
     {"_id": "con_priya", "resident_id": "res_eleanor", "name": "Priya",
@@ -100,13 +131,23 @@ async def main(wipe: bool, days: int):
     d = await dbmod.connect()
     if wipe:
         for c in ("events", "alerts", "residents", "contacts", "bands",
-                  "baselines", "baseline_observations", "fingerprints", "calls"):
+                  "baselines", "baseline_observations", "fingerprints", "calls",
+                  "profile_facts", "cameras", "observations"):
             await d[c].delete_many({})
 
     await d.residents.replace_one({"_id": RESIDENT["_id"]}, RESIDENT, upsert=True)
     for c in CONTACTS:
         await d.contacts.replace_one({"_id": c["_id"]}, c, upsert=True)
     await d.bands.replace_one({"_id": BAND["_id"]}, BAND, upsert=True)
+    await d.cameras.replace_one({"_id": CAMERA["_id"]}, CAMERA, upsert=True)
+
+    # Facts are embedded synchronously (there are twelve of them, once), so the
+    # chat has `told` content to retrieve the moment `make seed` finishes.
+    from app import memory
+
+    await d.profile_facts.delete_many({"resident_id": "res_eleanor"})
+    await memory.add_facts("res_eleanor", [{"key": k, "text": t} for k, t in FACTS],
+                           "Priya Sharma")
 
     today = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
     for i in range(days, 0, -1):
@@ -133,12 +174,14 @@ async def main(wipe: bool, days: int):
     # unembedded — so wait for them here.
     await rag.drain_embeddings()
 
+    nf = await d.profile_facts.count_documents({"resident_id": "res_eleanor", "active": True})
     n = await d.events.count_documents({})
     nb = await d.baselines.count_documents({})
     nsum = await d.events.count_documents({"type": "daily_summary"})
     ndev = await d.events.count_documents({"type": "baseline_deviation"})
     print(f"seeded {n} events over {days + 1} days for Eleanor")
     print(f"  {nb} baselines learned, {nsum} daily narratives, {ndev} deviations flagged")
+    print(f"  {nf} onboarding facts, camera {CAMERA['_id']} in the {CAMERA['zone']}")
     print("today is deliberately anomalous: no walk, no lunch — the learner should flag it")
     await dbmod.close()
 

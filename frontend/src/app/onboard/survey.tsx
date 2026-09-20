@@ -17,7 +17,7 @@ type RoomState =
 const SURVEY_S = 30;
 
 export default function Survey() {
-  const { residentName } = useSession();
+  const { residentName, grants } = useSession();
   const [rooms, setRooms] = useState<Record<string, RoomState>>(
     Object.fromEntries(homeZones.map((z) => [z.id, { kind: 'idle' }])),
   );
@@ -96,7 +96,7 @@ export default function Survey() {
         <Btn
           label={doneCount >= 3 ? 'Continue' : `Map ${3 - doneCount} more room${3 - doneCount === 1 ? '' : 's'}`}
           disabled={doneCount < 3}
-          onPress={() => router.push('/onboard/contacts')}
+          onPress={() => router.push(grants.camera ? '/onboard/camera' : '/onboard/contacts')}
         />
       </View>
     </Screen>

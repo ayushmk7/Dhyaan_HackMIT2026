@@ -4,7 +4,7 @@ every alert state change to connected clients. TECHNICAL_PRD §10.3/§10.5.
 # ponytail: no message coalescing (the PRD flags `location.changed` as the
 # highest-volume type and suggests throttling to 1/resident/10s). Not needed
 # until the demo machine actually struggles — add a per-resident debounce in
-# `_broadcast` if it does.
+# `broadcast` if it does.
 """
 
 import asyncio
@@ -47,7 +47,8 @@ async def _send(ws: WebSocket, msg: dict) -> None:
                 await ws.close()
 
 
-async def _broadcast(msg: dict, resident_id: str | None) -> None:
+async def broadcast(msg: dict, resident_id: str | None) -> None:
+    """Public since the camera lane pushes `presence.update` too."""
     for ws, info in list(_connections.items()):
         if resident_id and info["resident_id"] and info["resident_id"] != resident_id:
             continue
@@ -58,13 +59,13 @@ async def _broadcast(msg: dict, resident_id: str | None) -> None:
 async def _on_event(doc: dict) -> None:
     """Registered once at import time. Fired by `events.emit()` after every
     write — this is the entire "push every new event" requirement."""
-    await _broadcast({"t": "event.new", "event": _ser(doc)}, doc.get("resident_id"))
+    await broadcast({"t": "event.new", "event": _ser(doc)}, doc.get("resident_id"))
 
 
 async def broadcast_alert(alert: dict) -> None:
     """Called by residents.py after ack/resolve — state transitions the ladder
     itself doesn't necessarily emit as an Event."""
-    await _broadcast({"t": "alert.update", "alert": _ser(alert)}, alert.get("resident_id"))
+    await broadcast({"t": "alert.update", "alert": _ser(alert)}, alert.get("resident_id"))
 
 
 @router.websocket("/live")

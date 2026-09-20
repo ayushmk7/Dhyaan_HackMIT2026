@@ -1,24 +1,23 @@
-// Home: one calm sentence about Eleanor, then cards — never a column of prose.
+// Today. A person card, then cards — never a column of prose. The status line
+// is the server's presence sentence, which is room-free by design: a per-room
+// breakdown is whereabouts, and whereabouts never reach a family screen
+// (VLM_PLAN §1/§5.2, D-001). That is also why there is no room-time bar here.
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Linking, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Card, ErrorState, Hairline, LoadingState, RoomTimeBar, Row, SectionTitle, StatTile, Txt } from '@/components';
+import { Card, ErrorState, Hairline, KindTag, LoadingState, Row, SectionTitle, StatTile, Txt } from '@/components';
 import { Avatar } from '@/components/avatar';
 import { Entrance } from '@/components/entrance';
 import { Icon, IconBadge } from '@/components/icon';
-import { useLatestMessage, useLocationHistory, useResident, useTalkAbout, useTimeline } from '@/lib/hooks';
-import { ago, dayOf, eventTitle, mins, timeOf, zoneLabel } from '@/lib/format';
+import { useActivity, useLatestMessage, usePresence, useTalkAbout } from '@/lib/hooks';
+import { ago, timeOf } from '@/lib/format';
+import type { Presence } from '@/lib/types';
 import { useCareFile } from '@/store/carefile';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
-import { palette, sp, stateColor, type, type ResidentState } from '@/theme/tokens';
-
-const RES = 'res_eleanor';
-
-const localDayKey = (d = new Date()) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+import { palette, sp, type } from '@/theme/tokens';
 
 const openerSymbol = (text: string): string => {
   const t = text.toLowerCase();
@@ -27,6 +26,29 @@ const openerSymbol = (text: string): string => {
   if (t.includes('sleep') || t.includes('night')) return 'moon.zzz';
   return 'bubble.left';
 };
+
+/** What the camera is doing — never where she is. */
+function subline(p: Presence | undefined): string {
+  if (!p) return ' ';
+  if (p.status === 'no_camera') return 'No camera set up yet';
+  if (!p.camera.consent) return 'Camera off · falls still watched';
+  if (p.status === 'paused') {
+    const until = p.camera.paused_until ? ` until ${timeOf(p.camera.paused_until)}` : '';
+    return `She paused the camera${until}`;
+  }
+  if (!p.camera.online) return 'Camera not running';
+  if (!p.last_observation_at) return 'Camera on';
+  return `Camera on · noticed ${ago(p.last_observation_at)}`;
+}
+
+/** When the server has no sentence yet, the card says so plainly. */
+function statusLine(p: Presence | undefined, name: string): string {
+  if (p?.sentence.trim()) return p.sentence;
+  if (!p || p.status === 'no_camera') return 'Nothing yet today';
+  if (!p.camera.consent) return 'The camera is off';
+  if (p.status === 'paused') return `${name} paused the camera`;
+  return 'Nothing yet today';
+}
 
 // Small tonal pill for in-card actions ("Reply by text") — bare text links read
 // as a webpage; tonal pills read as iOS.
@@ -59,7 +81,7 @@ function LinkRow({ icon, color, title, subtitle, onPress }: {
         <IconBadge name={icon} color={color} size={30} />
         <View style={{ flex: 1 }}>
           <Txt kind="caption" tone="muted">{title}</Txt>
-          <Txt kind="label" style={{ marginTop: 1 }} numberOfLines={1}>{subtitle}</Txt>
+          <Txt kind="label" style={{ marginTop: 1 }} numberOfLines={2}>{subtitle}</Txt>
         </View>
         <Icon name="chevron.right" size={13} color="#C4BCAD" />
       </Row>
@@ -67,25 +89,19 @@ function LinkRow({ icon, color, title, subtitle, onPress }: {
   );
 }
 
-export default function Home() {
+export default function Today() {
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
-  const { residentName } = useSession();
-  const { data: resident, isLoading: residentLoading, isError: residentError, refetch: refetchResident } = useResident(RES);
-  const { data: events, isError: eventsError, refetch: refetchEvents } = useTimeline(RES);
+  const { residentId, residentName } = useSession();
+  const livePresence = useLive((s) => s.presence[residentId]);
+  const { data: fetched, isLoading, isError, refetch } = usePresence(residentId);
+  const { data: activity, isError: activityError, refetch: refetchActivity } = useActivity(residentId);
   const { data: prompts } = useTalkAbout();
   const { data: herMessage } = useLatestMessage();
   const nextAppt = useCareFile((s) => s.appointments[0]);
-  const todayKey = localDayKey();
-  const { data: segments } = useLocationHistory(RES, todayKey);
-  const live = useLive();
 
-  // Dwell time ticks every 30 s; Date.now() in render is off-limits under the compiler.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 30_000);
-    return () => clearInterval(t);
-  }, []);
+  // The websocket is the fast path; the 15 s refetch is the belt under it.
+  const presence = livePresence ?? fetched;
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -94,34 +110,28 @@ export default function Home() {
     setRefreshing(false);
   }, [qc]);
 
-  const state: ResidentState = live.states[RES] ?? resident?.state ?? 'learning';
-  const location = live.locations[RES] ?? resident?.location ?? null;
-  const dwellS = location ? (now - new Date(location.since).getTime()) / 1000 : 0;
-
-  const todays = (events ?? []).filter((e) => dayOf(e.ts) === 'Today');
-  const meals = todays.filter((e) => e.type === 'meal_observed').length;
-  const walks = todays.filter((e) => e.type === 'walk_completed').length;
-  const upAtNight = todays.find((e) => e.type === 'night_activity');
-  const wentOut = todays.some((e) => e.zone === 'outside');
-
-  // Nothing to show at all yet — don't render a headline built on guesses.
-  if (residentLoading && !resident) {
+  if (isLoading && !presence) {
     return (
       <View style={{ flex: 1, backgroundColor: palette.paper, paddingTop: insets.top + sp(6) }}>
-        <LoadingState label={`Loading ${residentName}’s day…`} />
+        <LoadingState label={`Checking on ${residentName}…`} />
       </View>
     );
   }
-  if (residentError && !resident) {
+  if (isError && !presence) {
     return (
       <View style={{ flex: 1, backgroundColor: palette.paper, paddingTop: insets.top + sp(6), paddingHorizontal: sp(5) }}>
         <ErrorState
-          message={`Couldn’t reach Dhyaan to load ${residentName}’s day.`}
-          onRetry={refetchResident}
+          message={`Couldn’t reach Dhyaan to check on ${residentName}.`}
+          onRetry={refetch}
         />
       </View>
     );
   }
+
+  const tiles = activity?.tiles;
+  const latest = activity?.items?.[0];
+  const watching = !!presence && presence.status !== 'no_camera' && presence.camera.consent
+    && presence.camera.online && presence.status !== 'paused';
 
   return (
     <View style={{ flex: 1, backgroundColor: palette.paper }}>
@@ -139,25 +149,27 @@ export default function Home() {
       >
         <Entrance index={0}>
           <Card style={{ paddingVertical: sp(3.5) }}>
-            <Row gap={3}>
+            <Row gap={3} style={{ alignItems: 'flex-start' }}>
               <Avatar name={residentName} size={54} />
               <View style={{ flex: 1 }}>
                 <Txt kind="heading" numberOfLines={1}>{residentName}</Txt>
-                <Row gap={1.5} style={{ marginTop: 3 }}>
+                <Row gap={1.5} style={{ marginTop: 3, alignItems: 'flex-start' }}>
                   <View style={{
-                    width: 8, height: 8, borderRadius: 4,
-                    backgroundColor: stateColor[state].fg,
+                    width: 8, height: 8, borderRadius: 4, marginTop: 6,
+                    backgroundColor: watching ? palette.moss : '#A9A192',
                   }} />
-                  <Txt kind="label" numberOfLines={1}>
-                    {location ? `${zoneLabel(location.zone)} · ${mins(dwellS)}` : stateColor[state].word}
+                  <Txt kind="label" style={{ flex: 1 }} numberOfLines={2}>
+                    {statusLine(presence, residentName)}
                   </Txt>
                 </Row>
                 <Txt kind="caption" tone="muted" style={{ marginTop: 2 }} numberOfLines={1}>
-                  {resident
-                    ? `Band ${resident.last_seen ? ago(resident.last_seen) : 'off'}` +
-                      (resident.band_battery_pct != null ? ` · ${resident.band_battery_pct}%` : '')
-                    : ' '}
+                  {subline(presence)}
                 </Txt>
+                {presence?.spot_is_usual && presence.status === 'in_view' && (
+                  <View style={{ marginTop: sp(2) }}>
+                    <KindTag kind="observed" detail="her usual spot" />
+                  </View>
+                )}
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -176,7 +188,7 @@ export default function Home() {
         </Entrance>
 
         {herMessage && (
-          <Entrance index={2}>
+          <Entrance index={1}>
             <Card style={{ marginTop: sp(3) }}>
               <Row gap={2.5}>
                 <Avatar name={residentName} size={30} />
@@ -201,39 +213,39 @@ export default function Home() {
         )}
 
         <SectionTitle>Today</SectionTitle>
-        {eventsError && (
-          <Pressable onPress={() => refetchEvents()} style={{ marginBottom: sp(2) }}>
+        {activityError && (
+          <Pressable onPress={() => refetchActivity()} style={{ marginBottom: sp(2) }}>
             <Txt kind="caption" tone="warn">
-              Couldn’t load today’s activity — tap to try again.
+              Couldn’t load today. Tap to try again.
             </Txt>
           </Pressable>
         )}
         <Row gap={2.5} style={{ alignItems: 'stretch' }}>
           <StatTile
             icon="fork.knife"
-            state={meals >= 3 ? 'ok' : meals > 0 ? 'warn' : 'unknown'}
-            value={`${meals} of 3`}
-            label="meals"
+            state={tiles && tiles.meals > 0 ? 'ok' : 'unknown'}
+            value={tiles ? `${tiles.meals}` : '–'}
+            label={tiles?.meals === 1 ? 'meal so far' : 'meals so far'}
           />
           <StatTile
             icon="figure.walk"
-            state={walks >= 2 ? 'ok' : walks === 1 ? 'warn' : 'unknown'}
-            value={`${walks}`}
-            label={walks === 1 ? 'walk so far' : 'walks so far'}
+            state={tiles && tiles.in_view_minutes > 0 ? 'ok' : 'unknown'}
+            value={tiles ? `${tiles.in_view_minutes}m` : '–'}
+            label="up and about"
           />
         </Row>
         <Row gap={2.5} style={{ marginTop: sp(2.5), alignItems: 'stretch' }}>
           <StatTile
             icon="moon.zzz.fill"
-            state={upAtNight ? 'warn' : 'ok'}
-            value={upAtNight ? 'Up 1×' : 'Slept'}
+            state={tiles && tiles.night_ups > 0 ? 'warn' : 'ok'}
+            value={tiles == null ? '–' : tiles.night_ups > 0 ? `Up ${tiles.night_ups}×` : 'Slept'}
             label="overnight"
           />
           <StatTile
             icon="figure.walk.motion"
-            state={wentOut ? 'ok' : 'unknown'}
-            value={wentOut ? 'Out' : 'Home'}
-            label={wentOut ? 'went outside' : 'so far today'}
+            state={tiles && tiles.out_of_house > 0 ? 'ok' : 'unknown'}
+            value={tiles && tiles.out_of_house > 0 ? `${tiles.out_of_house}×` : 'Home'}
+            label={tiles && tiles.out_of_house > 0 ? 'went out' : 'so far today'}
           />
         </Row>
 
@@ -254,13 +266,18 @@ export default function Home() {
           </>
         )}
 
-        <SectionTitle>Where her day went</SectionTitle>
-        <Card>
-          <RoomTimeBar segments={segments ?? []} />
-        </Card>
-
-        {(nextAppt || events?.[0]) && (
-          <Card style={{ marginTop: sp(3), paddingVertical: sp(1) }}>
+        {(nextAppt || latest) && (
+          <Card style={{ marginTop: sp(5), paddingVertical: sp(1) }}>
+            {latest && (
+              <LinkRow
+                icon="clock"
+                color={palette.slate}
+                title={`Last noticed · ${timeOf(latest.ts)}`}
+                subtitle={latest.sentence}
+                onPress={() => router.push('/(family)/timeline')}
+              />
+            )}
+            {nextAppt && latest && <Hairline />}
             {nextAppt && (
               <LinkRow
                 icon="calendar"
@@ -268,16 +285,6 @@ export default function Home() {
                 title="Coming up"
                 subtitle={`${nextAppt.title} · ${nextAppt.when}`}
                 onPress={() => router.push('/(family)/settings/carefile')}
-              />
-            )}
-            {nextAppt && events?.[0] && <Hairline />}
-            {events?.[0] && (
-              <LinkRow
-                icon="clock"
-                color={palette.slate}
-                title="Last noticed"
-                subtitle={`${eventTitle(events[0].type)} · ${timeOf(events[0].ts)}`}
-                onPress={() => router.push('/(family)/timeline')}
               />
             )}
           </Card>

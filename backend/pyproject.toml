@@ -13,10 +13,20 @@ dependencies = [
     "anthropic>=0.40",
 ]
 
+[project.optional-dependencies]
+# ponytail: the camera lane's deps live behind an extra so `uv pip install -e .`
+# stays a 10 s install for anyone who is not touching vision. ultralytics drags
+# torch (~1 GB of wheels). Ceiling: torch is CPU/MPS only here; upgrade is nothing
+# — a Mac is the target. Install with: uv pip install -e ".[vision]"
+vision = [
+    "opencv-python>=4.10",
+    "ultralytics>=8.3",
+]
+
 [tool.setuptools]
 # Flat layout: without this, setuptools autodiscovery sees fixtures/ as a
 # second top-level package and refuses to build.
-packages = ["app", "app.routers", "scripts"]
+packages = ["app", "app.routers", "scripts", "vision"]
 
 [dependency-groups]
 dev = ["pytest>=8.3", "pytest-asyncio>=0.24"]

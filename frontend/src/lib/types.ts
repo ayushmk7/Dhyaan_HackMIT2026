@@ -168,11 +168,17 @@ export interface Contact {
 
 export interface ChatCitation {
   id: string;
+  /** §6.5: 'observed' | 'told' | 'pattern'. Widened to string because the
+   *  pre-camera backend sends the literal 'event' for every citation. */
   kind: string;
   ts: string;
   label: string;
   event_ids: string[];
+  /** The cited sentence itself, when the backend sends one (§6.1 `text`). */
+  text?: string;
 }
+
+export type RefusalKind = 'surveillance' | 'medical' | 'no_data' | null;
 
 export interface ChatMessage {
   id: string;
@@ -180,6 +186,7 @@ export interface ChatMessage {
   text: string;
   citations?: ChatCitation[];
   refused?: boolean;
+  refusal_kind?: RefusalKind;
 }
 
 export interface BaselineFeature {
@@ -224,4 +231,131 @@ export type WsEnvelope =
   | { t: 'event.new'; event: KEvent }
   | { t: 'resident.state'; resident_id: string; state: ResidentState; reason?: string }
   | { t: 'alert.update'; alert: Alert; resident_id: string | null } // real: live.py broadcast_alert
+  | { t: 'presence.update'; resident_id: string; presence: Presence } // VLM_PLAN §6.1
   | { t: 'ping' }; // real: live.py's 25s keepalive
+
+// ---------------------------------------------------------------------------
+// Camera / presence lane — VLM_PLAN §6.1, typed verbatim from the frozen
+// contract table. Nothing below carries a zone, a frame, or evidence text:
+// those fields do not exist on any family-facing response by design (§5.2,
+// D-001). If a room name can reach a family screen it is a bug, so there is
+// deliberately no field here to put one in.
+// ---------------------------------------------------------------------------
+
+export type PresenceStatus =
+  | 'in_view' | 'out_of_view' | 'paused' | 'camera_off' | 'no_camera';
+
+/** Activity enum from §3.5 plus the worker's post-rule `absent`. */
+export type CameraActivity =
+  | 'eating' | 'drinking' | 'sitting' | 'reading' | 'watching_tv' | 'using_phone'
+  | 'standing' | 'walking' | 'exercising' | 'lying_down' | 'on_floor'
+  | 'entering' | 'leaving' | 'with_visitor' | 'unclear' | 'absent';
+
+export interface Presence {
+  status: PresenceStatus;
+  activity: CameraActivity | null;
+  /** True when she is in the spot she is usually found at this hour. Never a room. */
+  spot_is_usual: boolean;
+  since: string | null;
+  last_observation_at: string | null;
+  /** The one sentence the family is shown. Written server-side, room-free. */
+  sentence: string;
+  camera: {
+    online: boolean;
+    consent: boolean;
+    paused_until: string | null;
+    paused_by: string | null;
+  };
+}
+
+/** `kind` labels every citable/telling thing in the app — §6.5. */
+export type SourceKind = 'observed' | 'told' | 'pattern';
+
+export interface ActivityItem {
+  id: string;
+  ts: string;
+  ts_end: string | null;
+  type: string;
+  sentence: string;
+  kind: SourceKind;
+  confidence: number;
+}
+
+export interface ActivityDay {
+  date: string;
+  tiles: {
+    meals: number;
+    walks: number;
+    out_of_house: number;
+    night_ups: number;
+    in_view_minutes: number;
+  };
+  items: ActivityItem[];
+}
+
+export interface Fact {
+  id: string;
+  key: string;
+  text: string;
+  source: string;
+  author: string;
+  active: boolean;
+  supersedes: string | null;
+  superseded_by: string | null;
+  created_at: string;
+}
+
+/** §5.1: bedroom and bathroom are not options, here or on the wire. */
+export type CameraZone = 'kitchen' | 'living_room' | 'dining_room' | 'hallway';
+export type CameraState = 'watching' | 'paused' | 'offline' | 'no_consent';
+
+export interface Profile {
+  name: string;
+  appearance: string | null;
+  consent: {
+    falls: boolean;
+    camera: boolean;
+    memory: boolean;
+    signed_by: string | null;
+    relationship: string | null;
+    signed_at: string | null;
+  };
+  camera: {
+    camera_id: string;
+    zone: CameraZone;
+    zone_hint: string;
+    state: CameraState;
+    paused_until: string | null;
+  } | null;
+  /** Learned "usual spot" phrases, already stripped of room names. */
+  usual_spots: string[];
+  facts: Fact[];
+}
+
+export interface ProfilePatch {
+  name?: string;
+  appearance?: string;
+  consent?: Partial<Profile['consent']>;
+  camera?: { zone: CameraZone; zone_hint: string };
+}
+
+export type MemoryScope = 'profile' | 'camera' | 'all';
+
+export interface MemoryDeleted {
+  profile_facts: number;
+  observations: number;
+  camera_events: number;
+  usual_spots: boolean;
+}
+
+export interface AuthUser {
+  name: string;
+  email: string;
+}
+
+export interface LoginResult {
+  ok: boolean;
+  token: string;
+  user: AuthUser;
+  resident_id: string;
+}

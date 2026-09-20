@@ -55,7 +55,8 @@ def _warn_embedder_down(e: Exception) -> None:
 
 # High-cardinality telemetry, never indexed — PRD §9.1: it would drown the index
 # and nobody asks "how has she been" about band_still ticks.
-NOISY_EVENT_TYPES = {"person_present", "band_motion_high", "band_still"}
+NOISY_EVENT_TYPES = {"person_present", "band_motion_high", "band_still",
+                     "camera_online", "camera_offline", "camera_paused"}
 
 MEDICAL_PATTERN = re.compile(
     r"\b(diagnos\w*|medicat\w*|disease|prescri\w*|symptoms?|dosage|treatment|"
@@ -279,13 +280,206 @@ def _cosine(a, b) -> float:
     return float(np.dot(a, b) / denom) if denom else 0.0
 
 
-async def search(resident_id: str, query: str, k: int = 6, since: int | None = None) -> list[dict]:
+
+
+# ---------------------------------------------------------------------------
+# The family filter and the surveillance guard. VLM_PLAN §5.5.
+#
+# Order in answer_family(): medical -> hard surveillance -> soft surveillance,
+# every one of them BEFORE any retrieval and before any LLM call. A refusal
+# that first reads the data has already done the thing it is refusing to do.
+# ---------------------------------------------------------------------------
+
+# Staff-and-learner telemetry. A chunk that is not in the pool cannot be cited —
+# this is the real control; the answer prompt is only the backstop (§5.5.4).
+FAMILY_EXCLUDED_TYPES = {
+    "zone_entered", "zone_exited", "zone_dwell", "bathroom_prolonged",
+    "location_unknown", "beacon_offline", "unsteady_gait", "band_motion_high",
+    "band_still", "camera_online", "camera_offline", "camera_paused",
+}
+
+PATTERN_TYPES = {"daily_summary", "baseline_deviation", "baseline_updated"}
+
+_SPEECH = re.compile(
+    r"\b(say|says|said|saying|talk|talked|talking|conversation|convo|discuss\w*|"
+    r"hear|heard|hearing|audio|listen\w*|overheard|chat(?:ted|ting)? about)\b", re.I)
+_PRIVATE_ROOM = re.compile(
+    r"\b(bathroom|toilet|loo|shower|bedroom|bed|undress\w*|naked|pyjamas?|pajamas?)\b", re.I)
+_IMAGERY = re.compile(
+    r"\b(photo|photograph|picture|image|video|footage|screenshot|webcam)\b|"
+    r"camera\s*(feed|footage|view|stream)|live\s*camera|\bshow me\b|"
+    r"\b(watch|see|look at)\s+(her|him|them|mum|mom|eleanor)\b", re.I)
+_APPEARANCE = re.compile(
+    r"\bwearing\b|\bwear(s|ing)?\s+(today|now)\b|\b(outfit|clothes|clothing)\b|"
+    r"\b(she|he|they|her|him|them)\s+look(s|ed|ing)?\s+like\b|"
+    r"\bwhat (does|do) (she|he|they) look like\b|\bhow (does|do) (she|he|they) look\b|"
+    r"\b(her|his) (hair|weight|face|body)\b|\b(thin|skinny|fat|overweight)\b", re.I)
+_LIVE_LOCATION = re.compile(
+    r"\bwhich room\b|\bwhat room\b|\bwhere (is|'s|are) (she|he|they)\b|"
+    r"\bwhere in the (house|home|flat|apartment)\b|\bwhere exactly\b|\bwhereabouts\b", re.I)
+
+# Sleep and night questions with no room word in them are NOT a hard refusal —
+# they route to the existing bed_exit / night_activity lanes (§5.5.2).
+_SLEEP_OK = re.compile(r"\b(sleep|slept|sleeping|night|nights|overnight|rest(ed)?)\b", re.I)
+
+REFUSALS = {
+    "appearance": (
+        "Dhyaan doesn't keep or describe what she looks like, and there is no video to "
+        "show — not to you, not to anyone. I can tell you what she's been doing."),
+    "imagery": (
+        "Dhyaan doesn't keep or describe what she looks like, and there is no video to "
+        "show — not to you, not to anyone. I can tell you what she's been doing."),
+    "speech": (
+        "Dhyaan never listens, so there is nothing she said that I could tell you."),
+    "private_room": (
+        "Bedrooms and bathrooms are outside what Dhyaan notices, by design."),
+    "live_location": (
+        "I don't say where she is in the house. I can tell you she's at home and what "
+        "she's been up to."),
+}
+
+# The useful half we keep offering after a hard refusal, per §1: "someone
+# visited Tuesday for about 40 minutes" is allowed, what they discussed is not.
+_VISITOR_OFFER = " I can tell you that someone visited and roughly how long for, if you ask."
+
+_VISITOR_SOFT = re.compile(
+    r"\b(visitor|visitors|visit|visited|visiting|who came|who was (there|here|over)|"
+    r"guest|guests|company over)\b", re.I)
+_WHEREABOUTS_SOFT = re.compile(
+    r"\b(where|out|outside|went out|going out|left the house|left home|"
+    r"out of the house|walk|walked|walking|errand)\b", re.I)
+
+SOFT_PREFIX = {
+    "visitor": ("Dhyaan only notes that someone visited, and for how long — never who "
+                "or what was said."),
+    "whereabouts": ("Dhyaan can only say whether she's at home or out of view — never "
+                    "where in the house."),
+}
+SOFT_TYPES = {
+    "visitor": ["visitor_present"],
+    "whereabouts": ["room_exit", "room_entry", "left_home", "returned_home",
+                    "walk_started", "walk_completed"],
+}
+SOFT_FACT_KEYS = {"visitor": ["visitors"], "whereabouts": None}
+
+
+def hard_refusal(question: str) -> str | None:
+    """The sub-kind of hard refusal this question earns, or None."""
+    q = question or ""
+    if _SPEECH.search(q):
+        return "speech"
+    if _PRIVATE_ROOM.search(q):
+        # "how did she sleep" must still answer from the bed_exit lane.
+        if _SLEEP_OK.search(q) and not re.search(
+                r"\b(bathroom|toilet|loo|shower|bedroom|undress\w*|naked|pyjamas?|pajamas?)\b",
+                q, re.I):
+            return None
+        return "private_room"
+    if _IMAGERY.search(q):
+        return "imagery"
+    if _APPEARANCE.search(q):
+        return "appearance"
+    if _LIVE_LOCATION.search(q):
+        return "live_location"
+    return None
+
+
+def soft_kind(question: str) -> str | None:
+    q = question or ""
+    if _VISITOR_SOFT.search(q):
+        return "visitor"
+    if _WHEREABOUTS_SOFT.search(q):
+        return "whereabouts"
+    return None
+
+
+_ROOM_WORDS = re.compile(
+    r"(?:\b(?:in|into|from|to|at|inside)\s+(?:the\s+)?)?"
+    r"\b(kitchen|bedroom|bathroom|living[ _]room|hallway|hall|dining[ _]room)\b", re.I)
+
+
+def scrub_rooms(text: str) -> str:
+    """Last line of defence (§5.5.6). Camera events are written without a room
+    name in the first place, so this should only ever fire on seeded band/RF
+    history — it is logged when it does."""
+    if not text:
+        return text
+    out = _ROOM_WORDS.sub("at home", text)
+    if out != text:
+        log.info("scrubbed a room name out of family-facing text")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Time windows. Facts are timeless; observations and patterns are not (§6.5a).
+# ---------------------------------------------------------------------------
+
+def time_window(question: str, tz: ZoneInfo, now: datetime | None = None) -> tuple[int | None, int | None]:
+    q = (question or "").lower()
+    now = (now or datetime.now(timezone.utc)).astimezone(tz)
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def ep(d):
+        return int(d.astimezone(timezone.utc).timestamp())
+
+    if re.search(r"\byesterday\b", q):
+        return ep(midnight - timedelta(days=1)), ep(midnight)
+    if re.search(r"\b(today|this morning|this afternoon|this evening|tonight|right now|just now)\b", q):
+        return ep(midnight), None
+    if re.search(r"\b(this week|past week|last week|last 7 days|recently|lately)\b", q):
+        return ep(midnight - timedelta(days=7)), None
+    return None, None
+
+
+# ---------------------------------------------------------------------------
+# Retrieval: one pool, three sources, each candidate carrying its kind.
+# ---------------------------------------------------------------------------
+
+def kind_of(doc: dict) -> str:
+    if doc.get("_kind") == "told":
+        return "told"
+    return "pattern" if doc.get("type") in PATTERN_TYPES else "observed"
+
+
+async def _fact_candidates(resident_id: str, only_keys: list[str] | None) -> list[dict]:
+    q: dict = {"resident_id": resident_id, "active": True, "embedding": {"$exists": True}}
+    if only_keys:
+        q["key"] = {"$in": only_keys}
+    rows = await db().profile_facts.find(q).to_list(length=2000)
+    for r in rows:
+        r["_kind"] = "told"
+        r["type"] = "profile_fact"
+        r["ts"] = r.get("created_at")
+    return rows
+
+
+async def search(resident_id: str, query: str, k: int = 6, since: int | None = None,
+                 until: int | None = None, family: bool = False,
+                 only_types: list[str] | None = None,
+                 only_fact_keys: list[str] | None = None,
+                 include_facts: bool = False, quota: bool = False) -> list[dict]:
     """Hybrid retrieval: cosine over embeddings ∪ keyword/regex, merged with
-    reciprocal rank fusion, k=60 per PRD §9.5."""
+    reciprocal rank fusion, k=60 per PRD §9.5.
+
+    `include_facts` widens the pool to `profile_facts` so onboarding answers,
+    camera observations and the daily narratives compete in one ranking (§6.5).
+    `family=True` drops FAMILY_EXCLUDED_TYPES before anything is scored — the
+    family filter is a pool filter, not a rendering filter.
+    """
     q: dict = {"resident_id": resident_id, "embedding": {"$exists": True}}
-    if since is not None:
-        q["ts_epoch"] = {"$gte": since}
+    if since is not None or until is not None:
+        q["ts_epoch"] = {}
+        if since is not None:
+            q["ts_epoch"]["$gte"] = since
+        if until is not None:
+            q["ts_epoch"]["$lt"] = until
+    if only_types:
+        q["type"] = {"$in": only_types}
+    elif family:
+        q["type"] = {"$nin": sorted(FAMILY_EXCLUDED_TYPES)}
     docs = await db().events.find(q).to_list(length=50000)
+    if include_facts:
+        docs = docs + await _fact_candidates(resident_id, only_fact_keys)
     if not docs:
         return []
 
@@ -306,65 +500,188 @@ async def search(resident_id: str, query: str, k: int = 6, since: int | None = N
     RRF_K = 60
     scores: dict[str, float] = {}
     by_id: dict[str, dict] = {}
-    for rank, d in enumerate(vec_ranked):
-        scores[d["_id"]] = scores.get(d["_id"], 0.0) + 1.0 / (RRF_K + rank)
-        by_id[d["_id"]] = d
-    for rank, d in enumerate(kw_ranked):
-        scores[d["_id"]] = scores.get(d["_id"], 0.0) + 1.0 / (RRF_K + rank)
-        by_id[d["_id"]] = d
+    for ranked in (vec_ranked, kw_ranked):
+        for rank, d in enumerate(ranked):
+            scores[d["_id"]] = scores.get(d["_id"], 0.0) + 1.0 / (RRF_K + rank)
+            by_id[d["_id"]] = d
 
-    top_ids = sorted(scores, key=scores.get, reverse=True)[:k]
+    ordered = sorted(scores, key=scores.get, reverse=True)
+    top_ids = _apply_quota(ordered, by_id, k) if quota else ordered[:k]
+
     results = []
     for cid in top_ids:
         d = by_id[cid]
         text = (d.get("payload") or {}).get("narrative") or d.get("embedding_text", "")
         results.append({
-            "event_id": d["_id"], "ts": d["ts"], "type": d["type"],
-            "text": text, "score": scores[cid],
+            "id": cid, "event_id": cid, "ts": d["ts"], "type": d["type"],
+            "kind": kind_of(d), "text": text, "score": scores[cid],
         })
     return results
 
 
+# Up to 4 observed, 2 told, 2 pattern, backfilled in score order (§6.5b). This
+# is what makes the contrast answer reliable — without it a dozen meal_observed
+# rows crowd out the one fact that says what breakfast is supposed to look like.
+KIND_QUOTA = {"observed": 4, "told": 2, "pattern": 2}
+
+
+def _apply_quota(ordered: list[str], by_id: dict[str, dict], k: int) -> list[str]:
+    taken: dict[str, int] = {"observed": 0, "told": 0, "pattern": 0}
+    picked, spare = [], []
+    for cid in ordered:
+        kind = kind_of(by_id[cid])
+        if taken[kind] < KIND_QUOTA.get(kind, 0) and len(picked) < k:
+            picked.append(cid)
+            taken[kind] += 1
+        else:
+            spare.append(cid)
+    for cid in spare:
+        if len(picked) >= k:
+            break
+        picked.append(cid)
+    return picked
+
+
+_KIND_LABEL = {"told": "You told us", "observed": "Dhyaan saw", "pattern": "From her pattern"}
+
+
 def _template_answer(hits: list[dict]) -> str:
+    """Cut-list item 4: when there is no Claude key and no local chat model, the
+    answer is the retrieved sentences grouped by kind — still labelled, so the
+    family can still tell observed from assumed."""
     if not hits:
         return "I don't have data for that."
-    return " ".join(f"{h['text']} [{h['event_id']}]" for h in hits[:4])
+    parts = []
+    for kind in ("observed", "told", "pattern"):
+        chunk = [h for h in hits if h["kind"] == kind][:3]
+        if chunk:
+            parts.append(f"{_KIND_LABEL[kind]}: " +
+                         " ".join(f"{h['text']} [{h['id']}]" for h in chunk))
+    return " ".join(parts)
 
 
-async def _claude_answer(question: str, hits: list[dict], resident_name: str) -> str | None:
-    ctx = "\n".join(f"[{h['event_id']}] ({h['ts']}) {h['text']}" for h in hits)
-    system = (
+_ANSWER_RULES = (
+    "Never name a room she is in — say 'at home' or 'out of view'. Never describe "
+    "what she looks like or what she is wearing. Never quote or guess at speech. "
+    "Say 'you told us' for a [told] chunk, 'Dhyaan saw' for an [observed] chunk and "
+    "'from her pattern' for a [pattern] chunk. When a told fact and an observation "
+    "cover the same thing, contrast them in one sentence and give both times."
+)
+
+
+def _context(hits: list[dict]) -> str:
+    return "\n".join(f"[{h['id']}] [{h['kind']}] ({h['ts']}) {h['text']}" for h in hits)
+
+
+def _system(resident_name: str) -> str:
+    return (
         f"You answer questions about {resident_name} using ONLY the observations given. "
-        "Cite every factual statement with its [event_id]. Always give a wall-clock time "
+        "Cite every factual statement with its [id]. Always give a wall-clock time "
         "or date. If the observations don't cover the question, say so plainly instead of "
         "guessing — absence of data is an answer, not the same as 'no'. Never give medical "
         "advice, diagnosis, interpretation, or prognosis; describe only what was observed. "
-        "Two to five sentences, no preamble."
+        "Two to five sentences, no preamble. " + _ANSWER_RULES
     )
+
+
+async def _claude_answer(question: str, hits: list[dict], resident_name: str) -> str | None:
     return await llm.complete(
-        system, f"Question: {question}\n\nObservations:\n{ctx}", max_tokens=500,
+        _system(resident_name), f"Question: {question}\n\nObservations:\n{_context(hits)}",
+        max_tokens=500,
     )
 
 
-async def answer(resident_id: str, question: str) -> dict:
-    """Retrieve, answer with citations, refuse medical questions. §9.6-9.7."""
-    if MEDICAL_PATTERN.search(question or ""):
-        return {
-            "answer": (
-                "I can only tell you what was observed. For anything about her health, "
-                "please talk to her doctor or the care team."
-            ),
-            "citations": [], "retrieved_count": 0,
-        }
+# ponytail: the local chat fallback is one httpx POST at the same Ollama that
+# already serves the embedder — no second client, no second dependency. Off
+# unless CHAT_FALLBACK_MODEL is set, so the test suite stays offline and fast;
+# the demo runs with CHAT_FALLBACK_MODEL=qwen3-vl:8b (called with no images).
+CHAT_FALLBACK_MODEL = os.getenv("CHAT_FALLBACK_MODEL", "")
+CHAT_TIMEOUT_S = float(os.getenv("CHAT_TIMEOUT_S", "25"))
 
-    hits = await search(resident_id, question, k=6)
-    if not hits:
-        return {"answer": "I don't have data for that.", "citations": [], "retrieved_count": 0}
+
+async def _ollama_answer(question: str, hits: list[dict], resident_name: str) -> str | None:
+    if not CHAT_FALLBACK_MODEL:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=CHAT_TIMEOUT_S) as c:
+            r = await c.post(f"{OLLAMA_URL}/api/chat", json={
+                "model": CHAT_FALLBACK_MODEL, "stream": False,
+                "options": {"temperature": 0.2, "num_predict": 300},
+                "messages": [
+                    {"role": "system", "content": _system(resident_name)},
+                    {"role": "user",
+                     "content": f"Question: {question}\n\nObservations:\n{_context(hits)}"},
+                ],
+            })
+            r.raise_for_status()
+            return (r.json().get("message") or {}).get("content") or None
+    except Exception as e:  # noqa: BLE001
+        log.info("local chat fallback unavailable (%s) — using the template answer", e)
+        return None
+
+
+MEDICAL_REFUSAL = (
+    "I can only tell you what was observed. For anything about her health, "
+    "please talk to her doctor or the care team."
+)
+
+
+async def answer_family(resident_id: str, question: str) -> dict:
+    """The family's chat answer, with the guard in front of it. §5.5, §6.5."""
+    q = question or ""
+
+    if MEDICAL_PATTERN.search(q):
+        return {"answer": MEDICAL_REFUSAL, "citations": [], "retrieved_count": 0,
+                "refused": True, "refusal_kind": "medical"}
+
+    hard = hard_refusal(q)
+    if hard:
+        # No retrieval, no LLM, no exceptions. The refusal is the whole answer.
+        text = REFUSALS[hard]
+        if _VISITOR_SOFT.search(q):
+            text += _VISITOR_OFFER
+        return {"answer": text, "citations": [], "retrieved_count": 0,
+                "refused": True, "refusal_kind": "surveillance"}
 
     resident_doc = await db().residents.find_one({"_id": resident_id}) or {}
     name = resident_doc.get("display_name", "the resident")
+    tz = ZoneInfo(resident_doc.get("timezone") or "UTC")
+    since, until = time_window(q, tz)
 
-    text = await _claude_answer(question, hits, name) or _template_answer(hits)
+    soft = soft_kind(q)
+    hits = await search(
+        resident_id, q, k=8, since=since, until=until, family=True,
+        only_types=SOFT_TYPES.get(soft) if soft else None,
+        only_fact_keys=SOFT_FACT_KEYS.get(soft) if soft else None,
+        include_facts=True, quota=True,
+    )
+    if not hits and (since is not None or soft):
+        # A narrow window or a soft restriction found nothing — widen once
+        # rather than telling the family "no data" when there is plenty.
+        hits = await search(resident_id, q, k=8, family=True, include_facts=True, quota=True)
+    if not hits:
+        return {"answer": "I don't have data for that.", "citations": [],
+                "retrieved_count": 0, "refused": False, "refusal_kind": None}
 
-    citations = [{"event_id": h["event_id"], "ts": h["ts"], "text": h["text"]} for h in hits]
-    return {"answer": text, "citations": citations, "retrieved_count": len(hits)}
+    for h in hits:
+        h["text"] = scrub_rooms(h["text"])
+
+    text = (await _claude_answer(q, hits, name)
+            or await _ollama_answer(q, hits, name)
+            or _template_answer(hits))
+    text = scrub_rooms(text)
+    if soft:
+        text = f"{SOFT_PREFIX[soft]} {text}"
+
+    citations = [{"id": h["id"], "event_id": h["event_id"], "kind": h["kind"],
+                  "ts": h["ts"], "text": h["text"]} for h in hits]
+    return {"answer": text, "citations": citations, "retrieved_count": len(hits),
+            "refused": False, "refusal_kind": None}
+
+
+async def answer(resident_id: str, question: str) -> dict:
+    """Backwards-compatible three-key shape. `tests/test_llm.py` pins it with a
+    strict `set(result) == {...}`, and that file is another agent's; the
+    extended contract (§6.1) lives on answer_family() and routers/chat.py."""
+    r = await answer_family(resident_id, question)
+    return {k: r[k] for k in ("answer", "citations", "retrieved_count")}

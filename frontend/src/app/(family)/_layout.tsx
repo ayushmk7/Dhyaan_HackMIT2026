@@ -1,4 +1,4 @@
-// Family tabs. Each tab is its own native stack (real navigation bars).
+// Family tabs: Today · Her day · Ask · Settings. Each tab is its own native stack.
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { ColorValue } from 'react-native';
@@ -26,8 +26,8 @@ export default function FamilyLayout() {
         },
       }}
     >
-      <Tabs.Screen name="home" options={{ title: 'Home', tabBarIcon: glyph('house') }} />
-      <Tabs.Screen name="timeline" options={{ title: 'Timeline', tabBarIcon: glyph('calendar.day.timeline.left') }} />
+      <Tabs.Screen name="home" options={{ title: 'Today', tabBarIcon: glyph('house') }} />
+      <Tabs.Screen name="timeline" options={{ title: 'Her day', tabBarIcon: glyph('calendar.day.timeline.left') }} />
       <Tabs.Screen name="chat" options={{ title: 'Ask', tabBarIcon: glyph('bubble.left') }} />
       <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: glyph('gearshape') }} />
     </Tabs>

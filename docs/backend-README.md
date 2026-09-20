@@ -4,7 +4,7 @@ FastAPI + MongoDB. One process, one database, no message broker. Everything the
 band, the app and the voice agent do becomes an **event**; alerts, baselines and
 the chat are all readers of that one collection.
 
-Specs: [`../TECHNICAL_PRD.md`](../TECHNICAL_PRD.md) · [`../HARDWARE_SPEC.md`](../HARDWARE_SPEC.md)
+Specs: [`./TECHNICAL_PRD.md`](./TECHNICAL_PRD.md) · [`./HARDWARE_SPEC.md`](./HARDWARE_SPEC.md)
 
 ## Run it
 
@@ -150,3 +150,129 @@ Proved by `tests/test_voice_adapter.py` (10 tests): tool calls drive real state
 transitions, replays are idempotent, transcripts and call bindings persist, and
 a tool call the FSM refuses returns `{"ok": false}` instead of raising into the
 websocket and killing a live call.
+
+## Camera lane
+
+One camera in one room, a local vision-language model, and a sentence. The
+worker is a separate process (`backend/vision/`, `python -m vision`) — not an
+asyncio task in the API — for three reasons: the macOS camera prompt attaches to
+the process that opens the device, a 3-second blocking VLM call must never sit on
+the event loop next to a fall ingest, and it makes the privacy claim structural:
+**the API process never has a frame to leak.**
+
+### Install and run
+
+```bash
+uv pip install -e ".[vision]"     # opencv + ultralytics (torch, ~1 GB, ~2 min)
+make vlm                          # pull + warm qwen3-vl:8b (6.1 GB, stays resident)
+make vision                       # against the local API
+make vision-demo                  # on-stage: fast rules + preview window
+```
+
+`.[vision]` also installs `ultralytics`, which ships a top-level `tests/` package
+into site-packages. `backend/tests/__init__.py` exists to stop that shadowing
+this repo's suite — do not delete it.
+
+### The cascade
+
+Every frame that reaches the VLM costs 3–5 seconds, so almost none do:
+
+| # | Stage | Drops | Cost |
+|---|---|---|---|
+| 0 | sample every 10th frame | 30 fps → ~3 fps | — |
+| 1 | privacy mask (`--mask x0,y0,x1,y1`, normalised) | — | <1 ms |
+| 2 | motion, MOG2 on 320×180 grey, foreground > 0.8 % | ~90 % of a lived-in room | ~2 ms |
+| 3 | person, YOLO11n on MPS, class 0 only | ~30 % of what moved | ~25 ms |
+| 4 | keyframe rules (appear / posture / dwell / on_floor) | all but ~1 batch/min | <1 ms |
+| 5 | `qwen3-vl:8b`, 1–3 frames, JSON schema | — | **2.8 s warm median** (3 frames, measured; 4.5–6.7 s cold or under load) |
+
+Every threshold is in one dict, `TUNING` in `vision/__init__.py`. **They are not
+universal.** A bright kitchen with a window behind the chair will need
+`motion_ratio` raised and `person_conf` lowered; ten minutes with `--preview` in
+the actual room beats any default in there.
+
+### Flags
+
+```
+--source 0            MacBook camera. 1+ is a Continuity Camera (an iPhone on the
+                      same Apple ID is a webcam for free). A path plays a video or
+                      a still at real time, looped — rehearsal and stage fallback.
+--camera-id cam_mac_01
+--api http://localhost:8000     --band-key ...   (X-Band-Key, as the band lane)
+--mask 0,0,0.25,1     black out a private doorway BEFORE motion detection
+--preview             a window on the hub's own screen. `p` pauses the camera for
+                      two hours (her control, on her hub); `q` quits.
+--demo                min_gap 6 s, dwell 15 s — bite to sentence inside the slot
+--dry-run             print the exact POST body instead of posting it
+--no-yolo             the cut path: motion only, the VLM decides presence
+--config-json FILE    read /v1/camera/config's shape from a file
+```
+
+### Privacy, as mechanism rather than promise
+
+- **No frame is written to disk, ever.** There is no `imwrite`, no `VideoWriter`,
+  and the only `open()` in the package reads `--config-json`. The last test in
+  `tests/test_vision_gate.py` walks the package's AST and fails the build if that
+  stops being true. Frames live in a RAM ring of at most three JPEGs, freed on POST.
+- **Frames cross exactly one socket:** loopback to Ollama. The API gets text.
+- **Consent is checked before the camera device is opened** and on every 10 s
+  config poll. A config fetch that fails means *no consent*, not "carry on".
+  A config naming a `bedroom` or `bathroom` zone is refused by the worker too,
+  not only by the API's 422 — a worker that would point a camera at a bedroom
+  because a server said so is not a gate.
+- `movement: "unsteady"` is downgraded to `"unclear"` before posting. Gait is
+  staff-only and this lane has no staff surface: do not record what you will not
+  show.
+
+Check it yourself:
+
+```bash
+python -m vision --dry-run --demo --source rehearsal.mp4 --camera-id cam_mac_01
+```
+
+prints the exact `POST /v1/ingest/camera` body, which should diff clean against
+`fixtures/camera_observation.json`.
+
+Measured on this machine (M-series, 48 GB), `--demo`, real webcam → live API:
+four observations in 100 s, each accepted as an `observation` row, the second
+crossing the dedup threshold into a `visitor_present` event and updating
+`/presence` to *"Eleanor has someone visiting."* — no zone, no evidence text.
+The plan's fallback trigger (drop to `qwen3-vl:4b` if a 3-frame batch exceeds
+6 s) is **not** met warm, so 8b stays.
+
+Measured on this machine (M-series, `keep_alive: -1`, 640×360, quality 80,
+temperature 0), three warm runs each:
+
+| | 1 frame | 3 frames |
+|---|---|---|
+| `qwen3-vl:8b` (default) | 2.80 s | 2.75 s |
+| `qwen3-vl:4b` (`--model qwen3-vl:4b`) | 1.94 s | 2.03 s |
+
+The first call after an idle stretch costs 4.7–6.7 s while the model pages back
+in; that is the number a demo will actually feel, so warm it with `make vlm`
+before the slot. On a real webcam, steady state was **3 VLM calls in 120 s** with
+someone in view — the ~1/min budget the cascade is there to enforce. `4b` is
+pulled and a flag away if the room needs it.
+
+### Known ceilings
+
+- **`think: false` is mandatory.** `qwen3-vl` is a thinking model; with thinking
+  on, a 3-frame call takes 24 s and the chain of thought eats `num_predict`
+  before any JSON appears. With it off the call is 2.5–4.5 s — but Ollama 0.32.9
+  then puts the schema-constrained JSON in `message.thinking` and leaves
+  `message.content` empty. `vlm.call()` reads whichever is populated. Revisit
+  when Ollama fixes the routing.
+- **A person who sits perfectly still for ~100 s** is absorbed into MOG2's
+  background and stops producing motion. The worker re-runs the person gate every
+  5 s while she is believed present, so "she stopped moving" never becomes "she
+  left". `--no-yolo` cannot make that check — that is the honest cost of the cut
+  path, and it will report her absent if she naps in the armchair.
+- **One camera, one track, single-occupant assumption.** No tracker, no
+  re-identification. Two people in frame become `with_visitor` and nothing is
+  recorded about the second. Upgrade is `model.track(persist=True)`.
+- **In-process state only.** The keyframe selector and the ring reset on restart.
+- **macOS camera permission is per-terminal and intermittent.** The TCC prompt
+  attaches to whichever process opens the device, so the first `make vision-demo`
+  must be run by hand and Allowed; a worker launched from a non-interactive shell
+  gets `cannot open camera source '0'` (a one-line message, not a traceback) until
+  it has been. On stage, grant it before the slot and do not change terminals.

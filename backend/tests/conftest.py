@@ -73,3 +73,15 @@ async def client(db):
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+@pytest.fixture(autouse=True)
+def _reset_voice_script():
+    """`voice.SCRIPT` is a module-level global that POST /admin/simulate mutates.
+    One test hitting that endpoint silently changes the call outcome for every
+    test that runs after it — which passes alone and fails in the suite. Reset it
+    around every test rather than asking each test to remember."""
+    from app import voice
+
+    before = voice.SCRIPT
+    yield
+    voice.SCRIPT = before

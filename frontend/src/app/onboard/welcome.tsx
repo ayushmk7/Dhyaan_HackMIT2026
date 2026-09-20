@@ -6,16 +6,20 @@ import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Btn, Txt } from '@/components';
 import { Icon } from '@/components/icon';
+import { seedDemoResident } from '@/lib/api';
+import { SEEDED_FACTS } from '@/lib/mock/camera';
 import { useSession } from '@/store/session';
 import { palette, sp } from '@/theme/tokens';
 
 export default function Welcome() {
   const insets = useSafeAreaInsets();
-  const { setRole, finishOnboarding } = useSession();
+  const { setRole, seedDemoSession } = useSession();
 
+  // Demo entry: a signed-in session with Eleanor already set up. Writes nothing
+  // to the server.
   const familyDemo = () => {
-    setRole('family');
-    finishOnboarding();
+    seedDemoResident('Priya Sharma');
+    seedDemoSession(SEEDED_FACTS);
     router.replace('/(family)/home');
   };
   const staffDemo = () => {
@@ -58,6 +62,7 @@ export default function Welcome() {
       <Btn label="Get Started" onPress={() => router.push('/onboard/consent')} />
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel="Explore the demo. Long-press for the staff demo."
         onPress={familyDemo}
         onLongPress={staffDemo}
         style={{ paddingVertical: sp(4), alignItems: 'center' }}

@@ -1,8 +1,8 @@
 // Dhyaan primitives. Every screen builds from these — see DESIGN.md.
 import React from 'react';
 import {
-  ActivityIndicator, Pressable, RefreshControlProps, ScrollView, StyleSheet, Text, TextStyle,
-  View, ViewStyle,
+  ActivityIndicator, Pressable, RefreshControlProps, ScrollView, StyleSheet, Text, TextInput,
+  TextStyle, View, ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { cardShadow, palette, radius, sp, stateColor, type, ResidentState } from '@/theme/tokens';
@@ -134,6 +134,44 @@ export function Btn({
   );
 }
 
+// ---- Field ----------------------------------------------------------------------
+// ponytail: one input style, one place. Every onboarding screen was about to
+// copy the same six lines out of consent.tsx.
+
+export function Field({
+  label, value, onChangeText, placeholder, multiline, maxLength, keyboardType,
+  autoCapitalize, autoCorrect, secureTextEntry, hint, style, onSubmitEditing,
+}: {
+  label: string; value: string; onChangeText: (v: string) => void;
+  placeholder?: string; multiline?: boolean; maxLength?: number;
+  keyboardType?: React.ComponentProps<typeof TextInput>['keyboardType'];
+  autoCapitalize?: React.ComponentProps<typeof TextInput>['autoCapitalize'];
+  autoCorrect?: boolean; secureTextEntry?: boolean; hint?: string;
+  style?: ViewStyle; onSubmitEditing?: () => void;
+}) {
+  return (
+    <View style={style}>
+      <Txt kind="label" tone="muted" style={{ marginBottom: sp(1.5) }}>{label}</Txt>
+      <TextInput
+        accessibilityLabel={label}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={palette.inkMuted}
+        multiline={multiline}
+        maxLength={maxLength}
+        keyboardType={keyboardType}
+        autoCapitalize={autoCapitalize}
+        autoCorrect={autoCorrect}
+        secureTextEntry={secureTextEntry}
+        onSubmitEditing={onSubmitEditing}
+        style={[styles.input, multiline && { minHeight: 76, textAlignVertical: 'top' }]}
+      />
+      {!!hint && <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>{hint}</Txt>}
+    </View>
+  );
+}
+
 // ---- Layout helpers -----------------------------------------------------------
 
 export const Row = ({ children, style, gap = 2 }: { children: React.ReactNode; style?: ViewStyle; gap?: number }) => (
@@ -243,7 +281,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: sp(5),
   },
-  btnLabel: { fontSize: 17, fontWeight: '600' },
+  btnLabel: { fontFamily: 'Fraunces_600SemiBold', fontSize: 17 },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -258,5 +296,16 @@ const styles = StyleSheet.create({
     backgroundColor: palette.raised,
     borderRadius: radius.tile,
     padding: sp(3.5),
+  },
+  input: {
+    ...type.body,
+    color: palette.ink,
+    backgroundColor: palette.raised,
+    borderWidth: 1,
+    borderColor: palette.line,
+    borderRadius: radius.card,
+    paddingHorizontal: sp(4),
+    paddingVertical: sp(3),
+    minHeight: 50,
   },
 });

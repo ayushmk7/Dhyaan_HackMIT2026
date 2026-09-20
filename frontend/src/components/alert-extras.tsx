@@ -2,8 +2,9 @@
 // and the applause-line elapsed stat. White-on-vermilion by design.
 import React, { useEffect, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
-import { font, palette, sp } from '@/theme/tokens';
+import { palette, sp } from '@/theme/tokens';
 import { useReducedMotion } from './entrance';
+import { Icon } from './icon';
 
 const WHITE = '#FFFFFF';
 const WHITE_SOFT = 'rgba(255,255,255,0.8)';
@@ -74,7 +75,7 @@ export function RingingPulse({ label }: { label: string }) {
         {!reduced && <Animated.View style={[styles.pulseRing, ringStyle(a)]} />}
         {!reduced && <Animated.View style={[styles.pulseRing, ringStyle(b)]} />}
         <View style={styles.pulseCore}>
-          <Text style={{ fontSize: 30, color: WHITE }}>☏</Text>
+          <Icon name="phone.fill" size={28} color={WHITE} />
         </View>
       </View>
       <Text style={[styles.caption, { marginTop: sp(3) }]}>{label}</Text>
@@ -101,7 +102,7 @@ const styles = StyleSheet.create({
     borderWidth: 4, borderColor: WHITE,
     alignItems: 'center', justifyContent: 'center',
   },
-  ringNumber: { fontFamily: font.black, fontSize: 56, color: WHITE },
+  ringNumber: { fontSize: 56, fontWeight: '800', letterSpacing: -1, color: WHITE },
   caption: { fontSize: 14, lineHeight: 19, color: WHITE_SOFT, textAlign: 'center', maxWidth: 260 },
   pulseStage: { width: 140, height: 140, alignItems: 'center', justifyContent: 'center' },
   pulseRing: {
@@ -115,6 +116,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.6)',
     alignItems: 'center', justifyContent: 'center',
   },
-  statNumber: { fontFamily: font.black, fontSize: 44, lineHeight: 50, color: palette.ink },
+  statNumber: { fontSize: 44, lineHeight: 50, fontWeight: '800', letterSpacing: -1, color: palette.ink },
   statCaption: { fontSize: 16, lineHeight: 23, color: palette.inkMuted, marginTop: sp(1) },
 });

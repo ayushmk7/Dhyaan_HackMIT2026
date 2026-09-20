@@ -9,7 +9,7 @@ HackMIT 2026 · team of 3 · 24 hours · local-first on a MacBook Pro M5 Pro (48
 > Backend language is **Python 3.12** throughout. All code in this doc is Python unless a fence says otherwise.
 
 > **Build status — Saturday 19 Sept, ~17:00 (H6).** This PRD is the original design. Where it and the
-> code disagree, the code and [`backend/README.md`](./backend/README.md) describe what runs, and
+> code disagree, the code and [`./backend-README.md`](././backend-README.md) describe what runs, and
 > [`backend/fixtures/*.json`](./backend/fixtures/) are the band's wire contract. Design changes made
 > since the first draft are logged, with reasons, in [`DECISIONS.md`](./DECISIONS.md) (D-011).
 >

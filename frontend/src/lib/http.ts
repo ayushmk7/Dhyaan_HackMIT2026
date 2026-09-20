@@ -1,5 +1,5 @@
 // Real API client. Written against the backend's live OpenAPI schema plus
-// backend/API_CONTRACT_V2.md (the baselines/summaries/location-history/events/
+// docs/API_CONTRACT_V2.md (the baselines/summaries/location-history/events/
 // simulate/pairing/survey/contacts/push routes) — NOT the PRD's §10.5, which
 // describes a JWT and a different path/shape for nearly everything here (see
 // the big comment at the top of residents.py). Same function names and
@@ -11,9 +11,10 @@
 import { planFromThread as aiPlanFromThread, polishLetter, type FamilyPlan } from './ai';
 import { API_BASE, API_KEY } from './config';
 import type {
-  Alert, AlertKind, AlertSeverity, BaselineFeature, CallRow, ChatMessage,
-  Contact, DaySummary, KEvent, LocationMethod, LocationSegment, Resident,
-  ResidentLocation,
+  ActivityDay, Alert, AlertKind, AlertSeverity, BaselineFeature, CallRow,
+  ChatMessage, Contact, DaySummary, Fact, KEvent, LocationMethod,
+  LocationSegment, LoginResult, MemoryDeleted, MemoryScope, Presence, Profile,
+  ProfilePatch, Resident, ResidentLocation,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,8 @@ const post = <T>(path: string, data?: unknown) =>
   request<T>(path, { method: 'POST', body: JSON.stringify(data ?? {}) });
 const put = <T>(path: string, data?: unknown) =>
   request<T>(path, { method: 'PUT', body: JSON.stringify(data ?? {}) });
+const del = <T>(path: string, data?: unknown) =>
+  request<T>(path, { method: 'DELETE', body: JSON.stringify(data ?? {}) });
 
 // ponytail: every real endpoint added below is scoped to Eleanor —
 // backend/scripts/seed.py only seeds her, and every other real function in
@@ -65,6 +68,18 @@ const RESIDENT_ID = 'res_eleanor';
 const activeSurveys = new Map<string, { surveyId: string; timer: ReturnType<typeof setInterval> }>();
 
 const isNotFound = (e: unknown) => e instanceof Error && /not found/i.test(e.message);
+
+// §6.5: "A family must always be able to tell observed from assumed." One
+// place builds the visible prefix for each kind.
+function citationLabel(kind: 'observed' | 'told' | 'pattern', ts: string): string {
+  const d = new Date(ts);
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const day = d.toLocaleDateString(undefined, { weekday: 'short' });
+  const isToday = new Date().toDateString() === d.toDateString();
+  if (kind === 'told') return `You told us · ${day}`;
+  if (kind === 'pattern') return 'From her pattern · last 14 days';
+  return `Dhyaan saw · ${time}${isToday ? ' today' : ` ${day}`}`;
+}
 
 // ---------------------------------------------------------------------------
 // shared shaping helpers (real wire shapes -> app types)
@@ -285,24 +300,40 @@ export const httpApi = {
     return { downweighted: [], suppress_until: '', verdict };
   },
 
+  // POST /residents/{id}/chat. §6.1 extends the response with `kind` per
+  // citation and explicit `refused`/`refusal_kind`; the pre-camera backend
+  // sends neither, so both are read defensively. `kind` falls back to
+  // 'observed' — every citation the old route could produce was an event, and
+  // labelling one 'told' or 'pattern' without the server saying so would be
+  // exactly the fabrication the kind tag exists to prevent.
   chat: async (question: string): Promise<ChatMessage> => {
     const body = await post<{
       answer: string;
-      citations: { event_id: string; ts: string; text: string }[];
+      citations: { id?: string; event_id?: string; kind?: string; ts: string; text: string }[];
       retrieved_count: number;
+      refused?: boolean;
+      refusal_kind?: ChatMessage['refusal_kind'];
     }>('/residents/res_eleanor/chat', { question });
     return {
       id: `msg_${Date.now().toString(36)}`,
       role: 'dhyaan',
       text: body.answer,
-      citations: body.citations.map((c) => ({
-        id: c.event_id,
-        kind: 'event',
-        ts: c.ts,
-        label: new Date(c.ts).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }),
-        event_ids: [c.event_id],
-      })),
-      refused: body.retrieved_count === 0,
+      citations: (body.citations ?? []).map((c) => {
+        const eventId = c.id ?? c.event_id ?? '';
+        const kind = c.kind === 'told' || c.kind === 'pattern' ? c.kind : 'observed';
+        return {
+          id: eventId,
+          kind,
+          ts: c.ts,
+          label: citationLabel(kind, c.ts),
+          // A 'told' fact is timeless and has no event behind it, so it gets
+          // no tap target rather than one that 404s.
+          event_ids: kind === 'observed' && eventId ? [eventId] : [],
+          text: c.text,
+        };
+      }),
+      refused: body.refused ?? body.retrieved_count === 0,
+      refusal_kind: body.refusal_kind ?? null,
     };
   },
 
@@ -404,6 +435,97 @@ export const httpApi = {
     }));
     await put(`/residents/${RESIDENT_ID}/contacts`, body);
   },
+  // ---- camera lane (VLM_PLAN §6.1) ------------------------------------------
+
+  // POST /auth/login. Faux by contract: the server validates an email shape
+  // and a non-empty password and hands back the one static key. This client
+  // deliberately does not claim more than that — there is no password store
+  // behind it, and the sign-in copy says so.
+  login: async (email: string, password: string): Promise<LoginResult> => {
+    const trimmed = email.trim();
+    // Checked here too so a typo doesn't cost a round trip, and so the same
+    // message appears whether or not the route exists yet.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      throw new Error('That doesn’t look like an email address.');
+    }
+    if (!password) throw new Error('Enter your password.');
+    return post<LoginResult>('/auth/login', { email: trimmed, password });
+  },
+
+  // GET /residents/{id}/presence — no zone, no evidence, by contract.
+  // ponytail: while the camera router is still landing, a 404 degrades to an
+  // honest "no camera set up" presence instead of throwing, so Today shows
+  // its real empty state rather than an error it can't act on. Any other
+  // failure still throws and surfaces as a retryable error.
+  getPresence: async (residentId: string): Promise<Presence> => {
+    try {
+      return await get<Presence>(`/residents/${residentId}/presence`);
+    } catch (e) {
+      if (isNotFound(e)) {
+        return {
+          status: 'no_camera', activity: null, spot_is_usual: false,
+          since: null, last_observation_at: null, sentence: '',
+          camera: { online: false, consent: false, paused_until: null, paused_by: null },
+        };
+      }
+      throw e;
+    }
+  },
+
+  getActivity: async (residentId: string, date: string): Promise<ActivityDay> => {
+    try {
+      return await get<ActivityDay>(`/residents/${residentId}/activity?date=${date}`);
+    } catch (e) {
+      if (isNotFound(e)) {
+        return {
+          date,
+          tiles: { meals: 0, walks: 0, out_of_house: 0, night_ups: 0, in_view_minutes: 0 },
+          items: [],
+        };
+      }
+      throw e;
+    }
+  },
+
+  getProfile: (residentId: string): Promise<Profile> =>
+    get<Profile>(`/residents/${residentId}/profile`),
+
+  putProfile: (residentId: string, patch: ProfilePatch): Promise<Profile> =>
+    put<Profile>(`/residents/${residentId}/profile`, patch),
+
+  // POST /profile/facts takes the bare array; `author` rides on the server's
+  // own record of who signed consent, so it is accepted here only to keep one
+  // signature across mock and real.
+  addFacts: async (
+    residentId: string,
+    rows: { key: string; text: string }[],
+    _author: string,
+  ): Promise<Fact[]> =>
+    (await post<{ facts: Fact[] }>(`/residents/${residentId}/profile/facts`, rows)).facts,
+
+  updateFact: async (
+    residentId: string, factId: string, text: string, _author: string,
+  ): Promise<Fact> =>
+    (await put<{ fact: Fact }>(`/residents/${residentId}/profile/facts/${factId}`, { text })).fact,
+
+  deleteFact: async (residentId: string, factId: string): Promise<void> => {
+    await del(`/residents/${residentId}/profile/facts/${factId}`);
+  },
+
+  // DELETE /residents/{id}/memory — `confirm` must equal her display name;
+  // the server 422s otherwise. Sent as typed so the server, not the client,
+  // is the thing that refuses.
+  deleteMemory: async (
+    residentId: string, scope: MemoryScope, confirm: string,
+  ): Promise<MemoryDeleted> =>
+    (await del<{ deleted: MemoryDeleted }>(`/residents/${residentId}/memory`, {
+      scope, confirm: confirm.trim(),
+    })).deleted,
+
+  simulateCamera: async (kind: 'meal' | 'visitor' | 'out_of_view'): Promise<void> => {
+    await post('/admin/simulate', { resident_id: RESIDENT_ID, kind });
+  },
+
   // Not part of the mock facade's surface (mockApi has no such method) — kept
   // only because lib/push.ts imports httpApi.registerPushToken directly,
   // guarded by `if (!USE_MOCKS)` and already wrapped in a try/catch there.

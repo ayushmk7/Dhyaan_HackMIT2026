@@ -27,9 +27,11 @@ EVENT_TYPES = {
     # voice
     "call_placed", "call_answered", "call_no_answer", "voice_response_classified",
     "escalation_started", "escalation_acknowledged", "escalation_exhausted",
+    # camera presence lane (VLM_PLAN §6.3)
+    "activity_observed", "camera_online", "camera_offline", "camera_paused",
     # derived / manual
     "baseline_deviation", "daily_summary", "baseline_updated", "staff_note",
-    "family_note", "feedback_given",
+    "family_note", "feedback_given", "profile_updated", "memory_deleted",
 }
 
 SOURCES = {"band", "camera", "voice", "manual", "derived"}

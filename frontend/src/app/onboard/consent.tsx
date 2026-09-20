@@ -1,97 +1,170 @@
-// Consent. Cannot be skipped; the person consenting types both names themselves.
+// Consent. Three separate grants, her name, and who is signing. The grant copy
+// is VLM_PLAN §5.4 verbatim — it is the product's defence, so it is not
+// paraphrased, shortened or softened to fit a layout. (Consent content is one
+// of the three places voice is allowed — DESIGN.md rule 1.)
+//
+// ponytail: this screen records the answers in the session and does not PUT
+// on its own. The whole profile — consent, appearance, facts, camera — is
+// written once at the end of onboarding (`done.tsx`), so there is exactly one
+// place that can fail and exactly one retry to build. Ceiling: quitting
+// mid-onboarding loses the answers. Upgrade: PUT each step as it is answered.
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
-import { Btn, Card, Row, Screen, Txt } from '@/components';
-import { Icon } from '@/components/icon';
-import { palette, radius, sp, type } from '@/theme/tokens';
-import { useSession } from '@/store/session';
+import React, { useState } from 'react';
+import { Pressable, View } from 'react-native';
+import { Btn, Card, Field, Hairline, Row, Screen, Txt } from '@/components';
+import { sp, palette, radius } from '@/theme/tokens';
+import { useSession, type Grants } from '@/store/session';
 
-const SENSED = [
-  { icon: 'figure.walk', text: 'Movement and stillness, from her band' },
-  { icon: 'dot.radiowaves.left.and.right', text: 'Which room, from small beacons' },
-  { icon: 'video.slash', text: 'Never video or audio' },
+type GrantKey = keyof Grants;
+
+const GRANTS: { key: GrantKey; title: string; body: string[] }[] = [
+  {
+    key: 'falls',
+    title: 'A band on her wrist, watching for a fall.',
+    body: [
+      'Her band notices movement, stillness, and a fall. If it thinks she has fallen, it gives her thirty seconds to cancel, then Dhyaan calls her. If she does not answer, it calls the people on her list, in order.',
+      'It does not record audio or video. It does not call 911.',
+    ],
+  },
+  {
+    key: 'camera',
+    title: 'A camera in one room, and a description instead of a video.',
+    body: [
+      'One camera in the room she spends her day in, never a bedroom or bathroom. It notices whether she is up, whether she has eaten, whether she is settled or moving about, and whether someone is visiting. It turns that into a sentence, on the computer in her home, and throws the picture away. No video is stored. No video is ever shown to family, and there is no way to turn that on. It cannot hear anything. If someone else is alone in the room, Dhyaan may mistake them for her. She can pause it for two hours from the computer, and pausing never affects fall detection.',
+    ],
+  },
+  {
+    key: 'memory',
+    title: 'Notes about her, kept at home, deleted when you say.',
+    body: [
+      'To make sense of what it sees, Dhyaan keeps what you tell us about her routine, a few words describing her, and where she usually sits at different times of day. None of this leaves her home, none of it is a face or a photograph, and Forget her profile in Settings removes all of it at once.',
+    ],
+  },
 ];
 
-const FAMILY_SEES = [
-  { icon: 'checkmark.circle', text: 'Whether she is OK, and where' },
-  { icon: 'text.alignleft', text: 'Meals, walks, and nights, as sentences' },
-  { icon: 'phone', text: 'Every call Dhyaan makes, and why' },
-];
+function YesNo({ value, onChange, label }: {
+  value: boolean | null; onChange: (v: boolean) => void; label: string;
+}) {
+  const opt = (v: boolean, word: string) => {
+    const on = value === v;
+    return (
+      <Pressable
+        key={word}
+        accessibilityRole="radio"
+        accessibilityState={{ selected: on }}
+        accessibilityLabel={`${word} to ${label}`}
+        onPress={() => onChange(v)}
+        style={({ pressed }) => ({
+          flex: 1,
+          minHeight: 48,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: radius.card,
+          backgroundColor: on ? palette.slateWash : pressed ? palette.line : palette.paper,
+        })}
+      >
+        <Txt kind="label" tone={on ? 'slate' : 'muted'}>{word}</Txt>
+      </Pressable>
+    );
+  };
+  return <Row gap={2} style={{ marginTop: sp(3) }}>{[opt(true, 'Yes'), opt(false, 'No')]}</Row>;
+}
 
-function InfoRow({ icon, text }: { icon: string; text: string }) {
-  return (
-    <Row gap={2.5} style={{ marginTop: sp(2.5) }}>
-      <Icon name={icon} size={16} color={palette.slate} />
-      <Txt kind="body" style={{ flex: 1 }}>{text}</Txt>
-    </Row>
-  );
+/** Next step, respecting the grants: no falls grant means no band to pair. */
+export function nextAfterConsent(grants: Grants): string {
+  if (grants.memory) return '/onboard/about';
+  if (grants.falls) return '/onboard/pair';
+  if (grants.camera) return '/onboard/camera';
+  return '/onboard/contacts';
 }
 
 export default function Consent() {
   const session = useSession();
   const [resident, setResident] = useState(session.residentName);
-  const [signer, setSigner] = useState('');
-  const ready = resident.trim().length > 0 && signer.trim().length > 0;
+  const [signer, setSigner] = useState(session.consentGivenBy || session.user?.name || '');
+  const [relationship, setRelationship] = useState(session.consentRelationship);
+  const [grants, setGrants] = useState<Grants>(session.grants);
+
+  const answeredAll = GRANTS.every((g) => grants[g.key] !== null);
+  const anyYes = Object.values(grants).some((v) => v === true);
+  const ready =
+    resident.trim().length > 0 && signer.trim().length > 0
+    && relationship.trim().length > 0 && answeredAll && anyYes;
 
   return (
     <Screen>
-      <Txt kind="title">Her consent comes first</Txt>
-      <Txt kind="body" style={{ marginTop: sp(2) }}>
-        Dhyaan watches one person, with her permission.
+      <Txt kind="title" accessibilityRole="header">Dhyaan looks out for one person.</Txt>
+      <Txt kind="body" style={{ marginTop: sp(3) }}>
+        She, or the person legally able to decide with her, agrees to each part
+        separately. Yes to one and no to another is fine, and any of them can change
+        later. Nothing here can be switched back on by family without her.
       </Txt>
 
-      <Txt kind="label" style={{ marginTop: sp(6), marginBottom: sp(2) }}>Her name</Txt>
-      <TextInput
-        style={styles.input}
+      <Field
+        label="Her name"
         value={resident}
         onChangeText={setResident}
         placeholder="Her name"
-        placeholderTextColor={palette.inkMuted}
-        accessibilityLabel="Name of the person being monitored"
+        style={{ marginTop: sp(6) }}
       />
 
-      <Card style={{ marginTop: sp(5) }}>
-        <Txt kind="label">What Dhyaan senses</Txt>
-        {SENSED.map((s) => <InfoRow key={s.text} icon={s.icon} text={s.text} />)}
-      </Card>
+      {GRANTS.map((g) => (
+        <Card key={g.key} style={{ marginTop: sp(4) }}>
+          <Txt kind="label">{g.title}</Txt>
+          {g.body.map((para) => (
+            <Txt key={para.slice(0, 24)} kind="body" style={{ marginTop: sp(2) }}>
+              {para}
+            </Txt>
+          ))}
+          <YesNo
+            label={g.title}
+            value={grants[g.key]}
+            onChange={(v) => setGrants((s) => ({ ...s, [g.key]: v }))}
+          />
+        </Card>
+      ))}
 
-      <Card style={{ marginTop: sp(3) }}>
-        <Txt kind="label">What family sees</Txt>
-        {FAMILY_SEES.map((s) => <InfoRow key={s.text} icon={s.icon} text={s.text} />)}
-      </Card>
+      <Hairline style={{ marginVertical: sp(6) }} />
 
-      <Txt kind="label" style={{ marginTop: sp(6), marginBottom: sp(2) }}>Your name</Txt>
-      <TextInput
-        style={styles.input}
+      <Field
+        label="Your name"
         value={signer}
         onChangeText={setSigner}
         placeholder="Full name"
-        placeholderTextColor={palette.inkMuted}
-        accessibilityLabel="Name of the person giving consent"
+      />
+      <Field
+        label="Relationship"
+        value={relationship}
+        onChangeText={setRelationship}
+        placeholder="Daughter, son, carer"
+        style={{ marginTop: sp(3) }}
       />
 
-      <View style={{ marginTop: sp(6) }}>
+      {!ready && (
+        <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>{/* voice-ok */}
+          {!answeredAll
+            ? 'Answer each of the three above, yes or no.'
+            : !anyYes
+              ? 'Dhyaan can’t watch over her with all three declined. Say yes to at least one.'
+              : 'Fill in her name, your name, and your relationship.'}
+        </Txt>
+      )}
+
+      <View style={{ marginTop: sp(4) }}>
         <Btn
           label="Agree and continue"
           disabled={!ready}
           onPress={() => {
-            session.setConsent(resident.trim(), signer.trim());
-            router.push('/onboard/baseline');
+            session.setConsent({
+              residentName: resident.trim(),
+              signedBy: signer.trim(),
+              relationship: relationship.trim(),
+              grants,
+            });
+            router.push(nextAfterConsent(grants) as never);
           }}
         />
       </View>
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  input: {
-    ...type.body,
-    color: palette.ink,
-    backgroundColor: palette.raised,
-    borderRadius: radius.card,
-    paddingHorizontal: sp(4),
-    paddingVertical: sp(3.5),
-  },
-});

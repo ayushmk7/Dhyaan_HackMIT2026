@@ -8,6 +8,8 @@ import json
 import os
 
 from app import location as location_mod
+from app.routers.camera import HeartbeatIn as CameraHeartbeatIn
+from app.routers.camera import ObservationIn
 from app.routers.ingest import BandCancelIn, BandEventIn, HeartbeatIn, RFScanIn
 from tests.conftest import BAND_HEADERS
 
@@ -18,6 +20,9 @@ FIXTURE_MODELS = {
     "band_cancel.json": BandCancelIn,
     "heartbeat.json": HeartbeatIn,
     "rf_scan.json": RFScanIn,
+    # The camera worker's contract, same deal as the band's (VLM_PLAN §8).
+    "camera_observation.json": ObservationIn,
+    "camera_heartbeat.json": CameraHeartbeatIn,
 }
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "..", "fixtures")

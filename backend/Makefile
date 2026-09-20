@@ -1,4 +1,4 @@
-.PHONY: mongo embedder run seed test fmt clean
+.PHONY: mongo embedder run seed test fmt clean vision vision-demo vlm
 
 mongo:            ## start the local MongoDB container
 	docker start dhyaan-mongo 2>/dev/null || docker run -d --name dhyaan-mongo -p 27017:27017 mongo:7
@@ -21,3 +21,17 @@ ip:               ## the URL to put in the React Native app
 
 clean:
 	docker rm -f dhyaan-mongo 2>/dev/null || true
+
+# --- camera lane (VLM_PLAN §3) ------------------------------------------------
+# Needs the extra once:  uv pip install -e ".[vision]"
+
+vlm:              ## pull + warm the vision model (6.1 GB, keeps itself resident)
+	@pgrep -qf "ollama serve" || (ollama serve > /tmp/ollama.log 2>&1 &)
+	@sleep 2 && ollama pull qwen3-vl:8b
+	@curl -s http://localhost:11434/api/chat -d '{"model":"qwen3-vl:8b","messages":[{"role":"user","content":"hi"}],"stream":false,"keep_alive":-1,"think":false}' > /dev/null && echo "qwen3-vl:8b warm"
+
+vision:           ## run the camera worker against the local API
+	.venv/bin/python -m vision --source 0 --camera-id cam_mac_01
+
+vision-demo:      ## the on-stage configuration: fast rules, preview window, `p` pauses 2h
+	.venv/bin/python -m vision --source 0 --demo --preview --camera-id cam_mac_01

@@ -22,6 +22,11 @@ export const palette = {
   rustDeep: '#96290C',
   rustWash: '#FBE5DC',
 
+  // Camera lane: one new wash for "Dhyaan saw this just now". Not a status
+  // colour — it never means alert, and rust still owns that alone.
+  amber: '#9A6B1E',
+  amberWash: '#F7EFDC',
+
   night: '#10161D',
   nightRaised: '#1A232D',
   nightInk: '#EAE5D6',
@@ -64,6 +69,10 @@ export const cardShadow = {
 } as const;
 
 export const font = {
+  // The serif survives for exactly one job: Eleanor's own quoted words
+  // (content, never chrome). Loaded weights stay available for that.
+  light: 'Fraunces_300Light',
+  label: 'Fraunces_600SemiBold',
   display: 'Fraunces_600SemiBold',
   displayBold: 'Fraunces_700Bold',
   black: 'Fraunces_900Black',
@@ -75,6 +84,8 @@ export const font = {
 // The serif exists for exactly one thing: Eleanor's own quoted words (content,
 // never chrome) — an app whose chrome speaks in a display serif is a website.
 export const type = {
+  // `hero` kept as a compat alias for the camera-lane screens; SF like all chrome.
+  hero: { fontSize: 34, lineHeight: 40, fontWeight: '800' as const, letterSpacing: -0.8 },
   display: { fontSize: 30, lineHeight: 36, fontWeight: '800' as const, letterSpacing: -0.6 }, // alert headline only
   title: { fontSize: 22, lineHeight: 28, fontWeight: '700' as const, letterSpacing: -0.4 },
   heading: { fontSize: 20, lineHeight: 25, fontWeight: '700' as const, letterSpacing: -0.4 }, // in-screen section (Health-style)

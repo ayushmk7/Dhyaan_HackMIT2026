@@ -49,12 +49,26 @@ def test_set_script_validates_and_defaults_to_no_answer():
     voice.set_script("no_answer")  # restore — set_script has no test-scoped undo
 
 
+async def _wait_for_call(db, alert_id, timeout=3.0, interval=0.02):
+    """The `calls` row is written while the FSM is transitioning, so reading it
+    the instant the state flips is a race — it passes alone and fails in a full
+    suite run when the loop is busier."""
+    elapsed = 0.0
+    while elapsed < timeout:
+        call = await db.calls.find_one({"alert_id": alert_id})
+        if call is not None:
+            return call
+        await asyncio.sleep(interval)
+        elapsed += interval
+    raise AssertionError(f"no calls row for {alert_id} within {timeout}s")
+
+
 async def test_place_call_writes_a_simulated_calls_row(db, resident, monkeypatch):
     monkeypatch.setattr(cfg, "CANCEL_WINDOW_S", 0.05)
     alert = await alerts.open_alert(resident, "evt_v1", kind="fall", severity="critical")
     doc = await _wait_for_state(db, alert["_id"], "CALLING_RESIDENT")
 
-    call = await db.calls.find_one({"alert_id": alert["_id"]})
+    call = await _wait_for_call(db, alert["_id"])
     assert call is not None
     assert call["simulated"] is True
     assert call["to_e164"] == "+15551230000"
@@ -74,7 +88,7 @@ async def test_script_okay_resolves_alert_and_appends_transcript(db, resident, m
     resolved = await _wait_for_state(db, alert["_id"], "RESOLVED_OK")
     assert resolved["resolution"] == "ok"
 
-    call = await db.calls.find_one({"alert_id": alert["_id"]})
+    call = await _wait_for_call(db, alert["_id"])
     assert call["status"] == "completed"
     transcript = call["transcript"]
     assert len(transcript) == 3
@@ -144,6 +158,6 @@ async def test_raising_conversation_task_does_not_break_the_alert(db, resident, 
     fresh = await db.alerts.find_one({"_id": alert["_id"]})
     assert fresh["state"] == "CALLING_RESIDENT"  # untouched, no partial write
 
-    call = await db.calls.find_one({"alert_id": alert["_id"]})
+    call = await _wait_for_call(db, alert["_id"])
     assert call is not None
     assert call["simulated"] is True  # place_call's own write still happened

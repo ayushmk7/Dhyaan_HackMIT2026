@@ -25,7 +25,8 @@ for path in glob.glob('src/**/*.ts*', recursive=True):
 
     for i, l in enumerate(lines, 1):
         stripped = l.strip()
-        if stripped.startswith('//') or stripped.startswith('*') or 'voice-ok' in l:
+        if (stripped.startswith('//') or stripped.startswith('*') or stripped.startswith('/*')
+                or stripped.startswith('{/*') or stripped.endswith('*/') or 'voice-ok' in l):
             continue
         # em dash inside a string literal, not a code comment tail
         code = l.split('//')[0]
