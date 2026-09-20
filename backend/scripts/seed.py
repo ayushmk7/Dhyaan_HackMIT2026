@@ -79,6 +79,12 @@ CONTACTS = [
      "phone_e164": "+15551232222", "relationship": "son", "ladder_order": 2},
 ]
 
+# The REAL band too (band/fallband/config.json's band_id): without this row a
+# reseed at the venue 404s every POST from the physical UNO Q until someone
+# remembers to re-pair it by hand.
+BAND_UNOQ = {"_id": "band_unoq01", "resident_id": "res_eleanor", "battery_pct": 100,
+             "thresholds_rev": 1, "firmware": "0.1.0"}
+
 BAND = {"_id": "band_a3f2", "resident_id": "res_eleanor", "battery_pct": 88,
         "thresholds_rev": 1, "firmware": "0.1.0"}
 
@@ -144,6 +150,7 @@ async def main(wipe: bool, days: int):
     for c in CONTACTS:
         await d.contacts.replace_one({"_id": c["_id"]}, c, upsert=True)
     await d.bands.replace_one({"_id": BAND["_id"]}, BAND, upsert=True)
+    await d.bands.replace_one({"_id": BAND_UNOQ["_id"]}, BAND_UNOQ, upsert=True)
     await d.cameras.replace_one({"_id": CAMERA["_id"]}, CAMERA, upsert=True)
 
     # Facts are embedded synchronously (there are twelve of them, once), so the
