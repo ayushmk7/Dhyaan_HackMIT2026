@@ -19,7 +19,7 @@ import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, TextInput, View } from 'react-native';
 import {
-  Btn, Chip, CitationChip, Entrance, ErrorState, IconBtn, Refusal, Row, Screen, Txt,
+  Chip, CitationChip, Entrance, ErrorState, IconBtn, Refusal, Row, Screen, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { family } from '@/lib/copy/family';
@@ -130,12 +130,6 @@ export default function Ask() {
                 <Chip key={s} label={s} onPress={() => send(s)} />
               ))}
             </View>
-            <Btn
-              kind="link"
-              label={copy.planFromChat}
-              style={{ marginTop: sp(6), alignSelf: 'flex-start' }}
-              onPress={() => router.push('/(family)/chat/plan')}
-            />
           </Entrance>
         </View>
       )}

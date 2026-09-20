@@ -34,7 +34,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router, useIsFocused } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, View, ViewStyle } from 'react-native';
+import { RefreshControl, StyleSheet, View, ViewStyle } from 'react-native';
 import Animated, {
   Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming,
 } from 'react-native-reanimated';
@@ -279,53 +279,47 @@ const ageOf = (t: CameraMonitorTick, now: number) => {
   return `${pad(Math.min(99, Math.max(0, s)))} S`;
 };
 
-function Cell({ label, value }: { label: string; value: string }) {
+/** One reading: its name on the left, its value on the right. */
+function Reading({ label, value, last }: { label: string; value: string; last?: boolean }) {
   return (
-    <View style={styles.cell}>
-      <Txt kind="micro" tone="muted" numberOfLines={1}>{label}</Txt>
-      <Txt kind="data" numberOfLines={1} style={{ marginTop: sp(1) }}>
-        {value}
-      </Txt>
+    <View style={[styles.reading, last ? null : styles.readingRule]}>
+      <Txt kind="micro" tone="muted" numberOfLines={1} style={{ flex: 1 }}>{label}</Txt>
+      <Txt kind="stamp" numberOfLines={1} style={{ textAlign: 'right' }}>{value}</Txt>
     </View>
   );
 }
 
-// Two rows of four, then the model on a line of its own. The grid is fixed:
-// every cell is a quarter of the row and one line tall whatever it says, so a
-// reading changing width once a second cannot move anything under it. Rows
-// are never mounted or unmounted on the tick; an unfilled field shows the
-// glyph in the same slot.
-//   Row 1: what the pipeline is doing, and what it thinks it sees.
-//   Row 2: how it is running.
+// A two-column table, not a four-across grid.
+//
+// The grid gave every reading a quarter of the row, so "qwen2.5vl:3b" and
+// "2596 MS" truncated while "04" sat in the same width with room to spare. A
+// name on the left and its value on the right lets each take what it needs,
+// reads down a single column, and cannot truncate at any sensible width.
+//
+// The row count is fixed and every row is one line tall whatever it says, so a
+// reading changing width once a second still moves nothing. Rows are never
+// mounted or unmounted on the tick; an unfilled field shows the glyph in the
+// same slot.
 function Telemetry({ tick, now }: { tick: CameraMonitorTick; now: number }) {
   const k = copy.keys;
-  const rows: { label: string; value: string }[][] = [
-    [
-      { label: k.gate, value: gateOf(tick) },
-      { label: k.people, value: peopleOf(tick) },
-      { label: k.activity, value: activityOf(tick) },
-      { label: k.conf, value: confOf(tick) },
-    ],
-    [
-      { label: k.fps, value: fpsOf(tick) },
-      { label: k.latency, value: latencyOf(tick) },
-      { label: k.batch, value: batchOf(tick) },
-      { label: k.age, value: ageOf(tick, now) },
-    ],
+  const rows: { label: string; value: string }[] = [
+    // What the pipeline is doing, and what it thinks it sees.
+    { label: k.gate, value: gateOf(tick) },
+    { label: k.people, value: peopleOf(tick) },
+    { label: k.activity, value: activityOf(tick) },
+    { label: k.conf, value: confOf(tick) },
+    // How it is running.
+    { label: k.fps, value: fpsOf(tick) },
+    { label: k.latency, value: latencyOf(tick) },
+    { label: k.batch, value: batchOf(tick) },
+    { label: k.age, value: ageOf(tick, now) },
+    { label: k.model, value: modelOf(tick) },
   ];
   return (
     <View>
-      {rows.map((cells, r) => (
-        <View key={r} style={{ flexDirection: 'row' }}>
-          {cells.map((c) => (
-            <Cell key={c.label} label={c.label} value={c.value} />
-          ))}
-        </View>
+      {rows.map((r, i) => (
+        <Reading key={r.label} label={r.label} value={r.value} last={i === rows.length - 1} />
       ))}
-      <View style={styles.modelRow}>
-        <Txt kind="micro" tone="muted">{k.model}</Txt>
-        <Txt kind="stamp" numberOfLines={1} style={{ flex: 1 }}>{modelOf(tick)}</Txt>
-      </View>
     </View>
   );
 }
@@ -340,7 +334,7 @@ const openSettings = () => router.push('/(family)/settings');
 
 export default function CameraConsole() {
   const qc = useQueryClient();
-  const { residentId } = useSession();
+  const { residentId, residentName } = useSession();
   const cameras = useCameras();
   const isFocused = useIsFocused();
 
@@ -481,7 +475,7 @@ export default function CameraConsole() {
 
         {/* One section for the machine: the tick's readings under one heading. */}
         <View>
-          <Marquee title={copy.worker} first />
+          <Marquee title={copy.watching(residentName)} first />
           <Telemetry tick={tick} now={now} />
         </View>
       </Stagger>
@@ -575,15 +569,18 @@ const styles = {
     paddingHorizontal: sp(1),
     paddingVertical: 1,
   },
-  cell: {
-    flex: 1,
-    paddingVertical: sp(2),
-    paddingRight: sp(2),
+  // A hairline between readings, none under the last: the table should look
+  // like a table, not like nine separate things.
+  readingRule: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
   },
-  modelRow: {
+  reading: {
     flexDirection: 'row' as const,
-    alignItems: 'baseline' as const,
-    gap: sp(2),
-    paddingVertical: sp(2),
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    gap: sp(4),
+    minHeight: 34,
+    paddingVertical: sp(1.5),
   },
 };

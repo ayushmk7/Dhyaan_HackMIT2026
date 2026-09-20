@@ -1,8 +1,16 @@
-// Today. One answer at the top (is she okay, right now), the day's four
-// figures on one plate under it, and a short list of rows for what is only
-// sometimes relevant. Nothing on this screen is a paragraph, and nothing on
-// it is decorated: no avatar, no glyph beside a label that already names the
-// thing. Her day and Settings hold the rest.
+// Today. Ordered by what the person opening it needs, in the order they need
+// it: is she alright right now (one sentence), can I reach her (one full-width
+// button), what has her day been like (four figures on one plate), and then
+// whatever is only sometimes true, in a short list at the bottom. Nothing on
+// this screen is a paragraph, and nothing on it is decorated: no avatar, no
+// glyph beside a label that already names the thing. Her day and Settings
+// hold the rest.
+//
+// The sentence is set at `display` (30), not `hero` (40). The server keeps it
+// short; a short sentence at 30 with room around it reads as calm, and the
+// same words at 40 wrapping to three lines read as shouting. It is a plain
+// Txt rather than PresenceHero because that component remounts on every new
+// sentence to fade it in, and this screen is not allowed to move on its own.
 //
 // The answer is the server's presence sentence, room-free by design: a
 // per-room breakdown is whereabouts, and whereabouts never reach a family
@@ -20,7 +28,7 @@ import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Linking, Pressable, RefreshControl, View } from 'react-native';
 import {
-  Btn, Chevron, Entrance, ErrorState, LoadingState, PresenceHero, Row, RowGroup, Screen, Slab, Txt,
+  Btn, Chevron, Entrance, ErrorState, LoadingState, Row, RowGroup, Screen, Slab, Txt,
 } from '@/components';
 import { family } from '@/lib/copy/family';
 import {
@@ -199,6 +207,7 @@ export default function Today() {
     { value: tiles ? String(tiles.out_of_house) : NONE, label: copy.tiles.timesOut, camera: false },
   ];
 
+  const sentence = presence?.sentence?.trim() || emptySentence(presence, residentName);
   const opener = prompts?.[0];
   const hasRows = !!latest || !!herMessage || !!opener || !!nextAppt;
 
@@ -211,26 +220,18 @@ export default function Today() {
       }
     >
       {/* Beat 0. The answer: her name, the sentence, what the camera is doing.
-          Big type on bare paper, nothing around it. The sentence leads. */}
+          Bare paper, nothing around it, and room on every side. The sentence
+          is the screen's heading and announces itself when it changes. */}
       <Entrance index={0} distance={26}>
-        <Row style={{ justifyContent: 'space-between' }} gap={3}>
-          <Txt kind="label" numberOfLines={1} style={{ flexShrink: 1 }}>{residentName}</Txt>
-          {/* The one thing a worried person wants at 3am, named. With no
-              number saved there is nothing to dial, so there is no button. */}
-          {!!phone && (
-            <Btn
-              kind="quiet"
-              size="small"
-              label={copy.call(residentName)}
-              onPress={() => Linking.openURL(`tel:${phone}`)}
-            />
-          )}
-        </Row>
-        <PresenceHero
-          sentence={presence?.sentence ?? ''}
-          emptySentence={emptySentence(presence, residentName)}
-          style={{ marginTop: sp(6) }}
-        />
+        <Txt kind="label" numberOfLines={1}>{residentName}</Txt>
+        <Txt
+          kind="display"
+          accessibilityRole="header"
+          accessibilityLiveRegion="polite"
+          style={{ marginTop: sp(3) }}
+        >
+          {sentence}
+        </Txt>
         <Txt kind="caption" tone="muted" numberOfLines={1} style={{ marginTop: sp(4) }}>
           {subline(presence)}
         </Txt>
@@ -245,9 +246,31 @@ export default function Today() {
         )}
       </Entrance>
 
-      {/* Beat 1. The day in four figures, on the screen's one plate. The
+      {/* Beat 1. Reach her. The most-used thing on the screen and the one that
+          ends the worry, so it is the app's one accent-filled control, full
+          width, right under the answer. Emphasis is size, place and the
+          plate; alarm keeps the only louder colour. With no number saved the
+          same slot says so, at the same height, so nothing below it moves. */}
+      <Entrance index={1} style={{ marginTop: sp(7) }}>
+        {phone ? (
+          <Btn
+            kind="primary"
+            label={copy.call(residentName)}
+            onPress={() => Linking.openURL(`tel:${phone}`)}
+          />
+        ) : (
+          <Btn
+            kind="quiet"
+            disabled
+            label={copy.noNumber(residentName)}
+            onPress={() => {}}
+          />
+        )}
+      </Entrance>
+
+      {/* Beat 2. The day in four figures, on the screen's one plate. The
           figures are the summary, the tab is the detail. */}
-      <Entrance index={1} style={{ marginTop: sp(10) }}>
+      <Entrance index={2} style={{ marginTop: sp(8) }}>
         {activityError && (
           <ErrorState
             inline
@@ -280,10 +303,10 @@ export default function Today() {
         </Slab>
       </Entrance>
 
-      {/* Beat 2. Everything occasional, one line each, absent when empty.
+      {/* Beat 3. Everything occasional, one line each, absent when empty.
           Last on the screen, so a late row moves nothing above it. */}
       {hasRows && (
-        <Entrance index={2} style={{ marginTop: sp(8) }}>
+        <Entrance index={3} style={{ marginTop: sp(8) }}>
           <RowGroup>
             {latest && (
               <QuietRow

@@ -64,7 +64,11 @@ export const family = {
       pausedBy: (name: string) => `${name} paused the camera for now`,
     },
 
-    call: (name: string) => `Call ${name}`,
+    // The one full-width action on the screen. First name only: the button is
+    // a person's, not a record's. With no number saved it says so rather than
+    // sitting there as a control that dials nothing.
+    call: (name: string) => `Call ${first(name)}`,
+    noNumber: (name: string) => `No number saved for ${first(name)}`,
 
     // The socket is down. One line, no dashboard: the family is told the
     // screen may be behind, and nothing else changes.
@@ -188,7 +192,6 @@ export const family = {
       'Did anyone visit this week?',
       'How were her nights this week?',
     ],
-    planFromChat: 'Turn a family group chat into a plan',
 
     // The empty screen's one big sentence, and the law under it.
     hero: (name: string) => `Ask anything about ${name}’s week.`,
@@ -243,6 +246,17 @@ export const family = {
     // Who a note is attributed to when the consent record has no name.
     defaultTeller: 'Family',
 
+    // The quiet heading over each plate. The list is in runs, the way Her
+    // day's is: the notes, then what she agreed to, then what happens, then
+    // her records. Each heading names the run, so the rows under it can be
+    // short. The irreversible controls have no heading here; they sit apart
+    // under `profile.cannotUndo`.
+    groups: {
+      agreed: 'What she agreed to',
+      happens: 'When something happens',
+      records: 'Her records',
+    },
+
     told: {
       title: 'What Dhyaan was told about her',
       notes: (n: number) => count(n, 'note', 'notes'),
@@ -287,7 +301,7 @@ export const family = {
     },
 
     ladder: {
-      title: 'Who Dhyaan calls, in order',
+      title: 'Who it calls, in order',
       contacts: (n: number) => count(n, 'contact', 'contacts'),
       // "Priya, then Raj, then Meera": the order is the point.
       inOrder: (names: string[]) => names.join(', then '),
@@ -306,7 +320,7 @@ export const family = {
     },
 
     happens: {
-      title: 'What Dhyaan does when something happens',
+      title: 'What it does',
       ifFall: 'If her band detects a fall',
       ifFallBody: 'It gives her thirty seconds to cancel, then Dhyaan calls her. If she does not answer, it calls the people above, in order, and your phone is told at the same time.',
       everythingElse: 'Everything else',
@@ -440,7 +454,9 @@ export const family = {
     },
 
     // The one heading under the pane. Every reading beneath it is the tick's.
-    worker: 'The worker',
+    // The section heading names her, not the process. "The worker" is what
+    // the engineer calls it; a family reads it as jargon about a stranger.
+    watching: (name: string) => `Watching ${name}`,
     // Telemetry keys: names of things, not data. The values next to them are
     // the worker's own numbers and words, straight off the monitor tick.
     keys: {

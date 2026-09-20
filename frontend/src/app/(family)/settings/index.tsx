@@ -1,6 +1,14 @@
-// Settings. Her name at the top, the notes Dhyaan was told under it, then one
-// quiet list of rows for everything that is only sometimes worth opening —
-// and, apart from all of it at the bottom, the two buttons that undo it all.
+// Settings. Her name at the top, then the list in runs, the way Her day's is:
+// one white plate per run under a quiet heading, with air between the plates
+// and hairlines between the rows. The notes Dhyaan was told, what she agreed
+// to, what happens when something happens, her records — and, apart from all
+// of it at the bottom under a heavy rule, the two buttons that undo it all.
+//
+// The rows keep a label over a sentence rather than Her day's time gutter:
+// the labels here are sentence-length ("Who it calls, in order"), so a fixed
+// left column would truncate them. What carries over is the alignment — every
+// label and every sentence starts on the same vertical line, and a row's
+// reading sits right-aligned on the label line in the machine voice.
 //
 // Every control on this screen does exactly what its label says, and nothing
 // here is a placeholder dressed as a working switch:
@@ -26,7 +34,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, Share, View } from 'react-native';
 import {
   Btn, Card, Chevron, DataLabel, EmptyState, Entrance, ErrorState, FactRow, Field, KeyValue,
-  LoadingState, Marquee, Row, RowGroup, Rule, Screen, Txt,
+  LoadingState, Row, RowGroup, Rule, Screen, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { API_BASE, USE_MOCKS } from '@/lib/config';
@@ -168,6 +176,37 @@ function DebugPanel() {
 
 /** A row that opens in place: the collapsed one-liner, or its full body. */
 type Opened = 'none' | 'camera' | 'happens' | 'consent';
+
+/**
+ * The quiet heading over a plate: the same tag Her day sets over each part of
+ * the day, inset to the plate's text edge, with an optional machine reading
+ * on the right (a count). Long-press is only wired on the notes heading,
+ * where the debug panel hides.
+ */
+function GroupHeading({ title, meta, onLongPress, first = false }: {
+  title: string; meta?: string; onLongPress?: () => void;
+  /** The first plate in its beat; the rest carry Her day's gap above them. */
+  first?: boolean;
+}) {
+  const heading = (
+    <Row
+      style={{
+        justifyContent: 'space-between',
+        marginTop: first ? 0 : sp(6), marginBottom: sp(2), marginHorizontal: sp(4),
+      }}
+      gap={3}
+    >
+      <Txt kind="tag" tone="muted" accessibilityRole="header" style={{ flexShrink: 1 }}>{title}</Txt>
+      {!!meta && <Txt kind="stamp" tone="muted">{meta}</Txt>}
+    </Row>
+  );
+  if (!onLongPress) return heading;
+  return (
+    <Pressable onLongPress={onLongPress} delayLongPress={600}>
+      {heading}
+    </Pressable>
+  );
+}
 
 /**
  * One quiet row: a small label, the sentence under it, a reading on the right
@@ -420,15 +459,15 @@ export default function Settings() {
         <Txt kind="display" numberOfLines={2}>{name}</Txt>
       </Entrance>
 
-      {/* Beat 1. What Dhyaan was told: the one list on the screen, and the
-          only heading, because it is the only thing here that is a list. */}
+      {/* Beat 1. What Dhyaan was told: the first plate, and the one whose
+          rows are a list of her own. Its heading carries the count. */}
       <Entrance index={1} style={{ marginTop: sp(4) }}>
-        <Pressable onLongPress={() => setDebugOpen((v) => !v)} delayLongPress={600}>
-          <Marquee
-            title={copy.told.title}
-            meta={profile ? copy.told.notes(facts.length) : undefined}
-          />
-        </Pressable>
+        <GroupHeading
+          first
+          title={copy.told.title}
+          meta={profile ? copy.told.notes(facts.length) : undefined}
+          onLongPress={() => setDebugOpen((v) => !v)}
+        />
         {debugOpen && <DebugPanel />}
         <RowGroup>
           {profileLoading && !profile && <LoadingState label={copy.told.loading} />}
@@ -539,9 +578,15 @@ export default function Settings() {
         </RowGroup>
       </Entrance>
 
-      {/* Beat 2. Everything else, one line each. A row that has more to say
-          opens in place; a row that goes somewhere carries a chevron. */}
-      <Entrance index={2} style={{ marginTop: sp(10) }}>
+      {/* Beat 2. Everything else, in runs: one plate per run under a quiet
+          heading, with the same air between plates as Her day. A row that has
+          more to say opens in place; a row that goes somewhere carries a
+          chevron. Rows inside a plate are parted by hairlines, never gaps. */}
+      <Entrance index={2} style={{ marginTop: sp(6) }}>
+        {/* What she agreed to: the camera is the agreement you can act on
+            from here (stopping it withdraws that consent), and the consent
+            row is the record of all three. */}
+        <GroupHeading first title={copy.groups.agreed} />
         <RowGroup>
           {/* Her camera. The only room name on a family screen, and it is
               allowed: this is where the FAMILY installed the camera (they
@@ -577,49 +622,6 @@ export default function Settings() {
             )}
           </View>
 
-          {/* Who it calls: the order is the point, so the names are the line. */}
-          {contactsLoading && !contacts && <LoadingState label={copy.ladder.loading} />}
-          {contactsError && !contacts && (
-            <ErrorState message={copy.ladder.loadError} onRetry={refetchContacts} />
-          )}
-          {!!contacts && (
-            <QuietRow
-              label={copy.ladder.title}
-              sentence={ladderNames.length ? copy.ladder.inOrder(ladderNames) : copy.ladder.empty}
-              lines={ladderNames.length ? 2 : 4}
-            />
-          )}
-
-          <QuietRow
-            label={copy.careFile.title}
-            sentence={sources.length ? copy.careFile.summary(medications.length, appointments.length) : copy.careFile.intro}
-            lines={sources.length ? 1 : 3}
-            navigates
-            onPress={() => router.push('/(family)/settings/carefile')}
-          />
-
-          {/* Not a preferences pane. There is no endpoint for alert
-              preferences, so this states what Dhyaan does today rather than
-              offering switches that would forget themselves on unmount. */}
-          <View>
-            <QuietRow
-              label={copy.happens.title}
-              sentence={opened === 'happens' ? undefined : copy.happens.short}
-              lines={1}
-              onPress={() => toggle('happens')}
-              expanded={opened === 'happens'}
-            />
-            {opened === 'happens' && (
-              <View style={{ paddingBottom: sp(3), gap: sp(2) }}>
-                <Txt kind="label">{copy.happens.ifFall}</Txt>
-                <Txt kind="body">{copy.happens.ifFallBody}</Txt>
-                <Txt kind="label" style={{ marginTop: sp(1) }}>{copy.happens.everythingElse}</Txt>
-                <Txt kind="body">{copy.happens.everythingElseBody}</Txt>
-                <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>{copy.happens.nothingToSwitch}</Txt>
-              </View>
-            )}
-          </View>
-
           <View>
             <QuietRow
               label={copy.consent.title}
@@ -645,10 +647,64 @@ export default function Settings() {
               </View>
             )}
           </View>
+        </RowGroup>
+
+        {/* When something happens: what it does, then who it calls. The
+            statement is first because it is always there; the ladder waits
+            on a query, and a row that arrives late must not sit above one a
+            person is already reading. */}
+        <GroupHeading title={copy.groups.happens} />
+        <RowGroup>
+          {/* Not a preferences pane. There is no endpoint for alert
+              preferences, so this states what Dhyaan does today rather than
+              offering switches that would forget themselves on unmount. */}
+          <View>
+            <QuietRow
+              label={copy.happens.title}
+              sentence={opened === 'happens' ? undefined : copy.happens.short}
+              lines={1}
+              onPress={() => toggle('happens')}
+              expanded={opened === 'happens'}
+            />
+            {opened === 'happens' && (
+              <View style={{ paddingBottom: sp(3), gap: sp(2) }}>
+                <Txt kind="label">{copy.happens.ifFall}</Txt>
+                <Txt kind="body">{copy.happens.ifFallBody}</Txt>
+                <Txt kind="label" style={{ marginTop: sp(1) }}>{copy.happens.everythingElse}</Txt>
+                <Txt kind="body">{copy.happens.everythingElseBody}</Txt>
+                <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>{copy.happens.nothingToSwitch}</Txt>
+              </View>
+            )}
+          </View>
+
+          {/* Who it calls: the order is the point, so the names are the line. */}
+          {contactsLoading && !contacts && <LoadingState label={copy.ladder.loading} />}
+          {contactsError && !contacts && (
+            <ErrorState message={copy.ladder.loadError} onRetry={refetchContacts} />
+          )}
+          {!!contacts && (
+            <QuietRow
+              label={copy.ladder.title}
+              sentence={ladderNames.length ? copy.ladder.inOrder(ladderNames) : copy.ladder.empty}
+              lines={ladderNames.length ? 2 : 4}
+            />
+          )}
 
           {/* No row for her band. There is nothing to do to it from here
               (no way back into /onboard/pair), and a row that only says so
               is a row nobody acts on. */}
+        </RowGroup>
+
+        {/* Her records: the care file she keeps, and the copy you can take. */}
+        <GroupHeading title={copy.groups.records} />
+        <RowGroup>
+          <QuietRow
+            label={copy.careFile.title}
+            sentence={sources.length ? copy.careFile.summary(medications.length, appointments.length) : copy.careFile.intro}
+            lines={sources.length ? 1 : 3}
+            navigates
+            onPress={() => router.push('/(family)/settings/carefile')}
+          />
 
           <View>
             <QuietRow
