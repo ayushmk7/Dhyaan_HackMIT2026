@@ -51,6 +51,11 @@ TUNING = dict(
     # OPENVOCAB=0 cuts it in one second if it misbehaves on stage; everything
     # then degrades to exactly the COCO-only behaviour it had before.
     openvocab=os.getenv("OPENVOCAB", "1") != "0",
+    # Every 3rd frame a person is in view - 5 food checks a second at 15 fps.
+    # Measured: at every frame the open-vocab pass fights the resident 3B VLM
+    # for the GPU and latency spiked to 824 ms and 2702 ms. At every 3rd:
+    # median 12 ms, p90 14 ms, max 15 ms. Food does not change in 200 ms.
+    openvocab_every_n=int(os.getenv("OPENVOCAB_EVERY_N", "3")),
     # --- stage 4: keyframe selection (VLM_PLAN §3.4) ---
     min_gap_s=20,             # never two keyframes within 20 s
     on_person_appear_gap_s=30,  # first person-positive frame after >=30 s of none

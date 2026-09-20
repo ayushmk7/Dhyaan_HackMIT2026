@@ -369,7 +369,17 @@ class Worker:
                 # call, i.e. a few seconds apart at most — the one place a
                 # second ~11 ms detector is affordable. The 15 fps loop above
                 # never sees it.
-                if reason and reason != "absent":
+                # Open vocabulary on the hot path when a person is in view.
+                # Measured: COCO alone 16 ms, COCO + YOLO-World 25 ms, against a
+                # 33 ms camera interval - it fits, and keyframe-only meant food
+                # was invisible for the seconds between keyframes, which is
+                # exactly when someone picks up a bottle. `openvocab_every_n`
+                # throttles it if a slower machine starts dropping frames.
+                if seen and self.tuning.get("openvocab"):
+                    self._ov_tick = getattr(self, "_ov_tick", 0) + 1
+                    if self._ov_tick % self.tuning.get("openvocab_every_n", 1) == 0:
+                        self._openvocab(masked)
+                elif reason and reason != "absent":
                     self._openvocab(masked)
                 status = f"motion {score:.3f}" + (" · person" if seen else "") + \
                          (f" · {reason}" if reason else "")
@@ -607,9 +617,12 @@ class Worker:
         lines = []
         if last:
             lines.append(f"activity {last['activity']}   posture {last['posture']}")
-        seen = (sc.get("food") or []) + (sc.get("dishes") or [])
-        lines.append(f"people {sc.get('person_count', 0)}   food {', '.join(sc.get('food') or []) or '-'}"
-                     f"   objects {', '.join(seen[:3]) or '-'}")
+        # Food and dishes on their own lines: "objects" lumped a bottle in with
+        # the furniture, and a bottle is the thing you are looking for.
+        lines.append(f"people {sc.get('person_count', 0)}"
+                     f"   FOOD {', '.join(sc.get('food') or []) or '-'}")
+        lines.append(f"DRINK/DISH {', '.join(sc.get('dishes') or []) or '-'}"
+                     f"   seating {', '.join((sc.get('seating') or [])[:2]) or '-'}")
         cv2.rectangle(view, (0, h - 30 - 18 * len(lines)), (w, h), (0, 0, 0), -1)
         for i, line in enumerate(lines):
             cv2.putText(view, line, (8, h - 36 - 18 * (len(lines) - 1 - i)),
