@@ -1,12 +1,22 @@
 # Demo runbook — Sunday 11:00 AM
 
-The demo beat sheet, boot order, and recovery moves. Written against the state
-of the system at 5 AM Sunday; anything marked ⚠ needs a human step first.
+The demo beat sheet, boot order, and recovery moves. Written at 5 AM Sunday and
+corrected at 14:30 after a full dress rehearsal; anything marked ⚠ needs a human
+step first.
+
+**`./demo.sh check` answers "am I ready" in ten lines.** Run it first, and again
+after anything moves. `./demo.sh` with no argument lists what else it does
+(`reset` between takes, `fall` without the band, `tunnel`, `survey`, `camera`).
 
 ## The demo script
 
-1. **Drink water** → VLM logs drinking + the room (runs on Ayush's machine:
-   `make -C backend vision-demo`, webcam pointed at the table).
+0. **Camera tab → Turn the camera on.** The switch in the app really starts the
+   vision worker on the hub: it opens the webcam and runs the whole cascade, and
+   the pane shows the same annotated frame the hub's own window draws. Pre-warm
+   it before you present (`./demo.sh camera on`) — a cold start spends ~60 s
+   loading models.
+1. **Drink water** → VLM logs drinking + the room. The readings under the
+   picture move with you: posture, activity, eating, what it can see.
 2. **Get up, change rooms** → band hears the beacons, app's location flips
    (~40 s to commit; `LOC_COMMIT_TICKS=1` halves it if it feels slow).
 3. **Fall** (slap the band / drop on cushion) → app takeover opens at T+0.
@@ -19,8 +29,8 @@ of the system at 5 AM Sunday; anything marked ⚠ needs a human step first.
 
 ```bash
 ./dev.sh                     # mongo -> ollama -> seed-if-empty -> API :8000
-ngrok http 8000              # must print subsystem-mushroom-grooving.ngrok-free.dev
-                             # (that URL is baked into .env and the band)
+./demo.sh tunnel             # ngrok on the ONE domain the band and Twilio know
+./demo.sh check              # every light green before you present
 cd frontend && npx expo start
 ```
 
@@ -44,16 +54,24 @@ Lab container has no Bluetooth, this feeds it), `fallband-hub-relay.service`
 3. Verify from any machine: band heartbeats show in the API log, and
    `GET /v1/residents/res_eleanor/location` moves when the band moves.
 
-**Re-survey in final positions** (fingerprints are bench-geometry right now —
-redo once beacons are placed, 35 s per room, band held in each "room"):
+**Re-survey in final positions** — DONE at 14:15 for `kitchen` and
+`living_room` (the second spot is physically the bathroom; it is surveyed under
+the living-room name because that is what we call it on stage). Separation is
+good: kitchen reads minor 1 at -33/-46 and minor 2 at -58; the other spot reads
+the reverse, minor 2 at -26 and minor 1 at -60.
+
+Fingerprints are written to **mongo**, so this is a one-time cost per venue: it
+survives API restarts, tunnel restarts and reboots. Redo a room only if a beacon
+moves:
 
 ```bash
-adb shell "docker exec fallband-app-main-1 python /app/python/survey.py kitchen 35"
-adb shell "docker exec fallband-app-main-1 python /app/python/survey.py bathroom 35"
+./demo.sh survey kitchen        # 35 s, band held where that room is
+./demo.sh survey living_room
 ```
 
-(Works over WiFi too: run the same `docker exec` via an SSH/adb-over-network
-session, or temporarily plug USB.)
+Needs the board on USB (adb). **The app cannot do this**: the phone has no BLE
+radio access, so its survey screen sends empty readings rather than faked ones,
+and only the band's own scan produces real fingerprints.
 
 ## Beacons (ESP32)
 
@@ -75,16 +93,15 @@ Set in the environment before `./dev.sh`.
 
 ## ⚠ Human items before 11 AM
 
-1. `EXPO_PUBLIC_OPENAI_API_KEY` in `frontend/.env`, and `OPENAI_API_KEY` for
-   the backend. Without them the conversation openers, Sunday letter and
-   chat-plan beats degrade to their mocks, and the backend's written narratives
-   and chat answers fall through to the local Ollama model. Everything still
-   runs; it is just less good prose.
-2. Board on venue WiFi (step above).
-3. Vision runs on WHICHEVER machine hosts the backend — proven on Abhinav's
-   Mac this morning (`make -C backend vision-demo`; camera permission must be
-   granted interactively once). Ayush's machine needs the same one-time
-   `uv pip install -e ".[vision]"` + camera grant if it hosts.
+1. ~~Keys~~ DONE. Both are set: `EXPO_PUBLIC_OPENAI_API_KEY` in `frontend/.env`
+   (openers, Sunday letter) and `OPENAI_API_KEY` in the root `.env` (the
+   backend's chat and written narratives). They are **two names for one key**,
+   and the backend only reads `.env` at boot — after adding it, restart the API.
+2. ~~Board on venue WiFi~~ DONE: it is on the phone hotspot and reaching the hub.
+3. ~~Vision~~ DONE and warm. It runs on whichever machine hosts the backend, and
+   it is started from the app's camera switch now, not `make vision-demo`. A
+   first run on a cold machine downloads ~338 MB of weights — never let that be
+   the first thing that happens on stage.
 4. Phone that will be "Asha's" charged, ringer ON, Focus/DND OFF.
 5. Hide Expo Go's floating dev button (shake device / dev menu) — it is the
    single most un-Apple pixel on screen.
@@ -113,6 +130,20 @@ Set in the environment before `./dev.sh`.
 - **Drop physics**: free-fall + hard landing + LYING STILL afterwards. The
   power bank must fall WITH the pendant (pocket-worn = automatic). Handling
   bumps under ~5g no longer trigger; real drops measure 5.7-10g.
+- **`lsof -ti:8000 | xargs kill` takes ngrok down with the API.** It matches
+  anything *connected* to 8000, and the tunnel is. Always `./demo.sh tunnel`
+  after restarting the backend.
+- **The free tunnel drops about one request in five** over congested venue wifi,
+  at 1-5 s each — measured. Two of four room surveys failed that way and worked
+  on retry; the band and Twilio both retry on their own, so beats still land,
+  just slower. `./demo.sh check` tries three times before calling it down.
+- **`arduinoboards` is a trap SSID.** The board had joined it: a valid IP, a
+  reachable gateway, and no route off the network, so every post died with
+  `Network is unreachable` and the band looked dead. `./demo.sh check` prints
+  which SSID the board is on.
+- **The band's fall detection is live and sensitive** — it opened a real alert
+  just from being handled. `./demo.sh reset` before you present, or the app
+  opens on a takeover.
 - **Never push repo config.json to the board without re-setting hub_url**
   (repo copy now carries the ngrok URL, but verify after any push:
   `adb shell grep hub_url /home/arduino/ArduinoApps/fallband-app/config.json`).
@@ -143,12 +174,11 @@ config changes. ~20 min:
 
 - **Call never comes**: check ngrok is up and printing the SAME domain; check
   the API log for `POST /twilio/status`. Nuclear: re-run the fall.
-- **Alert stuck / needs forcing**: `curl -X POST localhost:8000/demo/force_ack
-  -H 'Content-Type: application/json' -d '{"alert_id":"<id>","by":"demo"}'`.
-- **Fall won't trigger from the band**: fixture instead —
-  `curl -X POST localhost:8000/v1/ingest/band -H 'X-Band-Key: band-dev-key'
-  -H 'Content-Type: application/json' -d @backend/fixtures/band_fall.json`
-  (bump `ts` to now first).
+- **Alert stuck / needs forcing**: `./demo.sh reset` closes everything open.
+- **Fall won't trigger from the band**: `./demo.sh fall` takes the same path
+  (it bumps the fixture's `ts` to now for you).
+- **Camera pane empty**: `./demo.sh camera status` — the log path it prints is
+  the only thing that tells "no webcam" from "no model pulled".
 - **Room won't flip**: check `fallband-ble` is active on the board
   (`systemctl --user status fallband-ble` as arduino) and the relay file is
   fresh; re-survey if beacons moved.
