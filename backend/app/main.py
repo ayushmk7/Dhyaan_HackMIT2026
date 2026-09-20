@@ -43,6 +43,30 @@ app.include_router(camera.device)
 app.include_router(camera.family)
 app.include_router(camera.public)
 
+# Live voice: mount the Twilio/Deepgram bridge and swap the scripted stub for
+# real calls only when credentials exist, so `./dev.sh` stays zero-config.
+import os as _os  # noqa: E402
+
+if _os.getenv("TWILIO_ACCOUNT_SID") and _os.getenv("DEEPGRAM_API_KEY"):
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _repo = str(_Path(__file__).resolve().parents[2])
+    if _repo not in _sys.path:
+        _sys.path.insert(0, _repo)
+    try:
+        from dhyaan.voice import bridge as _bridge
+
+        from . import voice_adapter as _voice_adapter
+
+        _voice_adapter.install()
+        _bridge.use_fsm(_voice_adapter)
+        app.include_router(_bridge.router)
+    except Exception as _e:  # missing twilio/websockets deps, etc.
+        import logging as _logging
+
+        _logging.getLogger("dhyaan").warning("live voice disabled: %s", _e)
+
 
 @app.get("/health")
 async def health():

@@ -669,7 +669,15 @@ export const httpApi = {
     if (!lines.length) return [];
     return (await draftOpeners(lines.slice(0, 20))) ?? [];
   },
-  latestMessage: async (): Promise<{ text: string; at: string } | null> => null,
+  // The voice agent's leave_message tool lands as a family_note event with the
+  // spoken text in payload.message (backend/app/voice_adapter.py). Newest wins.
+  latestMessage: async (): Promise<{ text: string; at: string } | null> => {
+    const events = await httpApi.getEvents(residentId()).catch(() => []);
+    const note = events.find(
+      (e) => e.type === 'family_note' && typeof e.payload?.message === 'string',
+    );
+    return note ? { text: note.payload.message as string, at: note.ts } : null;
+  },
   planFromThread: async (thread: string): Promise<FamilyPlan> =>
     (await aiPlanFromThread(thread)) ?? {
       headline: 'Couldn’t read the thread. Try pasting it again.',

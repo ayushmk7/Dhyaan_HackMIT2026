@@ -21,7 +21,21 @@ from typing import Any
 
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 
-from . import fsm_stub as fsm  # REPLACE at integration: the real FSM (see fsm_stub.py)
+from . import fsm_stub as fsm  # default: in-memory stub; use_fsm() swaps in the real FSM
+
+
+def use_fsm(module) -> None:
+    """Bind the seam to a real FSM module (backend/app/voice_adapter.py) at startup."""
+    global fsm
+    fsm = module
+
+
+async def _fsm_call(fn, *args, **kwargs):
+    """The stub's helpers are sync; the real adapter's are async. Tolerate both."""
+    r = fn(*args, **kwargs)
+    if asyncio.iscoroutine(r):
+        r = await r
+    return r
 from .outbound import retry_or_escalate
 from .settings import build_settings, voicemail_message
 
@@ -252,9 +266,10 @@ async def twilio_status(request: Request) -> dict:
     call_sid = str(form.get("CallSid", ""))
     status = str(form.get("CallStatus", ""))
     binding = fsm.CALL_BINDINGS.get(call_sid, {})
-    fsm.emit_event(type="call_status", payload={"call_sid": call_sid, "status": status,
-                                                **({"call_id": binding["call_id"]} if binding else {})},
-                   embedding_text=f"Call status {status}.")
+    await _fsm_call(fsm.emit_event, type="call_status",
+                    payload={"call_sid": call_sid, "status": status,
+                             **({"call_id": binding["call_id"]} if binding else {})},
+                    embedding_text=f"Call status {status}.")
     return {"ok": True}
 
 
@@ -276,17 +291,17 @@ async def twilio_amd(request: Request) -> dict:
                 "type": "InjectAgentMessage",
                 "message": voicemail_message(sess.ctx),
             }))
-            fsm.emit_event(type="call_answered",
-                           payload={"answered_by": answered_by, "call_id": sess.ctx.get("call_id")},
-                           embedding_text="The call went to voicemail.")
+            await _fsm_call(fsm.emit_event, type="call_answered",
+                            payload={"answered_by": answered_by, "call_id": sess.ctx.get("call_id")},
+                            embedding_text="The call went to voicemail.")
             # B6.4 — THE rule: a voicemail is NOT an answer. Advance as no_answer.
-            fsm.advance_no_answer(sess.ctx.get("alert_id", ""), sess.ctx.get("call_id", ""),
-                                  reason="voicemail")
+            await _fsm_call(fsm.advance_no_answer, sess.ctx.get("alert_id", ""),
+                            sess.ctx.get("call_id", ""), reason="voicemail")
     elif answered_by == "human":
         if sess:
-            fsm.emit_event(type="call_answered",
-                           payload={"answered_by": "human", "call_id": sess.ctx.get("call_id")},
-                           embedding_text="The call was answered by a person.")
+            await _fsm_call(fsm.emit_event, type="call_answered",
+                            payload={"answered_by": "human", "call_id": sess.ctx.get("call_id")},
+                            embedding_text="The call was answered by a person.")
     # B6.5: "unknown" (AMD timed out) → treat as human; normal agent flow, no branch.
     return {"ok": True, "answered_by": answered_by}
 
@@ -300,7 +315,7 @@ async def force_ack(request: Request) -> dict:
     except Exception:
         pass
     alert_id = body.get("alert_id", "alr_demo")
-    return fsm.force_ack(alert_id, by=body.get("by", "demo"))
+    return await _fsm_call(fsm.force_ack, alert_id, by=body.get("by", "demo"))
 
 
 async def on_call_status(*, call_id: str, alert_id: str, role: str, to_e164: str,

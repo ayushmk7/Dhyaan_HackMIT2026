@@ -13,6 +13,7 @@ We do not trilaterate (§7.3) — nearest-room-with-hysteresis, not a point on a
 """
 
 import math
+import os
 from datetime import datetime, timezone
 
 from .db import db
@@ -40,13 +41,16 @@ KNN_UNKNOWN_L = 0.35     # layer-1 confidence floor -> "garbage scan" (never a c
 
 ZETA = 1e-4              # HMM teleport floor, keeps a zeroed posterior recoverable
 BETA, ETA = 1.5, 0.02    # emission tempering: sharpen, then floor
-COMMIT_TICKS, COMMIT_P = 2, 0.60   # dwell hysteresis: N consecutive ticks + confidence to commit
+COMMIT_TICKS = int(os.getenv("LOC_COMMIT_TICKS", "2"))   # dwell hysteresis: N consecutive ticks to commit
+COMMIT_P = float(os.getenv("LOC_COMMIT_P", "0.60"))       # + posterior confidence floor
 UNKNOWN_P, UNKNOWN_TICKS = 0.45, 3  # posterior floor before we give up and say "unknown"
 
-BATHROOM_THRESHOLD_S = 900   # 15 min floor, PRD §7.6 (max(900, p95*2) — no baseline wired in yet)
+# Venue-tunable (like config.py's ladder): a 15-minute floor is right for a home
+# and invisible on a stage. BATHROOM_THRESHOLD_S=45 for the demo beat.
+BATHROOM_THRESHOLD_S = int(os.getenv("BATHROOM_THRESHOLD_S", "900"))  # PRD §7.6 (max(900, p95*2) — no baseline wired in yet)
 # ponytail: fixed floor, not resident-specific p95 * 2 — baselines.py isn't in scope here.
 # Upgrade: read this resident's bathroom-dwell p95 from `baselines` and take the max.
-ZONE_DWELL_THRESHOLD_S = 1800  # generic "still here" notice for any zone, PRD §7.6 "same shape"
+ZONE_DWELL_THRESHOLD_S = int(os.getenv("ZONE_DWELL_THRESHOLD_S", "1800"))  # PRD §7.6 "same shape"
 
 # ponytail: per-resident HMM state lives in a process-local dict, not Mongo. One
 # FastAPI worker (see events.py), so this is the whole "location_state" table.

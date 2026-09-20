@@ -71,6 +71,17 @@ async def handle_voice_tool(alert_id: str, role: str, fn_name: str, args: dict) 
         elif fn_name == "request_callback":
             await alerts.classify(alert_id, "okay", f"callback in {args.get('minutes', 5)}m")
             result["minutes"] = args.get("minutes", 5)
+        elif fn_name == "leave_message":
+            msg = (args.get("message") or "").strip()
+            if msg:
+                await emit(
+                    resident_id=await _resident_for(alert_id),
+                    source="voice",
+                    type="family_note",
+                    source_id=alert_id,
+                    payload={"message": msg},
+                    embedding_text=f'She asked Dhyaan to pass along: "{msg[:280]}"',
+                )
         elif fn_name == "end_call":
             pass  # the bridge hangs up after AgentAudioDone; no state change here
         else:
@@ -97,6 +108,7 @@ async def db_bind_call(call_id: str, call_sid: str, stream_sid: str | None = Non
     optional and `**extra` is additive, so this is still the one write path —
     not a second one bolted on beside it.
     """
+    CALL_BINDINGS[call_sid] = {"call_id": call_id, "call_sid": call_sid}
     update = {"twilio_call_sid": call_sid, "call_sid": call_sid}
     if stream_sid is not None:
         update["stream_sid"] = stream_sid
@@ -116,14 +128,49 @@ async def append_transcript(call_id: str, role: str, content: str) -> None:
     )
 
 
+# Bridge event names -> backend taxonomy (events.EVENT_TYPES). None = intermediate
+# telemetry the timeline does not need (Twilio posts a status per leg transition).
+_EVENT_TYPE_MAP = {"call_status": None, "family_message": "family_note"}
+
+
 async def emit_event(*, resident_id: str = "res_eleanor", type: str,
                      payload: dict | None = None, embedding_text: str = "",
                      source: str = "voice", **kw) -> str:
-    doc = await emit(resident_id=resident_id, source=source, type=type,
-                     payload=payload or {},
-                     embedding_text=embedding_text or f"Voice layer recorded {type}.",
-                     **kw)
+    type = _EVENT_TYPE_MAP.get(type, type)
+    if type is None:
+        return ""
+    try:
+        doc = await emit(resident_id=resident_id, source=source, type=type,
+                         payload=payload or {},
+                         embedding_text=embedding_text or f"Voice layer recorded {type}.",
+                         **kw)
+    except ValueError as e:
+        # A Twilio webhook must always get its 200; a bad event is a log line.
+        log.warning("emit_event dropped: %s", e)
+        return ""
     return doc["_id"]
+
+
+# The bridge reads this to join Twilio callbacks back to a call. In-process,
+# same ceiling as the idempotency cache above.
+CALL_BINDINGS: dict[str, dict] = {}
+
+
+async def advance_no_answer(alert_id: str, call_id: str, reason: str) -> None:
+    """B6.4: a voicemail is NOT an answer. Drive the FSM exactly like no_answer."""
+    try:
+        await alerts.classify(alert_id, "no_answer", reason)
+    except ValueError as e:
+        log.warning("advance_no_answer rejected for %s: %s", alert_id, e)
+
+
+async def force_ack(alert_id: str, by: str = "demo") -> dict:
+    """B9.3 last-resort demo path, against the real FSM."""
+    try:
+        a = await alerts.ack(alert_id, by, channel="demo")
+        return {"alert_id": alert_id, "state": a.get("state")}
+    except ValueError as e:
+        return {"alert_id": alert_id, "error": str(e)}
 
 
 async def _resident_for(alert_id: str) -> str:

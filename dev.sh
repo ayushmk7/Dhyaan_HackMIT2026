@@ -18,6 +18,10 @@ BACKEND="backend"
 VENV="$BACKEND/.venv/bin"
 PIDS=()
 
+# Live voice: the API mounts the Twilio bridge only when these creds are in its
+# environment (backend/app/main.py). Gitignored .env at the repo root holds them.
+if [ -f .env ]; then set -a; . ./.env; set +a; fi
+
 info() { printf '\033[1;34m==>\033[0m %s\n' "$1"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$1"; }
 die()  { printf '\033[1;31mxx\033[0m %s\n' "$1" >&2; exit 1; }
@@ -102,9 +106,17 @@ else
   # kept warm for the camera lane) gets real prose out of the same Ollama for
   # no extra download. Measured: "Yes, she has eaten today. She had dinner at
   # the table around 7:10 pm..." instead of a labelled list.
+  # location.py's dwell notices get the same 10x treatment (90 s in the
+  # bathroom instead of 15 real minutes) — same override to restore them.
+  if [ "${DEMO_FAST:-1}" != "0" ]; then
+    : "${BATHROOM_THRESHOLD_S:=90}"
+    : "${ZONE_DWELL_THRESHOLD_S:=180}"
+  fi
   (cd "$BACKEND" \
     && DEMO_FAST="${DEMO_FAST:-1}" \
        CHAT_FALLBACK_MODEL="${CHAT_FALLBACK_MODEL:-qwen2.5vl:3b}" \
+       BATHROOM_THRESHOLD_S="${BATHROOM_THRESHOLD_S:-900}" \
+       ZONE_DWELL_THRESHOLD_S="${ZONE_DWELL_THRESHOLD_S:-1800}" \
        exec .venv/bin/uvicorn app.main:app --reload --host 0.0.0.0 --port 8000) &
   API_PID=$!
   PIDS+=("$API_PID")

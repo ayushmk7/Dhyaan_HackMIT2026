@@ -36,13 +36,20 @@ never decoration. The alert takeover is the one sanctioned poster; it is an alar
 
 ## System
 
-- Ground `paper` #F5F2EB; cards pure white, borderless, `cardShadow`, r16.
-  Separators (`Hairline`) live inside cards only.
-- Brand: saturated green `slate` #1E7A5A (token name is historical). Tonal
-  fills (`slateWash`) for secondary buttons, chips, pills — never outlines.
-  `rust` remains alert-only. Zone colors are saturated (day bar is a hero).
-- People are `Avatar` (gradient monogram). Rows and tiles get `IconBadge`
-  (white SF Symbol on a colored roundrect). Raw emoji = bug.
+- Ground `paper` #F2F2F7 (iOS systemGroupedBackground); cards pure white,
+  borderless, `cardShadow`, r16. Separators (`Hairline`) live inside cards only.
+- Chrome carries NO hue. Interactive = ink (`slate` #1C1C1E, token name is
+  historical); affordance comes from form (filled button, chevron, weight),
+  never from color. Every hue has exactly one meaning: `moss` = OK,
+  `rust` = alarm only, `hue.*` = data category on MetricRow glyphs.
+- People are `Avatar` (gradient monogram). List rows are `MetricRow`; the only
+  remaining `IconBadge` use is legacy rails (ui.tsx rows, consent). Raw emoji = bug.
+- Depth/structure layer (components/glass.tsx, brutal.tsx, wash.tsx; tokens
+  `glass`, `rule`, `mono`): `Glass` cards for the hero surface, `Marquee` as
+  section heading, `Rule` 2px ink lines, `StatTile` for the day-in-figures
+  grid. The brutalist uppercase `mono` voice marks MACHINE origin only
+  (endpoints, timestamps, counts). It never touches a human sentence — no
+  ALL-CAPS eyebrows over prose. MetricRow remains the only row species.
 - Type tokens only: `heading` for in-screen sections, `stat` for tile values,
   `label` for row titles, `caption` for metadata. All SF.
 - Navigation: every tab is a native stack (`TabStack` in `@/lib/nav`) with
@@ -50,8 +57,8 @@ never decoration. The alert takeover is the one sanctioned poster; it is an alar
   `contentInsetAdjustmentBehavior="automatic"`). Detail screens rely on the
   native back button — never a custom back row.
 - Demo/dev controls never appear in visible chrome. They live behind the
-  long-press DebugPanel (Settings) and deep links (`/simulate`,
-  `carefile?demo=1`).
+  long-press DebugPanels (Settings title, staff Triage card) and deep links
+  (`/simulate`, `settings/carefile?demo=1`).
 
 ## Data rules (unchanged)
 

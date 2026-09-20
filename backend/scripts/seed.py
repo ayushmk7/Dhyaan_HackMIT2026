@@ -8,6 +8,7 @@ The history is synthetic. The learner that runs on it is real. Say that to judge
 
 import argparse
 import asyncio
+import os
 import random
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -25,12 +26,16 @@ from app import db as dbmod
 from app import rag  # noqa: F401
 from app.events import emit
 
+# Live-call demos: point Eleanor (and the first ladder contact) at a phone that
+# actually rings. Falls back to the fixture numbers when no .env is loaded.
+_TEST_PHONE = os.getenv("TEST_PHONE_E164", "").strip()
+
 RESIDENT = {
     "_id": "res_eleanor",
     "display_name": "Eleanor",
     "room": "214",
     "timezone": "America/New_York",
-    "phone_e164": "+15551230000",
+    "phone_e164": _TEST_PHONE or "+15551230000",
     "consent_camera": 1,
     "consent_voice": 1,
     "consent_memory": 1,
@@ -70,7 +75,7 @@ FACTS = [
 
 CONTACTS = [
     {"_id": "con_priya", "resident_id": "res_eleanor", "name": "Priya",
-     "phone_e164": "+15551231111", "relationship": "daughter", "ladder_order": 1},
+     "phone_e164": _TEST_PHONE or "+15551231111", "relationship": "daughter", "ladder_order": 1},
     {"_id": "con_sam", "resident_id": "res_eleanor", "name": "Sam",
      "phone_e164": "+15551232222", "relationship": "son", "ladder_order": 2},
 ]
