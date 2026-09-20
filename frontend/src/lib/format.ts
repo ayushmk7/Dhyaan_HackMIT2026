@@ -39,8 +39,27 @@ export const displaySentence = (text: string): string => {
   return stripped.charAt(0).toUpperCase() + stripped.slice(1);
 };
 
-export const eventTitle = (type: string): string =>
-  ({
+// activity_observed carries WHAT she was doing in payload.activity; the row
+// title should say "Had a drink", not the taxonomy's internal label.
+const ACTIVITY_TITLES: Record<string, string> = {
+  drinking: 'Had a drink',
+  eating: 'Was eating',
+  reading: 'Was reading',
+  watching_tv: 'Watching TV',
+  using_phone: 'On her phone',
+  sitting: 'Sitting a while',
+  standing: 'Up and about',
+  walking: 'Moving around',
+  exercising: 'Exercising',
+  lying_down: 'Lying down',
+};
+
+export const eventTitle = (type: string, payload?: Record<string, unknown>): string => {
+  if (type === 'activity_observed') {
+    const a = String(payload?.activity ?? '');
+    return ACTIVITY_TITLES[a] ?? 'Seen active';
+  }
+  return ({
     meal_observed: 'Ate a meal',
     meal_skipped: 'Meal not observed',
     walk_completed: 'Took a walk',
@@ -51,7 +70,8 @@ export const eventTitle = (type: string): string =>
     fall_cancelled: 'Fall alert cancelled',
     prolonged_inactivity: 'Unusually still',
     baseline_deviation: 'Different from her routine',
-  }[type] ?? zoneLabel(type));
+  } as Record<string, string>)[type] ?? zoneLabel(type);
+};
 
 /**
  * The resident's own number — how the family rings HER.

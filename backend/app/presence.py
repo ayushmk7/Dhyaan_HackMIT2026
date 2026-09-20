@@ -31,8 +31,11 @@ from .events import emit
 log = logging.getLogger("dhyaan.presence")
 
 # (event_type, gap_s, min_obs, min_dur_s) per VLM_PLAN §3.6. `None` means the
-# activity updates presence but never becomes an event — drinking alone is too
-# noisy to call a meal, and "unclear" is the model admitting it does not know.
+# activity updates presence but never becomes an event — "unclear" is the
+# model admitting it does not know. Drinking WAS None ("too noisy to call a
+# meal") — right that it is not a meal, wrong to drop it entirely: hydration
+# is a first-class elder-care signal and the timeline should show it. The
+# episode machinery (2 obs, 60s gap) already keeps it to one row per drink.
 RULES: dict[str, tuple[str, int, int, int] | None] = {
     "eating": ("meal_observed", 600, 2, 120),
     "sitting": ("activity_observed", 900, 3, 600),
@@ -48,7 +51,7 @@ RULES: dict[str, tuple[str, int, int, int] | None] = {
     "entering": ("room_entry", 60, 1, 0),
     "leaving": ("room_exit", 60, 1, 0),
     "absent": ("room_exit", 60, 1, 0),
-    "drinking": None,
+    "drinking": ("activity_observed", 300, 2, 0),
     "unclear": None,
 }
 
