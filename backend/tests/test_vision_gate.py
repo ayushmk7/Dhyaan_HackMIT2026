@@ -241,7 +241,13 @@ def test_ring_flushes_on_batch_size_and_frees_itself():
 
 
 def test_ring_flushes_on_max_wait_with_a_short_batch():
-    r = RingBatch()
+    """A partial batch waits for max_batch_wait_s rather than firing early.
+
+    Pinned to batch_size=2 on purpose: this rule only exists when a batch can be
+    short, and the shipped default is 1 (one frame per VLM call is the whole
+    latency budget). Reading the live TUNING here made the test assert nothing.
+    """
+    r = RingBatch({"batch_size": 2})
     r.add(0.0, "jpeg0")
     assert not r.ready(10.0)
     assert r.ready(TUNING["max_batch_wait_s"])
@@ -256,7 +262,10 @@ def test_ring_never_holds_more_than_batch_size():
 
 
 def test_ring_force_flush_for_on_floor():
-    r = RingBatch()
+    # batch_size=3 with two frames in hand: the ring must be genuinely PARTIAL
+    # for `force` to prove anything. At the shipped default of 1 it is ready the
+    # moment a frame lands, and at 2 these two frames already fill it.
+    r = RingBatch({"batch_size": 3})
     r.add(0.0, "jpeg0")
     r.add(1.0, "jpeg1")
     assert not r.ready(1.0)

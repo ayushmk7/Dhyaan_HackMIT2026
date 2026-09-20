@@ -72,6 +72,10 @@ class ObservationIn(BaseModel):
                   "floor", "other", "unclear"] = "unclear"
     assistive_device: Literal["none", "cane", "walker", "wheelchair", "unclear"] = "unclear"
     plate_or_cup_present: bool = False
+    # Broader than plate_or_cup: food held in a hand, a wrapper, a snack. The
+    # vision lane started reporting this and it was silently dropped here,
+    # because an unknown field on a Pydantic model just vanishes.
+    food_visible: bool = False
     hand_to_mouth_observed: bool = False
     confidence: float = Field(ge=0, le=1)
     evidence: str = Field(default="", max_length=180)

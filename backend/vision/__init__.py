@@ -42,7 +42,11 @@ TUNING = dict(
     on_floor_confirm=2,       # consecutive wide frames before believing it
     on_floor_cooldown_s=30,   # ...and at most one such jump-the-queue call per 30 s
     on_dwell_s=60,            # while she stays in view, one keyframe a minute
-    batch_size=3,             # frames per VLM call
+    # One frame per call. Each extra frame is another full vision encode, and
+    # that dominates the wall clock. The cost is `changed_between_frames`, which
+    # a single frame cannot judge — presence.py sees movement across consecutive
+    # observations anyway, so the field was doing little work.
+    batch_size=1,             # frames per VLM call
     max_batch_wait_s=30,      # ...flushed after this long even if short
     absent_after_s=30,        # no person for this long -> "absent", no VLM call
     # --- worker cadence ---
@@ -54,8 +58,16 @@ TUNING = dict(
 # 3-minute slot. Not a separate code path — just smaller numbers.
 DEMO = dict(min_gap_s=6, on_dwell_s=15, max_batch_wait_s=15, absent_after_s=12)
 
-FRAME_W, FRAME_H = 640, 360   # nothing larger is ever kept
-JPEG_QUALITY = 80             # ~40 KB/frame to Ollama
+# A VLM's vision encoder cost scales with pixels, and this is the single
+# biggest latency lever left. 448x252 is still ample to see a person, a table
+# and a sandwich; it is not ample to read a document, which we never do.
+FRAME_W, FRAME_H = 448, 252   # nothing larger is ever kept
+JPEG_QUALITY = 70             # ~18 KB/frame to Ollama
 
-VLM_MODEL = "qwen3-vl:8b"     # fallback qwen3-vl:4b if a 3-frame batch is >6 s
+# Measured on this machine against a live webcam frame, same prompt and
+# num_predict: 8b warm 7.3 s, 4b warm 1.7 s - about 4x, with no loss of
+# description quality on a person-at-a-table scene. The plan called 4b the
+# fallback; the measurement made it the default. Override with VLM_MODEL.
+import os
+VLM_MODEL = os.getenv("VLM_MODEL", "qwen3-vl:4b")
 OLLAMA_HOST = "http://localhost:11434"

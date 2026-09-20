@@ -33,10 +33,14 @@ class Observation(BaseModel):
                   "floor", "other", "unclear"]
     assistive_device: Literal["none", "cane", "walker", "wheelchair", "unclear"]
     plate_or_cup_present: bool
+    # Broader than the field above on purpose: held food (a sandwich, fruit, a
+    # snack, a wrapper) is food, and it is what a person eating actually looks
+    # like. plate_or_cup_present alone missed every hand-held meal.
+    food_visible: bool
     hand_to_mouth_observed: bool
     changed_between_frames: bool
     confidence: float = Field(ge=0, le=1)
-    evidence: str = Field(max_length=180)
+    evidence: str = Field(max_length=180)  # prompt asks for <=110; 180 is slack
 
 
 PROMPT = """You are looking at {n} still frames from one fixed camera in the {zone_label} of {name}'s home, taken over {span_s} seconds, in this order, at {times_local}.
@@ -45,7 +49,8 @@ PROMPT = """You are looking at {n} still frames from one fixed camera in the {zo
 {spots_line}
 Report only what is visible in these frames. Do not describe clothing, body, hair, race, age, or health. Do not guess what anyone is thinking or saying. If two or more people are visible, set person_count and use activity "with_visitor", and describe nothing about the other person.
 Choose the single activity that best describes what {name} is doing across the frames. If the frames do not support one, use "unclear" with confidence below 0.4.
-"evidence" is one sentence, under 180 characters, naming only objects and actions."""
+Set food_visible true if any food or drink is visible anywhere in the frames, including food held in a hand, a wrapper, a piece of fruit, a snack or a takeaway container - not only food on a plate or in a cup.
+"evidence" is one short clause, under 70 characters, naming only objects and actions."""
 
 
 def build_prompt(cfg, n, span_s, times_local):
@@ -89,7 +94,10 @@ def call(images_b64, prompt, model=VLM_MODEL, host=OLLAMA_HOST, timeout=60.0):
             # on = 24 s and the JSON never arrives (the chain of thought eats
             # num_predict). 24 s is not a presence layer.
             "think": False,
-            "options": {"temperature": 0, "num_predict": 220},
+            # 120 truncated the JSON mid-`evidence` once food_visible was added — the
+            # schema is a hard constraint, so a tight budget does not shorten the
+            # answer, it invalidates it. 200 fits all 11 fields with slack.
+            "options": {"temperature": 0, "num_predict": 150},
             "format": Observation.model_json_schema(),
             "messages": [{"role": "user", "content": prompt, "images": list(images_b64)}],
         },
@@ -117,11 +125,22 @@ def post_rules(obs):
     show.
     """
     o = dict(obs)
+    # The model sometimes reports person_count 0 and then describes a person in
+    # the same breath ("person holding food near mouth"). Declaring her absent on
+    # that is the worst answer available: "out of view" is what the family reads
+    # when she is sitting right there. A hand at a mouth is a person, so trust
+    # the gesture over the count and let the VLM's own evidence break the tie.
+    if o.get("person_count", 0) == 0 and (
+        o.get("hand_to_mouth_observed") or o.get("food_visible")
+    ):
+        o["person_count"] = 1
     if o.get("person_count", 0) == 0:
         o["activity"] = "absent"
     elif o.get("person_count", 0) >= 2:
         o["activity"] = "with_visitor"
-    elif o.get("hand_to_mouth_observed") and o.get("plate_or_cup_present"):
+    elif o.get("hand_to_mouth_observed") and (
+        o.get("food_visible") or o.get("plate_or_cup_present")
+    ):
         o["activity"] = "eating"
     if o.get("movement") == "unsteady":
         o["movement"] = "unclear"
@@ -130,7 +149,7 @@ def post_rules(obs):
 
 ABSENT = dict(
     activity="absent", person_count=0, posture="unclear", movement="unclear",
-    spot="unclear", assistive_device="unclear", plate_or_cup_present=False,
+    spot="unclear", assistive_device="unclear", plate_or_cup_present=False, food_visible=False,
     hand_to_mouth_observed=False, changed_between_frames=False,
     confidence=0.9, evidence="No person visible in the room.",
 )
@@ -155,6 +174,7 @@ def to_payload(camera_id, resident_id, ts, span_s, n_frames, obs,
         "spot": obs["spot"],
         "assistive_device": obs["assistive_device"],
         "plate_or_cup_present": bool(obs["plate_or_cup_present"]),
+        "food_visible": bool(obs.get("food_visible", False)),
         "hand_to_mouth_observed": bool(obs["hand_to_mouth_observed"]),
         "confidence": round(float(obs["confidence"]), 3),
         "evidence": obs["evidence"][:180],

@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from . import DEMO, TUNING, VLM_MODEL
+from . import DEMO, TUNING, VLM_MODEL, FRAME_H, FRAME_W
 from .capture import Camera, to_jpeg_b64
 from .gate import MotionGate, PersonGate, apply_mask
 from .keyframe import KeyframeSelector, RingBatch
@@ -310,16 +310,21 @@ class Worker:
         import numpy as np
 
         if frame is None:
-            frame = np.zeros((360, 640, 3), dtype="uint8")
+            frame = np.zeros((FRAME_H, FRAME_W, 3), dtype="uint8")
         view = frame.copy()
+        h, w = view.shape[:2]
+        # Derive the inset from the real frame. These were hard-coded to a
+        # 640-wide frame and threw the moment FRAME_W changed:
+        # "could not broadcast (90,160,3) into (90,0,3)".
         if fg is not None:
-            small = cv2.cvtColor(cv2.resize(fg, (160, 90)), cv2.COLOR_GRAY2BGR)
-            view[4:94, 476:636] = small
+            iw, ih = max(w // 4, 40), max(h // 4, 24)
+            small = cv2.cvtColor(cv2.resize(fg, (iw, ih)), cv2.COLOR_GRAY2BGR)
+            view[4:4 + ih, w - iw - 4:w - 4] = small
         if box:
             x0, y0, x1, y1 = (int(v) for v in box)
             cv2.rectangle(view, (x0, y0), (x1, y1), (60, 200, 60), 2)
-        cv2.rectangle(view, (0, 330), (640, 360), (0, 0, 0), -1)
-        cv2.putText(view, f"{self.state()} | {status}", (8, 351),
+        cv2.rectangle(view, (0, h - 30), (w, h), (0, 0, 0), -1)
+        cv2.putText(view, f"{self.state()} | {status}", (8, h - 9),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (240, 240, 240), 1, cv2.LINE_AA)
         cv2.imshow("dhyaan hub - the only screen a frame reaches", view)
         k = cv2.waitKey(1) & 0xFF
