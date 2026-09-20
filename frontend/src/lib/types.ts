@@ -286,7 +286,22 @@ export interface CameraMonitorTick {
   sentence: string;
   confidence: number | null;
   simulated: boolean;
+  /**
+   * How she is holding herself, straight off the pose landmarker. On the
+   * console only: it is what makes the activity checkable rather than asserted
+   * ("eating" with posture "upright" is a different claim from "eating" seated),
+   * and it reaches no other screen. `null` is an honest "the landmarker did not
+   * answer", which is common and is not a reading of `unclear`.
+   */
+  posture: CameraPosture | null;
+  /** The words the open-vocabulary pass actually named in the room. */
+  food: string[];
+  dishes: string[];
+  seating: string[];
 }
+
+/** The pose landmarker's five answers (backend/vision/vlm.py). */
+export type CameraPosture = 'upright' | 'seated' | 'reclined' | 'on_floor' | 'unclear';
 
 export interface CameraSummary {
   id: string;

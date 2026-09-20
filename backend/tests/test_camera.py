@@ -351,15 +351,34 @@ async def test_a_stale_tick_is_offline_rather_than_a_frozen_console(client, came
     assert body["tick"] is None and body["online"] is False
 
 
-async def test_the_monitor_tick_cannot_carry_zone_evidence_posture_or_movement(client, camera):
+async def test_the_monitor_tick_cannot_carry_zone_evidence_or_movement(client, camera):
     """The allowlist, as a test. A worker that starts sending these must not be
     able to leak them by accident — `MonitorIn` does not declare them, so they
-    vanish at the boundary."""
+    vanish at the boundary.
+
+    `posture` used to be in this list and is deliberately no longer: the console
+    shows it, because a screen whose whole job is to say what the camera is
+    working from cannot answer "why did it decide that?" without it. The
+    zone is the one that still matters most — a room name is the thing D-001
+    exists to keep off a family screen, and prose gets scrubbed besides."""
     await send_tick(client, tick(zone="living_room", evidence="A fork moves to her mouth.",
                                  posture="seated", movement="unsteady"))
     blob = json.dumps(await get_monitor(client)).lower()
-    for word in ("zone", "living", "evidence", "fork", "posture", "movement", "unsteady"):
+    for word in ("zone", "living", "evidence", "fork", "movement", "unsteady"):
         assert word not in blob, f"{word!r} reached the family app in {blob}"
+    assert (await get_monitor(client))["tick"]["posture"] == "seated"
+
+
+async def test_the_console_carries_what_the_detector_named(client, camera):
+    """Food, dishes and seating are the structural words the open-vocabulary
+    pass found. They are what makes "eating" checkable rather than asserted."""
+    await send_tick(client, tick(food=["sandwich"], dishes=["mug"], seating=["chair"]))
+    t = (await get_monitor(client))["tick"]
+    assert t["food"] == ["sandwich"] and t["dishes"] == ["mug"] and t["seating"] == ["chair"]
+
+
+async def test_the_console_will_not_take_a_paragraph_of_labels(client, camera):
+    await send_tick(client, tick(food=["x"] * 9), expect=422)
 
 
 async def test_the_monitor_sentence_goes_through_the_family_filter(client, camera):

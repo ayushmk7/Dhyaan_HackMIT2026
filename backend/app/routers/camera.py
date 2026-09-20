@@ -231,11 +231,29 @@ class MonitorIn(BaseModel):
     latency_ms: int = Field(default=0, ge=0)
     batch_frames: int = Field(default=0, ge=0, le=16)
     activity: Literal[ACTIVITIES] | None = None
+    # Posture and the structural words used to stop at the hub: a family screen
+    # got "she is sitting at the table" and nothing under it. They are on the
+    # console now because the console is the one screen whose whole job is to
+    # show what the camera is working from, and "why did it decide that?" is
+    # unanswerable without them. They are still filtered out of everything
+    # else — `_family_item` and `rag.search(family=True)` are untouched, so no
+    # observation, no timeline row and no chat answer carries them.
+    posture: Literal["upright", "seated", "reclined", "on_floor", "unclear"] | None = None
+    # What the open-vocabulary pass actually named, capped so a runaway
+    # detector cannot post a paragraph of labels.
+    food: list[str] = Field(default_factory=list, max_length=8)
+    dishes: list[str] = Field(default_factory=list, max_length=8)
+    seating: list[str] = Field(default_factory=list, max_length=8)
     # None is a worker that has nothing to say yet, not a validation error —
     # a blank console beats a 422 nobody reads.
     sentence: str | None = Field(default="", max_length=180)
     confidence: float | None = Field(default=None, ge=0, le=1)
     simulated: bool = False
+
+    @field_validator("food", "dishes", "seating")
+    @classmethod
+    def _short_words(cls, v):
+        return [w.strip()[:24] for w in v if isinstance(w, str) and w.strip()]
 
     @field_validator("boxes")
     @classmethod

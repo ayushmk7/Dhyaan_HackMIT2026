@@ -50,7 +50,7 @@ def _sentence(obs):
 # The console's "nothing is claimed" state. One definition, because the two
 # places that need it — startup and a paused camera — drifted apart once and
 # the hub went on printing "eating at the table" through the privacy beat.
-EMPTY_OBS = {"activity": None, "sentence": "", "confidence": None,
+EMPTY_OBS = {"activity": None, "posture": None, "sentence": "", "confidence": None,
              "latency_ms": 0, "batch_frames": 0}
 
 
@@ -82,6 +82,11 @@ class Worker:
         # geometry worth drawing, which persists between detector runs so the
         # hub console does not strobe. It is never merged into an observation.
         self.boxes, self.people = [], 0
+        # The last structural words the detector actually found, held between
+        # runs for the same reason `self.boxes` is: `self.scene` is reset every
+        # sampled frame, and a console that blanks its own readings twice a
+        # second is unreadable. Never merged into an observation.
+        self._scene_seen = {"food": [], "dishes": [], "seating": []}
         self._subject = None      # the person we are following, box coords
         self._last_obs = None     # what the preview window prints
         self.last_obs = dict(EMPTY_OBS)
@@ -209,11 +214,15 @@ class Worker:
         if not force and now - self._last_monitor < self.tuning["monitor_s"]:
             return
         self._last_monitor = now
+        if self.scene:
+            self._scene_seen = {k: list(self.scene.get(k) or [])
+                                for k in ("food", "dishes", "seating")}
         body = {"camera_id": self.camera_id,
                 "ts": datetime.now(timezone.utc).isoformat(),
                 "fps": round(self.fps, 2), "person_count": self.people,
                 "boxes": self.boxes, "gate": gate, "model": self.model,
-                "simulated": self.synthetic, **self.last_obs}
+                "simulated": self.synthetic,
+                **self._scene_seen, **self.last_obs}
         try:
             r = self._http.post(f"{self.api}/v1/ingest/camera/monitor", json=body)
             # Say it once. A silently-swallowed 422 here is a console that is
@@ -541,6 +550,7 @@ class Worker:
                         # while the app had the detector's current answer.
                         self.people = quick["person_count"]
                         self.last_obs = {"activity": quick["activity"],
+                                         "posture": quick.get("posture"),
                                          "sentence": _sentence(quick),
                                          "confidence": round(float(quick["confidence"]), 3),
                                          "latency_ms": int(ms), "batch_frames": 1}
@@ -592,7 +602,8 @@ class Worker:
                         0.0, 0, vlm.ABSENT, model="none", latency_ms=0,
                         simulated=self.synthetic))
                     self._absent_ts = t
-                    self.last_obs = {"activity": "absent", "sentence": "out of view",
+                    self.last_obs = {"activity": "absent", "posture": None,
+                                     "sentence": "out of view",
                                      "confidence": vlm.ABSENT["confidence"],
                                      "latency_ms": 0, "batch_frames": 0}
                 elif reason:
@@ -862,7 +873,8 @@ class Worker:
                                  model=model, latency_ms=latency,
                                  simulated=self.synthetic))
         self.people = obs["person_count"]
-        self.last_obs = {"activity": obs["activity"], "sentence": _sentence(obs),
+        self.last_obs = {"activity": obs["activity"], "posture": obs.get("posture"),
+                         "sentence": _sentence(obs),
                          "confidence": round(float(obs["confidence"]), 3),
                          "latency_ms": int(latency), "batch_frames": n_frames}
 

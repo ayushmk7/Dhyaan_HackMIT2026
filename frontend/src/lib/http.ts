@@ -473,9 +473,15 @@ export const httpApi = {
     await post(`/residents/${residentId_}/notes`, { text, author, role });
   },
 
-  // GET /residents/{id}/location — one zone for one resident. Staff-only by
-  // D-001; no family screen may call it. Cheaper than `getResident`, which
-  // fetches the whole roster to read one row.
+  // GET /residents/{id}/location — one zone for one resident. Cheaper than
+  // `getResident`, which fetches the whole roster to read one row.
+  //
+  // This used to say "staff-only by D-001; no family screen may call it". The
+  // camera console calls it now, deliberately: it is the screen whose whole job
+  // is to show what the system is working from, and the room is its one reading
+  // that does not come from the camera. D-001 still holds everywhere else —
+  // Today, Her day, Details and every chat answer are room-free, and the
+  // console's own sentence is still run through `scrubRooms`.
   getLocation: async (residentId_: string): Promise<ResidentLocation | null> =>
     toLocation(await get<RawLocation>(`/residents/${residentId_}/location`)),
 

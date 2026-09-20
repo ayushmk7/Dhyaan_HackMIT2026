@@ -440,9 +440,39 @@ export const family = {
   camera: {
     paneLabel: (people: number, sentence: string) =>
       `Live camera view from her home. ${people === 1 ? 'One person' : `${people} people`} in frame. ${sentence || 'No sentence yet.'}`,
-    // The pane has no picture to show. Said in the caption track, where the
-    // sentence would be, so the screen never leaves a stale frame up instead.
+    // The pane has no picture to show. Said over the pane itself, so the screen
+    // never leaves a stale frame up instead.
     noPicture: 'No picture just now. The camera is running, but nothing has reached this phone.',
+
+    // The readings, in the runs a person actually asks them in: how she is,
+    // what is around her, and how the worker is doing. Nothing is a sentence:
+    // these are names of things, and the values beside them are the tick's own
+    // words and numbers.
+    groups: {
+      her: (name: string) => `How ${name} is`,
+      room: 'What it can see in the room',
+      worker: 'The worker',
+    },
+    keys: {
+      posture: 'POSTURE',
+      activity: 'ACTIVITY',
+      eating: 'EATING',
+      where: 'WHERE (BEACONS)',
+      people: 'PEOPLE',
+      food: 'FOOD',
+      dishes: 'CUPS AND PLATES',
+      seating: 'SEATING',
+      gate: 'GATE',
+      conf: 'CONF',
+      age: 'TICK AGE',
+      model: 'MODEL',
+    },
+    // The eating row's two answers. Machine voice, like every other value in
+    // the table, because that is what the row is.
+    yes: 'YES',
+    no: 'NO',
+    // The glyph for a field the worker did not fill. Typography, not a reading.
+    none: '—',
     noSentence: 'No sentence yet. The model has not been asked.',
     privacy: 'This is her camera, live. Nothing is recorded and nothing is kept: each picture is replaced by the next one and the last one is gone. The sentence under it is what Dhyaan understood, and that sentence is the only part it remembers.',
 

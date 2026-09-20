@@ -32,20 +32,19 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { router, useIsFocused } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, View, ViewStyle } from 'react-native';
-import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { RefreshControl, StyleSheet, View } from 'react-native';
 import {
-  Btn, Card, EmptyState, ErrorState, LoadingState, Rule, Screen, Txt, useReducedMotion,
+  Btn, Card, EmptyState, ErrorState, LoadingState, Marquee, Screen, Stagger, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
 import { family } from '@/lib/copy/family';
 import { ago, scrubRooms, timeOf } from '@/lib/format';
-import { useCameraMonitor, useCameras, useNow } from '@/lib/hooks';
-import type { CameraMonitorTick, CameraSummary } from '@/lib/types';
+import { useCameraMonitor, useCameras, useNow, useResidentLocation } from '@/lib/hooks';
+import type { CameraMonitorTick, CameraSummary, ResidentLocation } from '@/lib/types';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
-import { motion, radius, sp, useTheme } from '@/theme';
+import { radius, sp, useTheme } from '@/theme';
 
 const copy = family.camera;
 
@@ -91,32 +90,6 @@ const sentenceOf = (tick: CameraMonitorTick) => {
 // The pane
 // ---------------------------------------------------------------------------
 
-/** Fill the parent: the sentence layers stack absolutely inside their track. */
-const FILL: ViewStyle = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
-
-/**
- * The sentence track. A real cross-fade: the outgoing line dissolves while the
- * incoming one arrives, the way a CCTV overlay swaps burned-in text.
- */
-function SentenceTrack({ text }: { text: string }) {
-  const reduced = useReducedMotion();
-  const dur = motion.duration.base;
-  return (
-    <View style={styles.caption}>
-      <Animated.View
-        key={text}
-        entering={reduced ? undefined : FadeIn.duration(dur)}
-        exiting={reduced ? undefined : FadeOut.duration(dur)}
-        style={[FILL, styles.captionPad]}
-      >
-        <Txt kind="body" accessibilityLiveRegion="polite" numberOfLines={2}>
-          {text}
-        </Txt>
-      </Animated.View>
-    </View>
-  );
-}
-
 /**
  * The picture. One `Image` whose URL carries a counter, swapped five times a
  * second: `expo-image` keeps the frame it has on screen until the next one has
@@ -128,9 +101,7 @@ function SentenceTrack({ text }: { text: string }) {
  * falls back to the wash with the sentence still on it. That is the honest
  * state: it says "no picture", it does not leave the last one up.
  */
-function LiveFrame({ cameraId, tick, live }: {
-  cameraId: string; tick: CameraMonitorTick; live: boolean;
-}) {
+function LiveFrame({ cameraId, live }: { cameraId: string; live: boolean }) {
   const t = useTheme();
   const isFocused = useIsFocused();
   const [n, setN] = useState(0);
@@ -147,15 +118,16 @@ function LiveFrame({ cameraId, tick, live }: {
   const recColor = live ? t.ink : t.accent;
 
   return (
-    <View
-      accessibilityRole="image"
-      accessibilityLabel={copy.paneLabel(tick.person_count, sentenceOf(tick))}
-      style={[styles.pane, { backgroundColor: t.accentWash }]}
-    >
+    <View style={[styles.pane, { backgroundColor: t.accentWash }]}>
       <Image
         source={{ uri: `${API_BASE}/cameras/${cameraId}/frame?n=${n}` }}
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-        contentFit="cover"
+        // `contain`, not `cover`. The hub hands over a 16:9 frame and the pane
+        // is 16:9, so in the ordinary case the two agree exactly and nothing is
+        // cropped — but a webcam that hands over 4:3 was having a fifth of the
+        // room cut off its sides, which on a camera page is the one thing that
+        // must not happen silently.
+        contentFit="contain"
         cachePolicy="none"
         transition={0}
         // One view, reused for every frame. Without this `expo-image` treats
@@ -166,24 +138,99 @@ function LiveFrame({ cameraId, tick, live }: {
         onError={() => setHavePicture(false)}
       />
 
-      {/* Top chrome: the REC light, and only that. */}
-      <View style={[styles.paneRow, { top: sp(3) }]}>
-        <View style={[styles.recPill, { backgroundColor: t.raised }]}>
-          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: recColor }} />
-          <Txt kind="micro" style={{ color: recColor }}>
-            {live ? copy.rec : copy.simulated}
-          </Txt>
-        </View>
+      {/* The one thing burned onto the picture. Everything else reads below it,
+          where it has room, rather than covering a third of the room. */}
+      <View style={[styles.recPill, { backgroundColor: t.raised }]}>
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: recColor }} />
+        <Txt kind="micro" style={{ color: recColor }}>
+          {live ? copy.rec : copy.simulated}
+        </Txt>
       </View>
 
-      {/* Bottom chrome: the sentence track, under one accent rule. */}
-      <View style={[styles.captionBar, { backgroundColor: t.raised }]}>
-        <Rule color={t.accent} />
-        <SentenceTrack text={havePicture ? sentenceOf(tick) : copy.noPicture} />
-      </View>
+      {!havePicture && (
+        <View style={styles.noPicture}>
+          <Txt kind="caption" tone="muted" style={{ textAlign: 'center' }}>{copy.noPicture}</Txt>
+        </View>
+      )}
     </View>
   );
 }
+
+// ---------------------------------------------------------------------------
+// The readings
+// ---------------------------------------------------------------------------
+
+/** One reading: its name on the left, its value on the right. */
+function Reading({ label, value, last }: { label: string; value: string; last?: boolean }) {
+  return (
+    <View style={[styles.reading, last ? null : styles.readingRule]}>
+      <Txt kind="micro" tone="muted" numberOfLines={1} style={{ flex: 1 }}>{label}</Txt>
+      <Txt kind="stamp" numberOfLines={1} style={{ flex: 1, textAlign: 'right' }}>{value}</Txt>
+    </View>
+  );
+}
+
+/**
+ * A run of readings under its own heading, with real air above it. Same shape
+ * Her day and Settings use: the groups are what a person is asking, not what
+ * the tick happens to carry in order.
+ */
+function Group({ title, rows }: { title: string; rows: { label: string; value: string }[] }) {
+  return (
+    <View>
+      <Marquee title={title} first />
+      {rows.map((r, i) => (
+        <Reading key={r.label} label={r.label} value={r.value} last={i === rows.length - 1} />
+      ))}
+    </View>
+  );
+}
+
+// Each reading is the tick's own word or number, or the glyph that says the
+// worker left the field empty. None of these can produce a value the tick did
+// not carry.
+const NONE = copy.none;
+const word = (v: string | null | undefined) =>
+  v ? String(v).replace(/_/g, ' ').toUpperCase() : NONE;
+const list = (v: string[] | undefined) =>
+  v && v.length ? v.join(', ').toUpperCase() : NONE;
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * Eating, as a yes or a no, because that is the question a family actually
+ * asks. Derived from the activity the model committed to, never from the food
+ * words alone: a sandwich on the table is not a meal, and the row directly
+ * under this one shows those words so the answer can be checked rather than
+ * taken on faith.
+ */
+const eatingOf = (t: CameraMonitorTick) =>
+  t.activity == null ? NONE
+    : t.activity === 'eating' || t.activity === 'drinking' ? copy.yes
+      : copy.no;
+
+/** Seconds since the worker stamped this tick, on the phone's clock. */
+const ageOf = (t: CameraMonitorTick, now: number) => {
+  const s = Math.round((now - new Date(t.ts).getTime()) / 1000);
+  if (!Number.isFinite(s)) return NONE;
+  return `${pad(Math.min(99, Math.max(0, s)))} S`;
+};
+
+/**
+ * Where the BEACONS put her, which is the one reading on this screen that does
+ * not come from the camera at all: the ESP32s report RSSI, `app/location.py`
+ * classifies it against the room survey, and the answer is a room and a
+ * confidence. Room level by design — there is no position to show and nothing
+ * here could draw one.
+ *
+ * On the console deliberately, and nowhere else: D-001 keeps room names off
+ * every other family surface, and the sentence beside this one is still
+ * scrubbed of them.
+ */
+const whereOf = (loc: ResidentLocation | null | undefined) => {
+  if (!loc?.label) return NONE;
+  const pct = typeof loc.confidence === 'number' ? ` ${Math.round(loc.confidence * 100)}%` : '';
+  return `${loc.label.toUpperCase()}${pct}`;
+};
 
 // ---------------------------------------------------------------------------
 
@@ -191,7 +238,7 @@ const openSettings = () => router.push('/(family)/settings');
 
 export default function CameraConsole() {
   const qc = useQueryClient();
-  const { residentId } = useSession();
+  const { residentId, residentName } = useSession();
   const cameras = useCameras();
   const isFocused = useIsFocused();
 
@@ -199,6 +246,7 @@ export default function CameraConsole() {
     cameras.data?.find((c) => c.resident_id === residentId) ?? cameras.data?.[0];
 
   const monitor = useCameraMonitor(cam?.id);
+  const location = useResidentLocation(residentId);
   const socketTick = asTick(useLive((s) => (cam ? s.monitor[cam.id] : undefined)));
   // The hub drops any tick older than 15 s (MONITOR_STALE_S), so a null from the
   // 2 s poll IS the authoritative "nothing is posting" — and it is decided on
@@ -303,14 +351,51 @@ export default function CameraConsole() {
       );
     }
 
-    // The whole screen: the picture, and one line about what it costs.
+    const g = copy.groups;
     return (
-      <View>
-        <LiveFrame cameraId={cam.id} tick={tick} live={!tick.simulated} />
-        <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>
-          {copy.privacy}
-        </Txt>
-      </View>
+      <Stagger gap={9}>
+        <View>
+          <LiveFrame cameraId={cam.id} live={!tick.simulated} />
+          {/* The sentence sits UNDER the picture now. Burned across the bottom
+              of the pane it covered a third of the room and had to be clamped
+              to two lines; here it has the width of the screen. */}
+          <Txt kind="body" accessibilityLiveRegion="polite" style={{ marginTop: sp(4) }}>
+            {sentenceOf(tick)}
+          </Txt>
+        </View>
+
+        <Group
+          title={g.her(residentName)}
+          rows={[
+            { label: copy.keys.posture, value: word(tick.posture) },
+            { label: copy.keys.activity, value: word(tick.activity) },
+            { label: copy.keys.eating, value: eatingOf(tick) },
+            { label: copy.keys.where, value: whereOf(location.data) },
+            { label: copy.keys.people, value: pad(tick.person_count) },
+          ]}
+        />
+
+        <Group
+          title={g.room}
+          rows={[
+            { label: copy.keys.food, value: list(tick.food) },
+            { label: copy.keys.dishes, value: list(tick.dishes) },
+            { label: copy.keys.seating, value: list(tick.seating) },
+          ]}
+        />
+
+        <Group
+          title={g.worker}
+          rows={[
+            { label: copy.keys.gate, value: word(tick.gate) },
+            { label: copy.keys.conf, value: typeof tick.confidence === 'number' ? tick.confidence.toFixed(2) : NONE },
+            { label: copy.keys.age, value: ageOf(tick, now) },
+            { label: copy.keys.model, value: (tick.model ?? '').trim() || NONE },
+          ]}
+        />
+
+        <Txt kind="caption" tone="muted">{copy.privacy}</Txt>
+      </Stagger>
     );
   })();
 
@@ -359,37 +444,40 @@ const styles = {
     borderRadius: radius.card,
     overflow: 'hidden' as const,
   },
-  paneRow: {
-    position: 'absolute' as const,
-    left: sp(4),
-    right: sp(4),
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
-  },
   recPill: {
+    position: 'absolute' as const,
+    top: sp(3),
+    left: sp(3),
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: sp(1.5),
-    // The light sits ON the picture now, so it carries its own ground. Without
-    // it the dot and its word land on whatever the camera happens to see.
+    // The light sits ON the picture, so it carries its own ground. Without it
+    // the dot and its word land on whatever the camera happens to see.
     paddingHorizontal: sp(2),
     paddingVertical: sp(1),
     borderRadius: radius.pill,
   },
-  captionBar: {
+  noPicture: {
     position: 'absolute' as const,
-    left: 0,
-    right: 0,
+    left: sp(6),
+    right: sp(6),
+    top: 0,
     bottom: 0,
-  },
-  caption: {
-    // Fixed, because the layers inside are absolute and because a caption bar
-    // that resizes under a sentence swap is a caption bar that twitches.
-    height: sp(16),
-  },
-  captionPad: {
-    paddingHorizontal: sp(3.5),
+    alignItems: 'center' as const,
     justifyContent: 'center' as const,
+  },
+  // A hairline between readings, none under the last: the table should look
+  // like a table, not like four separate things.
+  readingRule: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
+  },
+  reading: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    gap: sp(4),
+    minHeight: 34,
+    paddingVertical: sp(1.5),
   },
 };

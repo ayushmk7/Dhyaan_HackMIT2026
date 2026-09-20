@@ -131,6 +131,25 @@ export const useCameraMonitor = (cameraId: string | undefined) => {
   });
 };
 
+/**
+ * Which room the beacons put her in. Room level, never a position: the ESP32s
+ * report RSSI and `app/location.py` classifies it against the survey, so the
+ * answer is a room name and a confidence and nothing finer.
+ *
+ * Only the camera console calls this. It is the screen whose job is to show
+ * what the system is working from, and the room is the one reading it has that
+ * does not come from the camera at all.
+ */
+export const useResidentLocation = (residentId: string | undefined) => {
+  const focused = useIsFocused();
+  return useQuery({
+    queryKey: ['location', residentId],
+    queryFn: () => api.getLocation(residentId!),
+    enabled: !!residentId && focused,
+    refetchInterval: 5000,
+  });
+};
+
 // ---- session hydration -------------------------------------------------------
 
 /**

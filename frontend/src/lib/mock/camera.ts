@@ -258,6 +258,15 @@ class MockCamera {
       sentence: beat.presence.sentence.replace('{since}', clock(this.beatAt)),
       confidence: present ? 0.82 : null,
       simulated: true,
+      // The console's richer readings. The mock answers them the way the beat
+      // already describes her, so the screen under mocks says the same thing
+      // its own sentence does rather than a row of glyphs.
+      posture: !present ? null
+        : beat.presence.activity === 'lying_down' ? 'reclined'
+          : beat.presence.activity === 'walking' ? 'upright' : 'seated',
+      food: present && beat.presence.activity === 'eating' ? ['sandwich'] : [],
+      dishes: present && beat.presence.activity === 'eating' ? ['plate', 'mug'] : [],
+      seating: present ? ['chair'] : [],
     };
   }
 
