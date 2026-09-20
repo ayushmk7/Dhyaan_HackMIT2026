@@ -32,8 +32,7 @@ export function Wash({
   const th = useTheme();
   const t = th.washTone[tone];
   // Bloom strength: a white bloom on a dark ramp is glare, so it is halved.
-  const dark = t.base[1] === th.night || t.base[1] === th.ink && th.scheme === 'light';
-  const warmA = dark ? 0.22 : 0.55;
+  const warmA = t.dark ? 0.22 : 0.55;
   return (
     <View pointerEvents="none" style={[{ position: 'absolute', top: 0, left: 0, right: 0, height }, style]}>
       <LinearGradient colors={t.base} locations={[0, 0.55, 1]} style={StyleSheet.absoluteFill} />

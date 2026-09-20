@@ -262,7 +262,11 @@ export type StateStyle = { fg: string; wash: string; word: string; form: StateFo
 
 export type ZoneColor = Record<string, string>;
 export type AvatarGradient = Record<'green' | 'amber' | 'blue', readonly [string, string]>;
-export type WashRamp = { base: readonly [string, string, string]; warm: string; cool: string; grain: number };
+export type WashRamp = {
+  base: readonly [string, string, string]; warm: string; cool: string; grain: number;
+  /** A dark ramp halves its warm bloom: light pooling on black reads as glare. */
+  dark: boolean;
+};
 export type WashTones = Record<'day' | 'night' | 'alarm', WashRamp>;
 
 export type Hue = Record<
@@ -286,7 +290,7 @@ export type Semantics = {
 
 // The night ramp is the same in both schemes: Rounds is the app in dark mode.
 const NIGHT_WASH: WashRamp = {
-  base: [NIGHT_RAISED, NIGHT, NIGHT], warm: '80,110,160', cool: '0,0,0', grain: 0.07,
+  base: [NIGHT_RAISED, NIGHT, NIGHT], warm: '80,110,160', cool: '0,0,0', grain: 0.07, dark: true,
 };
 
 /** Everything that hangs off a palette, built once per scheme. */
@@ -341,11 +345,11 @@ export const buildSemantics = (p: Palette, scheme: 'light' | 'dark'): Semantics 
     washTone: {
       day: dark
         ? NIGHT_WASH
-        : { base: [WHITE, '#F8FAFD', p.paper], warm: '255,255,255', cool: '185,205,235', grain: 0.04 },
+        : { base: [WHITE, '#F8FAFD', p.paper], warm: '255,255,255', cool: '185,205,235', grain: 0.04, dark: false },
       night: NIGHT_WASH,
       alarm: dark
-        ? { base: [WHITE, '#F3F5F9', '#F3F5F9'], warm: '255,255,255', cool: '11,18,32', grain: 0.05 }
-        : { base: ['#1A2332', INK, INK], warm: '255,255,255', cool: '0,0,0', grain: 0.07 },
+        ? { base: [WHITE, '#F3F5F9', '#F3F5F9'], warm: '255,255,255', cool: '11,18,32', grain: 0.05, dark: false }
+        : { base: ['#1A2332', INK, INK], warm: '255,255,255', cool: '0,0,0', grain: 0.07, dark: true },
     },
 
     // Glass constants. Tints are near-colourless: glass borrows its colour from

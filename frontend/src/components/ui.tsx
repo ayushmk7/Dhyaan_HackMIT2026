@@ -299,7 +299,7 @@ export function Btn({
     ghost: 'transparent', glass: 'transparent', inverse: c.plate, outline: 'transparent',
   }[kind];
   const pressedBg = {
-    primary: isNight ? c.accent : c.accent, danger: c.platePressed, quiet: c.pressed,
+    primary: c.accent, danger: c.platePressed, quiet: c.pressed,
     ghost: 'transparent', glass: 'transparent', inverse: c.platePressed, outline: c.pressed,
   }[kind];
   const fg =

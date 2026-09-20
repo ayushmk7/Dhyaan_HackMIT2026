@@ -138,7 +138,8 @@ export default function Camera() {
         )}
         {test.kind === 'online' && (
           <Row gap={2}>
-            <Icon name="checkmark.circle" size={14} color={t.moss} />
+            {/* OK has no colour: the tick is ink. */}
+            <Icon name="checkmark.circle" size={14} color={t.ink} />
             <Txt kind="caption" tone="ok">
               {test.inView ? copy.onlineInView : copy.onlineEmpty}
             </Txt>

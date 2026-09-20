@@ -70,7 +70,9 @@ function BaselineRow({ b }: { b: BaselineFeature }) {
 
       <View style={{ marginTop: sp(2) }}>
         {pts.length >= 2 ? (
-          <Sparkline series={pts} tone={deviating ? t.ochre : t.slate} />
+          // Deviating = "worth a look" = the accent, which is the one thing
+          // blue means. A line that means nothing is a quiet grey.
+          <Sparkline series={pts} tone={deviating ? t.accent : t.inkMuted} />
         ) : last == null ? (
           // No history endpoint and no last value: say so rather than drawing
           // a chart of nothing.
