@@ -39,7 +39,9 @@ SITE = RF["site_uuid"]
 # Longer than the app's own window: one host pass should catch EVERY beacon,
 # or k-NN vectors flap between rooms on missing anchors.
 SCAN_S = float(os.getenv("FALLBAND_BLE_HOST_SCAN_S", 2 * float(RF.get("ble_scan_seconds", 3))))
-MIN_N = int(RF.get("min_adverts_n", 3))
+# [claude] 1, not config min_adverts_n: at 6 s windows a single advert is real;
+# requiring 3 produced minute-long empty stretches on the bench.
+MIN_N = 1
 PERIOD_S = float(os.getenv("FALLBAND_BLE_HOST_PERIOD_S", "5"))
 OUT = APP_DIR / ".ble_latest.json"
 

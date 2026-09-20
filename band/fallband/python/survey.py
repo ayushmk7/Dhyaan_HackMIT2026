@@ -61,6 +61,9 @@ def main() -> None:
     deadline = time.time() + total_s
     accepted = empty = 0
     while time.time() < deadline:
+        # [claude] pace the loop: with the host-scan relay in play the call
+        # returns instantly instead of blocking for a scan window.
+        time.sleep(2.0)
         beacons = scan_ibeacons_sync(SITE, SCAN_S, min_adverts=1)
         wire = [{"uuid": b["uuid"], "major": b["major"], "minor": b["minor"], "rssi": b["rssi"]}
                 for b in beacons]
