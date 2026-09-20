@@ -39,7 +39,7 @@ const mockApi = {
       review_state: 'unreviewed' as const,
     };
   },
-  async getSummaries(residentId: string) { await wait(); return dhyaan.getSummaries(residentId); },
+  async getSummaries(residentId: string, _days = 14) { await wait(); return dhyaan.getSummaries(residentId); },
   async getLocationHistory(residentId: string, date: string) {
     await wait(150);
     return dhyaan.getLocationHistory(residentId, date);
@@ -113,7 +113,7 @@ const mockApi = {
   },
 
   // No nightly job in the mock — the seeded world already has its summaries.
-  async rollup() { await wait(300); },
+  async rollup(_residentId?: string, _date?: string) { await wait(300); },
 
   async listCameras() { await wait(120); return mockCamera.listCameras(); },
   async getCameraMonitor(cameraId: string) { await wait(60); return mockCamera.getMonitor(cameraId); },

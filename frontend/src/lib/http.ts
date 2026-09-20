@@ -14,6 +14,7 @@ import { useSession } from '@/store/session';
 import type {
   ActivityDay, Alert, AlertKind, AlertSeverity, BaselineFeature, CallRow,
   ChatMessage, Contact, DaySummary, Fact, KEvent, LadderStep, LocationMethod,
+  TranscriptLine,
   LocationSegment, LoginResult, MemoryDeleted, MemoryScope, Presence, Profile,
   ProfilePatch, Resident, ResidentLocation, CameraMonitorTick, CameraSummary,
   SimulateKind, VoiceScript,
@@ -63,6 +64,11 @@ const del = <T>(path: string, data?: unknown) =>
 // module has no component to hook into. Falls back to the store's own default
 // if called before sign-in (the demo seed and `signIn` both set a real id).
 const residentId = () => useSession.getState().residentId;
+
+// Her day, not UTC's. Mirrors `localDayKey` in hooks.ts; kept here so the
+// transport layer doesn't import the hooks module for a date format.
+const localDay = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 // zoneId -> in-flight survey, so surveyStop(zoneId) can find the survey_id
 // surveyRoom(zoneId) started (see surveyRoom's comment below for why).
@@ -136,24 +142,50 @@ interface RawAlert {
   resident_name?: string;
   room?: string | null;
   trigger_event?: KEvent | null;
-  calls?: KEvent[]; // raw voice-source events — see toCallRow
+  calls?: RawCall[]; // `calls` docs, or voice events — see toCallRow
   closed_at?: string | null; // server-computed; see toAlert
+  cancel_window_s?: number;
   ladder?: LadderStep[]; // replayed from events by residents.py `_ladder_step`
 }
 
-// ponytail: real voice.py only ever emits `{to, role, alert_id, call_sid}` —
-// no transcript, duration, or classification. Project the real fields we do
-// have into CallRow's shape and leave the rest empty/null (honest: "no
-// transcript exists yet", not a fabricated conversation).
-function toCallRow(e: KEvent): CallRow {
-  const payload = e.payload as { role?: string; classification?: string; duration_s?: number };
-  const role = payload.role;
-  const knownRole = role === 'resident' || role === 'contact_1' || role === 'contact_2' || role === 'staff';
+// A call row, from either of the two shapes `alert_response` can send.
+//
+// `db().calls` is the real one now (app/voice.py's stub and the Twilio adapter
+// both write it): top-level `role`, `simulated`, and a `transcript` of
+// `{role, content}` turns. The old shape — reconstructed from voice-source
+// events when an alert predates that collection — carries the same facts under
+// `payload`. This used to read only `payload.role` and hardcode
+// `transcript: []`, so every real call rendered as role "staff" with no words,
+// and the takeover's "What the call is hearing" panel never appeared even
+// though the backend had the transcript sitting there.
+const CALL_ROLES = ['resident', 'contact', 'contact_final', 'contact_1', 'contact_2', 'staff'] as const;
+const SPEAKERS = ['agent', 'resident', 'contact', 'system'] as const;
+
+interface RawCall {
+  role?: string;
+  classification?: string | null;
+  duration_s?: number | null;
+  transcript?: { role?: string; speaker?: string; content?: string; text?: string }[];
+  payload?: { role?: string; classification?: string; duration_s?: number };
+}
+
+function toCallRow(e: RawCall): CallRow {
+  const p = e.payload ?? {};
+  const role = e.role ?? p.role;
+  const speaker = (r: string | undefined): TranscriptLine['speaker'] =>
+    (SPEAKERS as readonly string[]).includes(r ?? '')
+      ? (r as TranscriptLine['speaker'])
+      // The bridge speaks OpenAI's vocabulary; voice.py speaks ours.
+      : r === 'assistant' ? 'agent' : r === 'user' ? 'resident' : 'system';
   return {
-    role: knownRole ? (role as CallRow['role']) : 'staff',
-    classification: payload.classification ?? null,
-    transcript: [],
-    duration_s: payload.duration_s ?? null,
+    role: (CALL_ROLES as readonly string[]).includes(role ?? '')
+      ? (role as CallRow['role'])
+      : 'staff',
+    classification: e.classification ?? p.classification ?? null,
+    transcript: (e.transcript ?? [])
+      .map((t) => ({ speaker: speaker(t.role ?? t.speaker), text: t.content ?? t.text ?? '' }))
+      .filter((t) => !!t.text),
+    duration_s: e.duration_s ?? p.duration_s ?? null,
   };
 }
 
@@ -235,11 +267,15 @@ export const httpApi = {
     return raw;
   },
 
-  // GET /residents/{id}/summaries?days=7 — contract-exact shape, just
+  // GET /residents/{id}/summaries — contract-exact shape, just
   // renamed date->date_local on the way in (see types.ts DaySummary).
-  getSummaries: async (residentId: string): Promise<DaySummary[]> => {
+  // 14 days, not 7: the timeline pages backwards a day at a time, and the
+  // baseline learner's own window is 14. The route now keys one story per day
+  // and sorts by the day it describes, so a wider window is just more days
+  // rather than an arbitrary slice.
+  getSummaries: async (residentId: string, days = 14): Promise<DaySummary[]> => {
     const raw = await get<{ date: string; narrative: string; deviations: DaySummary['deviations'] }[]>(
-      `/residents/${residentId}/summaries?days=7`,
+      `/residents/${residentId}/summaries?days=${days}`,
     );
     return raw.map((s) => ({ date_local: s.date, narrative: s.narrative, deviations: s.deviations }));
   },
@@ -389,7 +425,14 @@ export const httpApi = {
   // POST /admin/rollup — runs the nightly baseline + narrative pass now.
   // Without it a freshly seeded backend has no daily summaries at all and
   // Her day reads "Today's isn't written yet" forever.
-  rollup: async (): Promise<void> => { await post('/admin/rollup'); },
+  //
+  // `resident_id` and `date` are both REQUIRED by RollupRequest — posting an
+  // empty body 422s, which is what the "Write today's story now" button did
+  // until this was smoke-tested against the live API. `date` is the resident's
+  // local day, not UTC's, same as every other day-keyed route here.
+  rollup: async (residentId_ = residentId(), date = localDay()): Promise<void> => {
+    await post('/admin/rollup', { resident_id: residentId_, date });
+  },
 
   // POST /bands/pair — contract body is {band_id, resident_id}, but
   // onboard/pair.tsx only ever collects a 6-digit code shown on the band, no
@@ -610,10 +653,21 @@ export const httpApi = {
   // already did exactly this; there was never a reason for the real client to
   // return nothing). No key configured -> no openers, and Today drops the
   // section rather than inventing conversation starters.
+  // Both of these send text to Claude, so both must send the FAMILY view.
+  //
+  // They used to read `GET /residents/{id}/timeline`, which is the staff feed:
+  // raw `embedding_text` with zones attached ("Eleanor moved into the
+  // bathroom", "Band band_a3f2 reported fall_suspected"). That is whereabouts
+  // and machine log text, it is exactly what D-001 says never reaches a family
+  // surface, and it was being posted off-device and then rendered back onto
+  // Today and into her weekly letter. `/activity` is the same day already run
+  // through the server's family filter (`_family_item` strips zone, evidence,
+  // posture and movement), so it is the only correct source here.
   talkAbout: async (): Promise<string[]> => {
-    const events = await httpApi.getEvents(residentId()).catch(() => []);
-    if (!events.length) return [];
-    return (await draftOpeners(events.slice(0, 20).map((e) => e.embedding_text))) ?? [];
+    const day = await httpApi.getActivity(residentId(), localDay()).catch(() => null);
+    const lines = (day?.items ?? []).map((i) => i.sentence).filter(Boolean);
+    if (!lines.length) return [];
+    return (await draftOpeners(lines.slice(0, 20))) ?? [];
   },
   latestMessage: async (): Promise<{ text: string; at: string } | null> => null,
   planFromThread: async (thread: string): Promise<FamilyPlan> =>
@@ -621,8 +675,24 @@ export const httpApi = {
       headline: 'Couldn’t read the thread. Try pasting it again.',
       when: null, tasks: [], open_questions: [], reply_text: '',
     },
+  // The week, in her family's view. Seven days of family-filtered activity
+  // plus the daily narratives — never the staff timeline (see talkAbout).
   sundayLetter: async (): Promise<string> => {
-    const events = await httpApi.getEvents(residentId());
-    return (await polishLetter(events.map((e) => e.embedding_text).join('\n'))) ?? '';
+    const id = residentId();
+    const days = [...Array(7)].map((_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      return localDay(d);
+    });
+    const [summaries, activity] = await Promise.all([
+      httpApi.getSummaries(id).catch(() => []),
+      Promise.all(days.map((d) => httpApi.getActivity(id, d).catch(() => null))),
+    ]);
+    const draft = [
+      ...summaries.map((s) => s.narrative),
+      ...activity.flatMap((day) => (day?.items ?? []).map((i) => i.sentence)),
+    ].filter(Boolean).join('\n');
+    if (!draft) return '';
+    return (await polishLetter(draft)) ?? '';
   },
 };

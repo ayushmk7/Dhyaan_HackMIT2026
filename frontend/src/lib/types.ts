@@ -76,12 +76,16 @@ export interface LadderStep {
 }
 
 export interface TranscriptLine {
-  speaker: 'agent' | 'resident' | 'contact';
+  /** `system` is a line about the call, not in it — "call connected, no
+   *  response detected on the line". voice.py's `silence` script emits one. */
+  speaker: 'agent' | 'resident' | 'contact' | 'system';
   text: string;
 }
 
 export interface CallRow {
-  role: 'resident' | 'contact_1' | 'contact_2' | 'staff';
+  /** The vocabulary `app/voice.py` actually writes. `contact_final` is the
+   *  everyone-at-once call the ladder places when it has run out of people. */
+  role: 'resident' | 'contact' | 'contact_final' | 'contact_1' | 'contact_2' | 'staff';
   classification: string | null;
   transcript: TranscriptLine[];
   duration_s: number | null;
@@ -112,15 +116,14 @@ export interface Alert {
   // working unchanged. Upgrade: have GET /alerts/{id} include real ladder
   // history once alerts.py records one.
   ladder: LadderStep[];
-  // ponytail: real GET /alerts/{id} reconstructs `calls` from raw voice-source
-  // Events (`{to, role, alert_id, call_sid}` in payload today — no
-  // transcript, no duration, no classification; see backend/app/voice.py's
-  // stub). httpApi projects those into this same CallRow shape with
-  // transcript: [] and duration_s/classification: null rather than widening
-  // this type to a union — the screen keeps compiling and just renders call
-  // rows with an empty transcript for real alerts until voice.py's payload
-  // contract grows a real one.
+  // Real `GET /alerts/{id}` sends `db().calls` rows — role, simulated flag and
+  // a `{role, content}` transcript — falling back to voice-source events for
+  // alerts raised before that collection existed. `toCallRow` in http.ts reads
+  // either shape.
   calls: CallRow[];
+  /** Seconds she has to cancel from the band before the ladder starts. The
+   *  server owns it (CANCEL_WINDOW_S); don't hardcode 30. */
+  cancel_window_s?: number;
   // Real-only extras (backend/app/routers/residents.py):
   trigger_event_id?: string;
   trigger_event?: KEvent | null; // only on GET /alerts/{id}
