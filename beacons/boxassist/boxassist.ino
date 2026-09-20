@@ -26,6 +26,9 @@
 // ---------------- VENUE CONFIG: set these before flashing ----------------
 #define WIFI_SSID   "SET_ME_AT_VENUE"      // leave as-is => beacon-only mode
 #define WIFI_PASS   "SET_ME_AT_VENUE"
+// [claude] iOS hotspots spell the name with U+2019 ('), humans type ASCII (').
+// If the primary SSID hasn't joined after 20 s, retry alternating with this.
+#define WIFI_SSID_ALT WIFI_SSID
 // --------------------------------------------------------------------------
 
 #define BACKEND_BASE  "https://subsystem-mushroom-grooving.ngrok-free.dev"
@@ -316,6 +319,25 @@ void setup() {
 
 void loop() {
   uint32_t now = millis();
+
+  // [claude] SSID fallback + join visibility (learned live: the typographic
+  // apostrophe cost us 20 minutes of "WiFi connecting ..." silence).
+  static uint32_t wifiAttemptAt = 0;
+  static bool altSsid = false, ipLogged = false;
+  if (wifiConfigured && WiFi.status() != WL_CONNECTED && now - wifiAttemptAt > 20000) {
+    if (wifiAttemptAt != 0 && strcmp(WIFI_SSID, WIFI_SSID_ALT) != 0) {
+      altSsid = !altSsid;
+      WiFi.disconnect();
+      WiFi.begin(altSsid ? WIFI_SSID_ALT : WIFI_SSID, WIFI_PASS);
+      Serial.printf("WiFi retry with %s\n", altSsid ? WIFI_SSID_ALT : WIFI_SSID);
+    }
+    wifiAttemptAt = now;
+    ipLogged = false;
+  }
+  if (wifiConfigured && WiFi.status() == WL_CONNECTED && !ipLogged) {
+    ipLogged = true;
+    Serial.printf("WiFi OK ip=%s\n", WiFi.localIP().toString().c_str());
+  }
 
   // [claude] Keep the speaker fed (no-op when idle/audio-less). While a clip
   // or tone is playing we also defer the blocking HTTP poll below so a slow
