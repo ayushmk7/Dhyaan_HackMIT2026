@@ -13,23 +13,17 @@ import {
 } from '@/components';
 import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
-import { palette, sp } from '@/theme/tokens';
+import { onboard } from '@/lib/copy/staff';
+import { sp, useTheme } from '@/theme';
 import { useSession } from '@/store/session';
 import type { CameraZone } from '@/lib/types';
 
-const ROOMS: { zone: CameraZone; label: string }[] = [
-  { zone: 'kitchen', label: 'Kitchen' },
-  { zone: 'living_room', label: 'Living room' },
-  { zone: 'dining_room', label: 'Dining room' },
-  { zone: 'hallway', label: 'Hallway' },
-];
+const copy = onboard.camera;
 
-const CHECKLIST = [
-  'It cannot see into a bedroom or bathroom, even through an open doorway.',
-  'If a private door is in view, mask it on the computer first. Masked pixels never reach the detector.',
-  'Point it at where she usually sits.',
-  'She knows it is there, and knows she can pause it for two hours from the computer.',
-];
+/** The zones a camera may be placed in, in the order they are offered. */
+const ROOMS = ['kitchen', 'living_room', 'dining_room', 'hallway'] as const satisfies readonly CameraZone[];
+
+const CHECKLIST = copy.checklist;
 
 type TestState =
   | { kind: 'idle' }
@@ -38,6 +32,7 @@ type TestState =
   | { kind: 'unreachable'; message: string };
 
 export default function Camera() {
+  const t = useTheme();
   const { residentId, camera, setCamera } = useSession();
   const [checked, setChecked] = useState<boolean[]>(CHECKLIST.map(() => false));
   const [test, setTest] = useState<TestState>({ kind: 'idle' });
@@ -50,20 +45,20 @@ export default function Camera() {
   const runTest = async () => {
     setTest({ kind: 'testing' });
     const deadline = Date.now() + 20_000;
-    let lastError = 'Not reachable.';
+    let lastError: string = copy.notReachable;
     while (Date.now() < deadline) {
       try {
         const p = await api.getPresence(residentId);
         if (p.status === 'no_camera') {
-          lastError = 'No camera is running on her computer yet.';
+          lastError = copy.noCameraYet;
         } else if (p.camera.online) {
           setTest({ kind: 'online', inView: p.status === 'in_view' });
           return;
         } else {
-          lastError = 'The camera is set up but is not running right now.';
+          lastError = copy.notRunning;
         }
       } catch (e) {
-        lastError = e instanceof Error ? e.message : 'Not reachable.';
+        lastError = e instanceof Error ? e.message : copy.notReachable;
       }
       await new Promise((r) => setTimeout(r, 2000));
     }
@@ -75,18 +70,18 @@ export default function Camera() {
       native
       wash
       floatingBar={
-        <Btn label="Continue" disabled={!ready} onPress={() => router.push('/onboard/contacts')} />
+        <Btn label={copy.continue} disabled={!ready} onPress={() => router.push('/onboard/contacts')} />
       }
     >
       <Entrance index={0}>
-        <Marquee first title="Which room is the camera in?" />
+        <Marquee first title={copy.title} />
         <Row gap={2} style={{ flexWrap: 'wrap', marginTop: sp(2) }}>
-          {ROOMS.map((r) => (
+          {ROOMS.map((zone) => (
             <Chip
-              key={r.zone}
-              label={r.label}
-              selected={camera.zone === r.zone}
-              onPress={() => setCamera({ zone: r.zone })}
+              key={zone}
+              label={copy.rooms[zone]}
+              selected={camera.zone === zone}
+              onPress={() => setCamera({ zone })}
             />
           ))}
         </Row>
@@ -94,11 +89,11 @@ export default function Camera() {
 
       <Entrance index={1}>
         <Field
-          label="How is the room laid out?"
+          label={copy.layoutLabel}
           value={camera.zoneHint}
           onChangeText={(zoneHint) => setCamera({ zoneHint })}
-          placeholder="The dining table is on the left, her armchair by the window on the right."
-          hint="So Dhyaan can name her spot: her armchair, the table."
+          placeholder={copy.layoutPlaceholder}
+          hint={copy.layoutHint}
           multiline
           maxLength={300}
           style={{ marginTop: sp(6) }}
@@ -107,7 +102,7 @@ export default function Camera() {
 
       <Entrance index={2}>
         <Card style={{ marginTop: sp(6) }}>
-          <Txt kind="label">Before you point it anywhere, check each of these</Txt>
+          <Txt kind="label">{copy.checklistTitle}</Txt>
           <Rule style={{ marginTop: sp(2) }} />
           {CHECKLIST.map((line, i) => (
             <Row
@@ -116,7 +111,7 @@ export default function Camera() {
               style={{ marginTop: sp(3), alignItems: 'flex-start' }}
             >
               <Chip
-                label={checked[i] ? 'Checked' : 'Confirm'}
+                label={checked[i] ? copy.checked : copy.confirm}
                 selected={checked[i]}
                 onPress={() => setChecked((c) => c.map((v, j) => (j === i ? !v : v)))}
               />
@@ -129,33 +124,31 @@ export default function Camera() {
       <Entrance index={3} style={{ marginTop: sp(6), gap: sp(2) }}>
         <Btn
           kind="quiet"
-          label="Test the camera"
+          label={copy.test}
           busy={test.kind === 'testing'}
           onPress={runTest}
         />
         {test.kind === 'idle' && (
           <Txt kind="caption" tone="muted">{/* voice-ok */}
-            Start the camera on her computer first.
+            {copy.startFirst}
           </Txt>
         )}
         {test.kind === 'testing' && (
-          <Txt kind="caption" tone="muted">Listening for up to 20 seconds…</Txt>
+          <Txt kind="caption" tone="muted">{copy.listening}</Txt>
         )}
         {test.kind === 'online' && (
           <Row gap={2}>
-            <Icon name="checkmark.circle" size={14} color={palette.moss} />
+            <Icon name="checkmark.circle" size={14} color={t.moss} />
             <Txt kind="caption" tone="ok">
-              {test.inView
-                ? 'Camera online, someone in view.'
-                : 'Camera online, nothing in view yet.'}
+              {test.inView ? copy.onlineInView : copy.onlineEmpty}
             </Txt>
           </Row>
         )}
         {test.kind === 'unreachable' && (
           <View style={{ gap: sp(1) }}>
-            <ErrorState inline message={`Not reachable. ${test.message}`} />
+            <ErrorState inline message={copy.notReachableWith(test.message)} />
             <Txt kind="caption" tone="muted">{/* voice-ok */}
-              You can finish setup without it and test later.
+              {copy.finishLater}
             </Txt>
           </View>
         )}
@@ -164,9 +157,7 @@ export default function Camera() {
       {!ready && (
         <Entrance index={4}>
           <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>{/* voice-ok */}
-            {camera.zone == null
-              ? 'Pick the room the camera is in.'
-              : 'Confirm each line of the checklist.'}
+            {camera.zone == null ? copy.pickRoom : copy.confirmChecklist}
           </Txt>
         </Entrance>
       )}

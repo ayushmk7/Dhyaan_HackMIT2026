@@ -21,6 +21,12 @@ dependencies = [
 vision = [
     "opencv-python>=4.10",
     "ultralytics>=8.3",
+    # Pose landmarks for posture. Pinned, not floated: 1.0.1 hard-aborts the
+    # whole process inside a Metal helper on this machine's arm64 Python (it
+    # takes the camera lane down with it, no traceback), and 0.10.35 is the
+    # last release that runs clean here. Only the PoseLandmarker is used —
+    # YOLO above still does the boxes.
+    "mediapipe==0.10.35",
 ]
 
 [tool.setuptools]

@@ -19,6 +19,8 @@
 // on its own day and nowhere else, and never as a "noticed" row, whichever
 // way it arrives. `/summaries` is the second source for the story, and
 // whichever was written last wins, because the rollup can run more than once.
+//
+// Every sentence this screen says lives in lib/copy/family.ts under `timeline`.
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import React, { useCallback, useState } from 'react';
@@ -29,22 +31,25 @@ import {
 } from '@/components';
 import { api } from '@/lib/api';
 import { hasAI } from '@/lib/ai';
+import { family } from '@/lib/copy/family';
 import { dayOf, displaySentence, timeOf } from '@/lib/format';
 import { localDayKey, useActivity, useSummaries } from '@/lib/hooks';
 import type { ActivityItem } from '@/lib/types';
 import { useSession } from '@/store/session';
-import { palette, radius, sp } from '@/theme/tokens';
+import { radius, sp, useTheme } from '@/theme';
+
+const copy = family.timeline;
 
 const FILTERS: { label: string; match: (t: string) => boolean }[] = [
-  { label: 'All', match: () => true },
-  { label: 'Meals', match: (t) => t.startsWith('meal') },
-  { label: 'Visitors', match: (t) => t.startsWith('visitor') },
+  { label: copy.filters.all, match: () => true },
+  { label: copy.filters.meals, match: (t) => t.startsWith('meal') },
+  { label: copy.filters.visitors, match: (t) => t.startsWith('visitor') },
   {
-    label: 'Out and about',
+    label: copy.filters.outAndAbout,
     match: (t) => t === 'room_exit' || t === 'room_entry' || t.startsWith('walk')
       || t === 'left_home' || t === 'returned_home',
   },
-  { label: 'Nights', match: (t) => t === 'night_activity' || t === 'bed_exit' },
+  { label: copy.filters.nights, match: (t) => t === 'night_activity' || t === 'bed_exit' },
 ];
 
 const shiftDay = (key: string, days: number) => {
@@ -66,8 +71,8 @@ const storyBody = (text: string) => text.replace(STORY_PREFIX, '');
  * not say.
  */
 const familySentence = (item: ActivityItem): string => {
-  if (item.type === 'fall_suspected') return 'Her band reported a possible fall.';
-  if (item.type === 'fall_confirmed') return 'Her band confirmed a fall.';
+  if (item.type === 'fall_suspected') return family.shared.fallSuspected;
+  if (item.type === 'fall_confirmed') return family.shared.fallConfirmed;
   return displaySentence(item.sentence);
 };
 
@@ -75,7 +80,7 @@ function ItemRow({ item, onPress }: { item: ActivityItem; onPress?: () => void }
   return (
     <Pressable
       accessibilityRole={onPress ? 'button' : 'text'}
-      accessibilityLabel={`${familySentence(item)} ${timeOf(item.ts)}`}
+      accessibilityLabel={copy.rowLabel(familySentence(item), timeOf(item.ts))}
       onPress={onPress}
       disabled={!onPress}
       style={({ pressed }) => ({ paddingVertical: sp(3.5), opacity: pressed ? 0.6 : 1 })}
@@ -94,6 +99,7 @@ function ItemRow({ item, onPress }: { item: ActivityItem; onPress?: () => void }
 }
 
 export default function HerDay() {
+  const t = useTheme();
   const qc = useQueryClient();
   const { residentId, residentName } = useSession();
   const [date, setDate] = useState(localDayKey());
@@ -124,7 +130,7 @@ export default function HerDay() {
   }, [qc]);
 
   const refreshControl = (
-    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.inkMuted} />
+    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.inkMuted} />
   );
 
   // ---- share her week --------------------------------------------------------
@@ -137,19 +143,19 @@ export default function HerDay() {
     setSharing(true);
     setShareError(null);
     if (!hasAI) {
-      setShareError('Writing her week needs Dhyaan’s writing service, which isn’t connected on this phone. Nothing was shared.');
+      setShareError(copy.share.needsAI);
       setSharing(false);
       return;
     }
     try {
       const letter = await api.sundayLetter();
       if (!letter.trim()) {
-        setShareError(`Dhyaan couldn’t put ${residentName}’s week into words just now. Nothing was shared.`);
+        setShareError(copy.share.noLetter(residentName));
         return;
       }
       await Share.share({ message: letter });
     } catch {
-      setShareError(`Dhyaan couldn’t reach far enough to write ${residentName}’s week. Nothing was shared.`);
+      setShareError(copy.share.unreachable(residentName));
     } finally {
       setSharing(false);
     }
@@ -159,7 +165,7 @@ export default function HerDay() {
     () => (
       <IconBtn
         name="square.and.arrow.up"
-        label="Share her week"
+        label={copy.shareWeek}
         kind="ghost"
         size={32}
         disabled={sharing}
@@ -189,7 +195,7 @@ export default function HerDay() {
         qc.invalidateQueries({ queryKey: ['activity', residentId] }),
       ]);
     } catch {
-      setWriteError({ date, text: 'Dhyaan couldn’t write it just now. Try again in a moment.' });
+      setWriteError({ date, text: copy.writeError });
     } finally {
       setWriting(false);
     }
@@ -229,14 +235,14 @@ export default function HerDay() {
         <Row style={{ justifyContent: 'space-between' }}>
           <IconBtn
             name="chevron.left"
-            label="Previous day"
+            label={copy.previousDay}
             kind="ghost"
             onPress={() => setDate((d) => shiftDay(d, -1))}
           />
           <Txt kind="label">{dayLabel}</Txt>
           <IconBtn
             name="chevron.right"
-            label="Next day"
+            label={copy.nextDay}
             kind="ghost"
             disabled={isToday}
             onPress={() => setDate((d) => shiftDay(d, 1))}
@@ -247,9 +253,9 @@ export default function HerDay() {
       {observed.length > 0 && (
         <Slab style={{ marginTop: sp(3), paddingVertical: sp(3) }}>
           <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap' }} gap={3}>
-            <DataLabel value={String(observed.length)}>Noticed</DataLabel>
-            {!!firstAt && <DataLabel value={timeOf(firstAt)}>First</DataLabel>}
-            {!!lastAt && <DataLabel value={timeOf(lastAt)}>Last</DataLabel>}
+            <DataLabel value={String(observed.length)}>{copy.noticed}</DataLabel>
+            {!!firstAt && <DataLabel value={timeOf(firstAt)}>{copy.first}</DataLabel>}
+            {!!lastAt && <DataLabel value={timeOf(lastAt)}>{copy.last}</DataLabel>}
           </Row>
         </Slab>
       )}
@@ -258,7 +264,7 @@ export default function HerDay() {
         <ErrorState
           inline
           message={shareError}
-          retryLabel="Dismiss"
+          retryLabel={copy.dismiss}
           onRetry={() => setShareError(null)}
           style={{ marginTop: sp(3) }}
         />
@@ -271,7 +277,7 @@ export default function HerDay() {
       <Screen native wash refreshControl={refreshControl}>
         <Stack.Screen options={{ headerRight }} />
         {pager}
-        <LoadingState label="Reading her day…" />
+        <LoadingState label={copy.loading} />
       </Screen>
     );
   }
@@ -280,7 +286,7 @@ export default function HerDay() {
       <Screen native wash refreshControl={refreshControl}>
         <Stack.Screen options={{ headerRight }} />
         {pager}
-        <ErrorState message="Couldn’t load her day." onRetry={refetch} />
+        <ErrorState message={copy.loadError} onRetry={refetch} />
       </Screen>
     );
   }
@@ -302,10 +308,10 @@ export default function HerDay() {
       </Entrance>
 
       <Entrance index={2}>
-        <Marquee title="The day’s story" meta={dayLabel} />
+        <Marquee title={copy.story} meta={dayLabel} />
         {summary ? (
           <Card>
-            <KindTag kind="pattern" detail={summary.at ? `written ${timeOf(summary.at)}` : 'the day’s story'} />
+            <KindTag kind="pattern" detail={summary.at ? copy.storyWritten(timeOf(summary.at)) : copy.storyDetail} />
             <Txt kind="body" style={{ marginTop: sp(2.5) }}>{summary.narrative}</Txt>
           </Card>
         ) : (
@@ -313,20 +319,17 @@ export default function HerDay() {
             <EmptyState
               action={
                 <Btn
-                  label={isToday ? 'Write today’s story now' : 'Write this day’s story now'}
+                  label={copy.writeStory(isToday)}
                   kind="quiet"
                   busy={writing}
                   onPress={writeStory}
                 />
               }
             >
-              {wroteFor === date
-                ? `Dhyaan went back through ${isToday ? 'today' : 'that day'} and didn’t have enough yet to write about.`
-                : `Dhyaan writes the day’s story each evening. ${isToday ? 'Today’s isn’t written yet.' : 'There isn’t one for this day.'}`}
+              {wroteFor === date ? copy.nothingToWrite(isToday) : copy.notWritten(isToday)}
             </EmptyState>
             <Txt kind="caption" tone="muted">
-              {/* voice-ok: an empty state, which DESIGN.md exempts. */}
-              It takes a few seconds. Dhyaan normally does this overnight.
+              {copy.writeNote}
             </Txt>
             {writeError?.date === date && (
               <ErrorState inline message={writeError.text} style={{ marginTop: sp(2) }} />
@@ -337,14 +340,12 @@ export default function HerDay() {
 
       <Entrance index={3}>
         <Marquee
-          title="What it noticed"
-          meta={shown.length === total ? String(total) : `${shown.length} of ${total}`}
+          title={copy.whatItNoticed}
+          meta={shown.length === total ? String(total) : copy.shownOf(shown.length, total)}
         />
         {shown.length === 0 ? (
           <EmptyState>
-            {total === 0
-              ? `No activity noticed ${isToday ? 'yet today' : 'on this day'}. Dhyaan only writes a line when it is confident enough to say a whole sentence.`
-              : `Nothing filed under “${filter.label}” ${isToday ? 'today' : 'on this day'}.`}
+            {total === 0 ? copy.noActivity(isToday) : copy.nothingUnder(filter.label, isToday)}
           </EmptyState>
         ) : (
           <RowGroup>

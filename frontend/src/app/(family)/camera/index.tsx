@@ -20,6 +20,10 @@
 // telemetry strip is not prose, it is instrumentation, and mono/uppercase is
 // the honest face for it. The one human line on the screen is the privacy line
 // under the pane, and it is a claim, not an apology.
+//
+// What a person reads lives in lib/copy/family.ts under `camera`. The
+// telemetry keys and readings (FPS, MODEL, REC, PERSON 01, the gate names) are
+// the machine's own and stay here on purpose.
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -31,13 +35,16 @@ import {
   Btn, Card, Chip, CornerTicks, DataLabel, EmptyState, ErrorState,
   Glass, LoadingState, Marquee, Rule, Stagger, Screen, Txt, useReducedMotion,
 } from '@/components';
+import { family } from '@/lib/copy/family';
 import { ago, timeOf } from '@/lib/format';
 import { api } from '@/lib/api';
 import { useCameraMonitor, useCameras } from '@/lib/hooks';
 import type { CameraMonitorTick, CameraSummary, GateState, NormBox } from '@/lib/types';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
-import { motion, palette, radius, rule, sp } from '@/theme/tokens';
+import { motion, radius, rule, sp, useTheme } from '@/theme';
+
+const copy = family.camera;
 
 // 16:9 is what a webcam and Continuity Camera both hand the worker.
 const PANE_RATIO = 16 / 9;
@@ -122,6 +129,7 @@ const FILL: ViewStyle = { position: 'absolute', top: 0, left: 0, right: 0, botto
 function BoxFrame({
   box, index, paneW, paneH,
 }: { box: NormBox | null; index: number; paneW: number; paneH: number }) {
+  const t = useTheme();
   const reduced = useReducedMotion();
   const x = useSharedValue(0);
   const y = useSharedValue(0);
@@ -163,12 +171,13 @@ function BoxFrame({
         style={{
           flex: 1,
           borderWidth: rule.ink,
-          borderColor: palette.amber,
-          backgroundColor: palette.amberGhost,
+          borderColor: t.amber,
+          backgroundColor: t.amberGhost,
         }}
       />
-      <View style={styles.boxTag}>
-        <Txt kind="micro" style={{ color: palette.night }}>{`PERSON ${pad(index + 1)}`}</Txt>
+      <View style={[styles.boxTag, { backgroundColor: t.amber }]}>
+        {/* Telemetry: the box's own index, not a word. */}
+        <Txt kind="micro" style={{ color: t.night }}>{`PERSON ${pad(index + 1)}`}</Txt>
       </View>
     </Animated.View>
   );
@@ -176,8 +185,9 @@ function BoxFrame({
 
 /** Rule-of-thirds guides. Faint on purpose: a grid you notice is a grid in the way. */
 function Grid() {
+  const t = useTheme();
   const line = (s: ViewStyle) => (
-    <View style={[{ position: 'absolute', backgroundColor: palette.nightLine, opacity: 0.55 }, s]} />
+    <View style={[{ position: 'absolute', backgroundColor: t.nightLine, opacity: 0.55 }, s]} />
   );
   return (
     <View pointerEvents="none" style={FILL}>
@@ -219,6 +229,7 @@ function SentenceTrack({ text }: { text: string }) {
 }
 
 function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
+  const t = useTheme();
   const stamp = useStamp();
   const [size, setSize] = useState({ w: 0, h: 0 });
   const slots: (NormBox | null)[] = Array.from(
@@ -227,20 +238,18 @@ function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
   );
   const people = tick.person_count;
   const live = !tick.simulated;
+  const recColor = live ? t.moss : t.ochre;
 
   return (
     <Glass tone="night" radius={radius.glass} lift="float" style={{ padding: sp(1.5) }}>
       <View
         accessibilityRole="image"
-        accessibilityLabel={
-          `Derived camera view. ${people === 1 ? 'One person' : `${people} people`} in frame. ` +
-          `${tick.sentence || 'No sentence yet.'} No video is shown.`
-        }
+        accessibilityLabel={copy.paneLabel(people, tick.sentence)}
         onLayout={(e) => {
           const { width, height } = e.nativeEvent.layout;
           setSize({ w: width, h: height });
         }}
-        style={styles.pane}
+        style={[styles.pane, { backgroundColor: t.night }]}
       >
         <Grid />
 
@@ -248,18 +257,14 @@ function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
           <BoxFrame key={i} box={b} index={i} paneW={size.w} paneH={size.h} />
         ))}
 
-        <CornerTicks color={palette.amber} size={16} inset={sp(2.5)} weight={rule.ink} />
+        <CornerTicks color={t.amber} size={16} inset={sp(2.5)} weight={rule.ink} />
 
-        {/* Top chrome: the REC light left, the burned-in clock right. */}
+        {/* Top chrome: the REC light left, the burned-in clock right. Both
+            readings are telemetry, not words. */}
         <View style={[styles.paneRow, { top: sp(3) }]}>
           <View style={styles.recPill}>
-            <View
-              style={{
-                width: 8, height: 8, borderRadius: 4,
-                backgroundColor: live ? palette.moss : palette.ochre,
-              }}
-            />
-            <Txt kind="micro" style={{ color: live ? palette.moss : palette.ochre }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: recColor }} />
+            <Txt kind="micro" style={{ color: recColor }}>
               {live ? 'REC' : 'SIMULATED'}
             </Txt>
           </View>
@@ -267,9 +272,9 @@ function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
         </View>
 
         {/* Bottom chrome: the sentence track burned across the pane. */}
-        <View style={styles.captionBar}>
-          <Rule color={palette.amber} style={{ opacity: 0.5 }} />
-          <SentenceTrack text={tick.sentence?.trim() || 'No sentence yet. The model has not been asked.'} />
+        <View style={[styles.captionBar, { backgroundColor: t.nightScrim }]}>
+          <Rule color={t.amber} style={{ opacity: 0.5 }} />
+          <SentenceTrack text={tick.sentence?.trim() || copy.noSentence} />
         </View>
       </View>
     </Glass>
@@ -280,6 +285,7 @@ function MonitorPane({ tick }: { tick: CameraMonitorTick }) {
 // The gate cascade (VLM_PLAN §3.3)
 // ---------------------------------------------------------------------------
 
+// The worker's own stage names and the model behind each. Instrumentation.
 const GATES: { key: GateState; label: string; note: string }[] = [
   { key: 'idle', label: 'IDLE', note: 'sampling' },
   { key: 'motion', label: 'MOTION', note: 'MOG2' },
@@ -288,18 +294,19 @@ const GATES: { key: GateState; label: string; note: string }[] = [
 ];
 
 function GateCascade({ gate }: { gate: GateState }) {
+  const t = useTheme();
   const active = GATES.findIndex((g) => g.key === gate);
   return (
     <View style={{ flexDirection: 'row', gap: sp(2) }}>
       {GATES.map((g, i) => {
         const on = i === active;
         const passed = active > i;
-        const fg = on ? palette.amber : passed ? palette.ink : palette.inkMuted;
+        const fg = on ? t.amber : passed ? t.ink : t.inkMuted;
         return (
           <View key={g.key} style={{ flex: 1 }}>
             <Rule
               weight={on ? 'heavy' : 'ink'}
-              color={on ? palette.amber : passed ? palette.ink : palette.line}
+              color={on ? t.amber : passed ? t.ink : t.line}
             />
             <View style={{ paddingTop: sp(2) }}>
               <Txt kind="micro" style={{ color: fg }}>{g.label}</Txt>
@@ -317,8 +324,9 @@ function GateCascade({ gate }: { gate: GateState }) {
 // ---------------------------------------------------------------------------
 
 function Cell({ label, value, ruled }: { label: string; value: string; ruled: boolean }) {
+  const t = useTheme();
   return (
-    <View style={[styles.cell, ruled && styles.cellRuled]}>
+    <View style={[styles.cell, ruled && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }]}>
       <Txt kind="micro" tone="muted">{label}</Txt>
       <Txt
         kind="mono"
@@ -331,6 +339,7 @@ function Cell({ label, value, ruled }: { label: string; value: string; ruled: bo
   );
 }
 
+// Keys and readings are the worker's own. Not copy.
 function Telemetry({ tick }: { tick: CameraMonitorTick }) {
   const cells: { label: string; value: string }[] = [
     { label: 'FPS', value: tick.fps.toFixed(1) },
@@ -398,7 +407,7 @@ export default function CameraConsole() {
       await qc.invalidateQueries({ queryKey: ['monitor'] });
       await qc.invalidateQueries({ queryKey: ['presence'] });
     } catch {
-      setTrouble('That didn’t go through. The hub may not be reachable.');
+      setTrouble(copy.trouble);
     } finally {
       setBusy(null);
     }
@@ -416,12 +425,12 @@ export default function CameraConsole() {
   // ---- what the screen is actually allowed to say -------------------------
   const body = (() => {
     if (cameras.isLoading && !cameras.data) {
-      return <LoadingState label="Looking for her camera…" />;
+      return <LoadingState label={copy.loading} />;
     }
     if (cameras.isError) {
       return (
         <ErrorState
-          message="Couldn’t reach the hub to ask what cameras exist."
+          message={copy.camerasError}
           onRetry={() => cameras.refetch()}
         />
       );
@@ -430,12 +439,10 @@ export default function CameraConsole() {
       return (
         <Card>
           <EmptyState
-            title="No camera is set up."
-            action={<Btn kind="quiet" label="Open Settings" onPress={openSettings} />}
+            title={copy.noCamera}
+            action={<Btn kind="quiet" label={copy.openSettings} onPress={openSettings} />}
           >
-            Nothing is watching, and nothing is posting. Point a camera at one common room in
-            Settings, then start the vision worker on her computer. This screen fills in the
-            moment it says something.
+            {copy.noCameraBody}
           </EmptyState>
         </Card>
       );
@@ -444,12 +451,11 @@ export default function CameraConsole() {
       return (
         <Card>
           <EmptyState
-            title="The camera is off."
-            action={<Btn kind="quiet" label="Open Settings" onPress={openSettings} />}
-            meta={`CAMERA ${cam.id}`}
+            title={copy.consentOff}
+            action={<Btn kind="quiet" label={copy.openSettings} onPress={openSettings} />}
+            meta={copy.meta.camera(cam.id)}
           >
-            Consent for the camera hasn’t been given, so the worker doesn’t run and there is
-            nothing to show. Her band still watches for falls.
+            {copy.consentOffBody}
           </EmptyState>
         </Card>
       );
@@ -457,20 +463,19 @@ export default function CameraConsole() {
     if (pausedUntil) {
       return (
         <Card>
-          <EmptyState title={`Paused until ${timeOf(pausedUntil)}.`} meta={`CAMERA ${cam.id}`}>
-            While it’s paused the worker stops looking, so no ticks arrive and this stays empty.
-            It starts again on its own, or you can resume it below.
+          <EmptyState title={copy.paused(timeOf(pausedUntil))} meta={copy.meta.camera(cam.id)}>
+            {copy.pausedBody}
           </EmptyState>
         </Card>
       );
     }
     if (monitor.isLoading && !tick) {
-      return <LoadingState label="Listening for the worker…" />;
+      return <LoadingState label={copy.listening} />;
     }
     if (monitor.isError) {
       return (
         <ErrorState
-          message="Couldn’t reach the hub to ask what the worker is doing. Nothing is being shown rather than something out of date."
+          message={copy.monitorError}
           onRetry={() => monitor.refetch()}
         />
       );
@@ -479,16 +484,14 @@ export default function CameraConsole() {
       return (
         <Card>
           <EmptyState
-            title="The worker isn’t posting anything."
+            title={copy.notPosting}
             meta={
               cam.last_heartbeat_at
-                ? `LAST HEARTBEAT ${ago(cam.last_heartbeat_at)}`
-                : 'NO HEARTBEAT YET'
+                ? copy.meta.lastHeartbeat(ago(cam.last_heartbeat_at))
+                : copy.meta.noHeartbeat
             }
           >
-            Nothing has arrived from her computer in the last few seconds. Start the vision
-            worker there and this fills in by itself. Until then there is nothing to show, and
-            inventing a reading would be worse than an empty screen.
+            {copy.notPostingBody}
           </EmptyState>
         </Card>
       );
@@ -500,20 +503,17 @@ export default function CameraConsole() {
           <MonitorPane tick={tick} />
           {/* The one human line on the screen, and the product's best claim. */}
           <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>
-            {/* voice-ok: an empty state, which DESIGN.md exempts. */}
-            No picture is kept, and none ever leaves her computer. What you are watching is the
-            shape the camera found and the sentence it wrote about it. That is the whole of what
-            Dhyaan ever has.
+            {copy.privacy}
           </Txt>
         </View>
 
         <View>
-          <Marquee title="Pipeline" meta={tick.gate} first />
+          <Marquee title={copy.pipeline} meta={tick.gate} first />
           <GateCascade gate={tick.gate} />
         </View>
 
         <View>
-          <Marquee title="Telemetry" meta={cam.id} first />
+          <Marquee title={copy.telemetry} meta={cam.id} first />
           <Telemetry tick={tick} />
         </View>
       </Stagger>
@@ -526,21 +526,21 @@ export default function CameraConsole() {
   const bar = cam ? (
     <View style={{ gap: sp(2.5) }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: sp(2), flexWrap: 'wrap' }}>
-        <DataLabel>Simulate</DataLabel>
-        <Chip label="Meal" onPress={() => run('meal', () => api.simulateCamera('meal'))} />
-        <Chip label="Visitor" onPress={() => run('visitor', () => api.simulateCamera('visitor'))} />
-        <Chip label="Out of view" onPress={() => run('out', () => api.simulateCamera('out_of_view'))} />
+        <DataLabel>{copy.simulate}</DataLabel>
+        <Chip label={copy.meal} onPress={() => run('meal', () => api.simulateCamera('meal'))} />
+        <Chip label={copy.visitor} onPress={() => run('visitor', () => api.simulateCamera('visitor'))} />
+        <Chip label={copy.outOfView} onPress={() => run('out', () => api.simulateCamera('out_of_view'))} />
       </View>
       {pausedUntil ? (
         <Btn
-          label="Resume the camera"
+          label={copy.resume}
           busy={busy === 'resume'}
           onPress={() => run('resume', () => api.resumeCamera(cam.id))}
         />
       ) : (
         <Btn
           kind="quiet"
-          label="Pause for 2 hours"
+          label={copy.pauseTwoHours}
           busy={busy === 'pause'}
           onPress={() => run('pause', () => api.pauseCamera(cam.id, 2))}
         />
@@ -564,11 +564,12 @@ export default function CameraConsole() {
   );
 }
 
+// Geometry only. Every colour is resolved inside the component that draws it,
+// through useTheme(), so the console follows the colour scheme.
 const styles = {
   pane: {
     width: '100%' as const,
     aspectRatio: PANE_RATIO,
-    backgroundColor: palette.night,
     borderRadius: radius.card,
     overflow: 'hidden' as const,
   },
@@ -590,7 +591,6 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: palette.nightScrim,
   },
   caption: {
     // Fixed, because the layers inside are absolute and because a caption bar
@@ -605,7 +605,6 @@ const styles = {
     position: 'absolute' as const,
     top: 0,
     left: 0,
-    backgroundColor: palette.amber,
     paddingHorizontal: sp(1),
     paddingVertical: 1,
   },
@@ -613,9 +612,5 @@ const styles = {
     width: '33.333%' as const,
     paddingVertical: sp(2.5),
     paddingRight: sp(2),
-  },
-  cellRuled: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: palette.line,
   },
 };

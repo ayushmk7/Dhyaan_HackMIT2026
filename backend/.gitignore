@@ -8,3 +8,6 @@ __pycache__/
 # YOLO auto-downloads this on first run (5 MB model weight, not source)
 yolo11n.pt
 *.pt
+
+# MediaPipe pose landmarker, auto-downloaded on first use (5 MB model, not source)
+models/

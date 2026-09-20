@@ -1,37 +1,43 @@
-// The front door. A faux sign-in: it looks and behaves like a real one, and it
-// is honest about what it is. The backend's /auth/login validates an email
-// shape and a non-empty password and hands back the shared demo key — there is
-// no password store behind it, so this screen never claims your password was
-// checked, and now says so on the screen rather than only in this comment. It
-// gates the app, holds a session, and signs out.
+// The front door. A real sign-in, as far as it goes: /auth/login looks the
+// username up in the server's user store and checks the password against a
+// stored hash, so a wrong name or a wrong password is a 401 and this screen
+// shows the server's one sentence for both. What it hands back on success is
+// still the one shared app key, so this is authentication without a session,
+// and the note under the form says exactly that. The screen gates the app,
+// holds a session, and signs out.
+//
+// The identifier is a username, not an email (the seeded account is `user`),
+// so the field asks for one: default keyboard, no capitalisation, no
+// autocorrect. `Field` does not expose `autoComplete`, which is the one prop
+// the React Native 0.86 docs say to set for keychain fill of a username and
+// password; it lives in components/ui.tsx, not here.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
 import { Btn, Entrance, ErrorState, Field, Glass, Mark, Rule, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
+import { auth } from '@/lib/copy/auth';
 import { radius, sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
-
-const DEMO_EMAIL = 'priya@dhyaan.demo';
 
 export default function Login() {
   const signIn = useSession((s) => s.signIn);
   const onboarded = useSession((s) => s.onboarded);
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = async (withEmail = email, withPassword = password) => {
+  const submit = async (withUsername = username, withPassword = password) => {
     if (busy) return;
     setError(null);
     setBusy(true);
     try {
-      const res = await api.login(withEmail, withPassword);
+      const res = await api.login(withUsername, withPassword);
       signIn(res.user, res.token, res.resident_id);
       router.replace(onboarded ? '/(family)/home' : '/onboard/welcome');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Couldn’t reach Dhyaan. Check your connection.');
+      setError(e instanceof Error ? e.message : auth.errors.unreachable);
     } finally {
       setBusy(false);
     }
@@ -49,7 +55,7 @@ export default function Login() {
             that is otherwise glass over atmosphere. */}
         <Mark />
         <Txt kind="hero" style={{ marginTop: sp(5) }} accessibilityRole="header">
-          Dhyaan
+          {auth.appName}
         </Txt>
         <Rule style={{ alignSelf: 'stretch', marginTop: sp(3), marginHorizontal: sp(10) }} />
       </Entrance>
@@ -60,28 +66,28 @@ export default function Login() {
       <Entrance index={1}>
         <Glass radius={radius.sheet} lift="float" style={{ padding: sp(5), gap: sp(3) }}>
           <Field
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com"
-            keyboardType="email-address"
+            label={auth.identifierLabel}
+            value={username}
+            onChangeText={setUsername}
+            placeholder={auth.identifierPlaceholder}
+            keyboardType="default"
             autoCapitalize="none"
             autoCorrect={false}
           />
           <Field
-            label="Password"
+            label={auth.passwordLabel}
             value={password}
             onChangeText={setPassword}
-            placeholder="Your password"
+            placeholder={auth.passwordPlaceholder}
             secureTextEntry
             autoCapitalize="none"
+            autoCorrect={false}
             onSubmitEditing={() => submit()}
           />
           {!!error && <ErrorState inline message={error} />}
-          <Btn label="Sign in" busy={busy} onPress={() => submit()} />
+          <Btn label={auth.submit} busy={busy} onPress={() => submit()} />
           <Txt kind="caption" tone="muted">{/* voice-ok */}
-            This sign-in checks that your email looks like an email. There is no
-            password store behind it yet, so it is a door, not a lock.
+            {auth.note}
           </Txt>
         </Glass>
       </Entrance>
@@ -89,11 +95,11 @@ export default function Login() {
       <Entrance index={2} style={{ marginTop: sp(5), alignItems: 'center', gap: sp(2) }}>
         <Btn
           kind="link"
-          label="Use the demo account"
+          label={auth.demoShortcut}
           onPress={() => {
-            setEmail(DEMO_EMAIL);
-            setPassword('demo');
-            submit(DEMO_EMAIL, 'demo');
+            setUsername(auth.demo.username);
+            setPassword(auth.demo.password);
+            submit(auth.demo.username, auth.demo.password);
           }}
           style={{ alignSelf: 'center' }}
         />

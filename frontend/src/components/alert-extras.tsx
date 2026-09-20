@@ -1,20 +1,20 @@
 // Pieces of the alert takeover: the cancel countdown, the ringing visual,
-// and the applause-line elapsed stat. White-on-vermilion by design; the
-// ElapsedStat is the exception and sits on the paper close-out.
+// and the applause-line elapsed stat. Drawn in the surface's ink, which on
+// the takeover is white in light mode and black in dark mode. The ElapsedStat
+// is the exception and sits on the paper close-out.
 import React, { useEffect, useState } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
-import { mono, onDark, sp } from '@/theme/tokens';
+import { mono, sp } from '@/theme/tokens';
 import { useReducedMotion } from './entrance';
 import { Icon } from './icon';
-import { Txt } from './text';
-
-const WHITE = onDark.ink;
+import { Txt, useSurfaceColors } from './text';
 
 // 30-second cancel window, counting down from the ladder step's timestamp.
 export function CancelCountdownRing({ since, windowS = 30 }: { since: string; windowS?: number }) {
   // Starts at windowS; the 250ms tick corrects against the ladder timestamp.
   const [left, setLeft] = useState(windowS);
   const reduced = useReducedMotion();
+  const c = useSurfaceColors();
   const [breath] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
@@ -36,10 +36,10 @@ export function CancelCountdownRing({ since, windowS = 30 }: { since: string; wi
 
   return (
     <View style={{ alignItems: 'center', marginVertical: sp(4) }}>
-      <Animated.View style={[styles.ring, { transform: [{ scale: breath }] }]}>
-        <Txt kind="readout" style={styles.ringNumber}>{left}</Txt>
+      <Animated.View style={[styles.ring, { borderColor: c.ink, transform: [{ scale: breath }] }]}>
+        <Txt kind="readout" style={[styles.ringNumber, { color: c.ink }]}>{left}</Txt>
       </Animated.View>
-      <Txt kind="caption" style={[styles.caption, { marginTop: sp(3) }]}>
+      <Txt kind="caption" style={[styles.caption, { color: c.muted, marginTop: sp(3) }]}>
         seconds for her to cancel from the band before Dhyaan calls
       </Txt>
     </View>
@@ -49,6 +49,7 @@ export function CancelCountdownRing({ since, windowS = 30 }: { since: string; wi
 // Concentric pulses behind a phone glyph while a call is ringing.
 export function RingingPulse({ label }: { label: string }) {
   const reduced = useReducedMotion();
+  const c = useSurfaceColors();
   const [a] = useState(() => new Animated.Value(0));
   const [b] = useState(() => new Animated.Value(0));
 
@@ -73,13 +74,13 @@ export function RingingPulse({ label }: { label: string }) {
   return (
     <View style={{ alignItems: 'center', marginVertical: sp(4) }}>
       <View style={styles.pulseStage}>
-        {!reduced && <Animated.View style={[styles.pulseRing, ringStyle(a)]} />}
-        {!reduced && <Animated.View style={[styles.pulseRing, ringStyle(b)]} />}
-        <View style={styles.pulseCore}>
-          <Icon name="phone.fill" size={28} color={WHITE} />
+        {!reduced && <Animated.View style={[styles.pulseRing, { borderColor: c.ink }, ringStyle(a)]} />}
+        {!reduced && <Animated.View style={[styles.pulseRing, { borderColor: c.ink }, ringStyle(b)]} />}
+        <View style={[styles.pulseCore, { backgroundColor: c.wash, borderColor: c.rule }]}>
+          <Icon name="phone.fill" size={28} color={c.ink} />
         </View>
       </View>
-      <Txt kind="caption" style={[styles.caption, { marginTop: sp(3) }]}>{label}</Txt>
+      <Txt kind="caption" style={[styles.caption, { color: c.muted, marginTop: sp(3) }]}>{label}</Txt>
     </View>
   );
 }
@@ -100,23 +101,22 @@ export function ElapsedStat({ openedAt, closedAt, name }: { openedAt: string; cl
 const styles = StyleSheet.create({
   ring: {
     width: 128, height: 128, borderRadius: 64,
-    borderWidth: 4, borderColor: WHITE,
+    borderWidth: 4,
     alignItems: 'center', justifyContent: 'center',
   },
   // Tabular, and mono: this number changes every second, and proportional
   // digits make the whole ring twitch as 30 becomes 29 becomes 28.
-  ringNumber: { ...mono.hero, fontSize: 56, lineHeight: 62, color: WHITE },
-  caption: { color: onDark.soft, textAlign: 'center', maxWidth: 260 },
+  ringNumber: { ...mono.hero, fontSize: 56, lineHeight: 62 },
+  caption: { textAlign: 'center', maxWidth: 260 },
   pulseStage: { width: 140, height: 140, alignItems: 'center', justifyContent: 'center' },
   pulseRing: {
     position: 'absolute',
     width: 120, height: 120, borderRadius: 60,
-    borderWidth: 2, borderColor: WHITE,
+    borderWidth: 2,
   },
   pulseCore: {
     width: 76, height: 76, borderRadius: 38,
-    backgroundColor: onDark.wash,
-    borderWidth: 1.5, borderColor: onDark.rule,
+    borderWidth: 1.5,
     alignItems: 'center', justifyContent: 'center',
   },
   // The applause line is a measurement, so it is set like one. It renders on

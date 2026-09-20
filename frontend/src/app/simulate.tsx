@@ -9,12 +9,17 @@
 //   3. the call failed  -> a rejected promise, which used to leave a blank screen
 // This is machine chrome, not a family screen, so it is the one place the
 // uppercase mono voice is allowed to describe the request itself.
+//
+// Every sentence this screen says lives in lib/copy/family.ts under `simulate`.
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Btn, DataLabel, Entrance, LoadingState, Rule, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
+import { family } from '@/lib/copy/family';
 import { sp } from '@/theme/tokens';
+
+const copy = family.simulate;
 
 type Outcome = { t: 'running' } | { t: 'no_alert' } | { t: 'failed'; why: string };
 
@@ -39,41 +44,39 @@ export default function Simulate() {
         if (!live) return;
         setOutcome({
           t: 'failed',
-          why: e instanceof Error ? e.message : 'The request didn’t go through.',
+          why: e instanceof Error ? e.message : copy.requestFailed,
         });
       });
     return () => { live = false; };
   }, [attempt]);
 
+  // The outcome, or the error the request came back with.
+  const detail = outcome.t === 'no_alert' ? copy.recorded : outcome.t === 'failed' ? outcome.why : '';
+
   return (
     <Screen tone="night" wash scroll={false} style={{ justifyContent: 'center' }}>
       <Entrance index={0}>
-        <DataLabel value="POST /admin/simulate">Rehearsal</DataLabel>
+        {/* The reading is the route itself, in the machine's voice. */}
+        <DataLabel value="POST /admin/simulate">{copy.rehearsal}</DataLabel>
         <Rule style={{ marginTop: sp(2) }} />
       </Entrance>
 
       {outcome.t === 'running' ? (
         <Entrance index={1}>
-          <LoadingState label="Sending a rehearsal fall through the real pipeline…" />
+          <LoadingState label={copy.sending} />
         </Entrance>
       ) : (
         <Entrance index={1}>
           <View style={{ marginTop: sp(6), gap: sp(3) }}>
             <Txt kind="title">
-              {outcome.t === 'no_alert'
-                ? 'The rehearsal went through, and nothing needed an alert.'
-                : 'The rehearsal didn’t go through.'}
+              {outcome.t === 'no_alert' ? copy.wentThrough : copy.didNotGoThrough}
             </Txt>
-            <Txt kind="body" tone="muted">{/* voice-ok: the outcome, or the error */}
-              {outcome.t === 'no_alert'
-                ? 'Dhyaan recorded the event. It only opens an alert when the ladder has a reason to start, so there is nothing here to take over the screen.'
-                : outcome.why}
-            </Txt>
+            <Txt kind="body" tone="muted">{detail}</Txt>
             <View style={{ gap: sp(2), marginTop: sp(4) }}>
-              <Btn label="Back to Today" onPress={() => router.replace('/(family)/home')} />
+              <Btn label={copy.backToToday} onPress={() => router.replace('/(family)/home')} />
               {outcome.t === 'failed' && (
                 <Btn
-                  label="Try the rehearsal again"
+                  label={copy.tryAgain}
                   kind="quiet"
                   onPress={() => { setOutcome({ t: 'running' }); setAttempt((n) => n + 1); }}
                 />

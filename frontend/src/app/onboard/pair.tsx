@@ -14,8 +14,11 @@ import {
   Btn, Card, DataLabel, Entrance, ErrorState, Field, Marquee, Rule, Screen, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
+import { onboard } from '@/lib/copy/staff';
 import { sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
+
+const copy = onboard.pair;
 
 export default function Pair() {
   const { residentName } = useSession();
@@ -31,7 +34,7 @@ export default function Pair() {
       const band = await api.pairBand(code);
       setPaired({ bandId: band.band_id });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'The hub didn’t accept that code.');
+      setError(e instanceof Error ? e.message : copy.rejected);
     } finally {
       setBusy(false);
     }
@@ -43,14 +46,14 @@ export default function Pair() {
       wash
       floatingBar={
         paired
-          ? <Btn label="Continue" onPress={() => router.push('/onboard/survey')} />
-          : <Btn label="Pair the band" onPress={pair} busy={busy} disabled={code.length !== 6} />
+          ? <Btn label={copy.continue} onPress={() => router.push('/onboard/survey')} />
+          : <Btn label={copy.pair} onPress={pair} busy={busy} disabled={code.length !== 6} />
       }
     >
       <Entrance index={0}>
-        <Marquee first title={`Pair ${residentName}’s band`} />
+        <Marquee first title={copy.title(residentName)} />
         <Txt kind="body">
-          Type the 6-digit code the band shows.
+          {copy.intro}
         </Txt>
       </Entrance>
 
@@ -62,9 +65,9 @@ export default function Pair() {
           onChangeText={(t) => { setCode(t.replace(/\D/g, '').slice(0, 6)); setError(null); }}
           keyboardType="number-pad"
           maxLength={6}
-          placeholder="000000"
+          placeholder={copy.codePlaceholder}
           editable={!paired}
-          accessibilityLabel="6-digit pairing code"
+          accessibilityLabel={copy.codeA11y}
           style={{ marginTop: sp(7) }}
         />
       </Entrance>
@@ -78,21 +81,17 @@ export default function Pair() {
       {!!paired && (
         <Entrance index={2}>
           <Card style={{ marginTop: sp(6) }}>
-            <DataLabel value={paired.bandId}>Band on file</DataLabel>
+            <DataLabel value={paired.bandId}>{copy.bandOnFile}</DataLabel>
             <Rule style={{ marginTop: sp(2.5) }} />
             <Txt kind="body" style={{ marginTop: sp(3) }}>
-              Her hub recorded that band as {residentName}’s. It has not heard from the
-              band itself yet — it will count as connected the moment the band sends its
-              first reading.
+              {copy.recorded(residentName)}
             </Txt>
             <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>{/* voice-ok */}
-              Check those digits against the ones printed on the band. The hub accepts
-              any six digits, so a typo here would file her falls under a band nobody
-              is wearing.
+              {copy.checkDigits}
             </Txt>
             <Btn
               kind="quiet"
-              label="Type a different code"
+              label={copy.differentCode}
               style={{ marginTop: sp(4) }}
               onPress={() => { setPaired(null); setCode(''); }}
             />

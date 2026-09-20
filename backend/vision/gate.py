@@ -11,6 +11,7 @@ import os
 import numpy as np
 
 from . import TUNING
+from . import posture as _posture
 
 
 # --- stage 1: privacy mask ----------------------------------------------------
@@ -163,6 +164,10 @@ class PersonGate:
         """
         if not self.enabled or self.model is None:
             return {"person_count": 0, "boxes": [], "food": [], "dishes": [], "seating": []}
+        # Hand the frame to posture_band(), which is called later in the cycle
+        # with only a box. Nothing is retained: the slot holds one reference to
+        # the frame the worker already has, and the next frame replaces it.
+        remember_frame(frame)
         want = [0] + list(self.FOOD_IDS) + list(self.DISH_IDS) + list(self.SEAT_IDS)
         res = self.model.predict(
             frame, classes=want, conf=self.t["person_conf"],
@@ -184,7 +189,27 @@ class PersonGate:
                 "food": sorted(set(food)), "dishes": sorted(set(dishes)),
                 "seating": sorted(set(seating))}
 
-# --- posture, from the bbox alone (pure) --------------------------------------
+# --- posture ------------------------------------------------------------------
+# Measured on 20 live webcam frames of someone seated at a desk: the bbox aspect
+# rule below called `wide` — i.e. on_floor — on 20 frames out of 20. A false fall
+# on every frame, on the one band that jumps the keyframe queue into the alert
+# path. So the bbox no longer gets the last word; `posture.py` asks the body.
+
+# The frame the current box came from. `posture_band(box, tuning)` keeps its old
+# signature because keyframe.py and worker.py both call it that way and neither
+# is ours to edit, so the pixels arrive by the side door: PersonGate.scene() is
+# handed the frame and the box in the same call, and stashes it here.
+# ponytail: one module-level slot, single camera process, single worker thread.
+# Ceiling: two cameras in one process would interleave frames here; the upgrade
+# is to hang this off the PersonGate instance and pass it through the selector.
+_LAST = {"frame": None, "box": None, "band": None}
+_warned = False
+
+
+def remember_frame(frame):
+    """Called by PersonGate.scene(). Invalidates the cached posture with it."""
+    _LAST["frame"], _LAST["box"], _LAST["band"] = frame, None, None
+
 
 def aspect(box):
     """bbox height/width. Taller than wide -> standing; wide -> on the floor."""
@@ -195,18 +220,72 @@ def aspect(box):
     return (y1 - y0) / w
 
 
-def posture_band(box, tuning=None):
-    """"tall" | "mid" | "wide" | None.
-
-    A hint only — it decides when to *spend* a VLM call, never what gets
-    reported. The VLM's `posture` field is what is posted.
-    """
+def _bbox_band(box, t):
+    """The old rule, kept for the two bands that cannot page anybody."""
     a = aspect(box)
     if a is None:
         return None
-    t = dict(TUNING, **(tuning or {}))
     if a < t["aspect_wide"]:
         return "wide"
     if a >= t["aspect_tall"]:
         return "tall"
     return "mid"
+
+
+def posture_band(box, tuning=None):
+    """"tall" | "mid" | "wide" | None — same four answers as before.
+
+    A hint only: it decides when to *spend* a VLM call, and `wide` is the one
+    that jumps the min_gap queue as a candidate fall. `None` means "I do not
+    know", and every consumer already treats it that way — vlm.from_scene maps
+    it to posture "unclear" and KeyframeSelector resets its wide run on it.
+
+    Where the answer comes from, in order:
+
+      1. Pose landmarks, when MediaPipe is there and a body was found in this
+         box: upright->tall, seated->mid, on_floor->wide. An `unclear` from the
+         landmarker (knees under a desk, say) returns None and STOPS THERE. It
+         does not fall through to the bbox — that fallback is the bug: it is
+         what turned a woman at her desk into `on_floor` on 20 frames of 20.
+      2. No MediaPipe at all (import failed, model never downloaded): the bbox
+         aspect, but `wide` degrades to None. tall/mid only ever cost a VLM
+         call; `wide` starts an alert, and a rectangle on its own has not
+         earned that. Logged once so nobody is surprised by a fall that never
+         fires. The fix for that log line is `uv pip install -e ".[vision]"`.
+
+    Net effect: the on_floor -> VLM -> alert path got strictly harder to enter,
+    never easier.
+    """
+    global _warned
+    if box is None:
+        return None
+    t = dict(TUNING, **(tuning or {}))
+    frame = _LAST["frame"]
+
+    if frame is None:
+        # No frame was ever remembered, so this is not the camera lane: unit
+        # tests and the synthetic source call posture_band() on a bare
+        # rectangle. Keep the old bands there so KeyframeSelector's on_floor
+        # confirm logic stays provable without a camera. In the live pipeline a
+        # box only exists because PersonGate.scene() just ran on a frame, so
+        # this branch cannot carry a real fall decision.
+        return _bbox_band(box, t)
+
+    if _posture.available():
+        key = tuple(box)
+        if _LAST["box"] != key:                  # ~13.8 ms; called 3x per cycle
+            _LAST["box"] = key
+            label, _conf = _posture.posture(frame, box)
+            _LAST["band"] = {"upright": "tall", "seated": "mid",
+                             "on_floor": "wide"}.get(label)
+        return _LAST["band"]
+
+    band = _bbox_band(box, t)
+    if band == "wide":
+        if not _warned:
+            _warned = True
+            print(f"[vision] no pose landmarks ({_posture.note()}); a wide bbox "
+                  "alone will NOT be reported as on_floor. Install the vision "
+                  "extra to restore fall detection.", flush=True)
+        return None
+    return band

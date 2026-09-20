@@ -7,6 +7,8 @@
 // sentence — no red, no warning icon, no retry — because the questions Dhyaan
 // won't answer, it won't answer for anyone, and being told so calmly is the
 // product working, not failing.
+//
+// Every sentence this screen says lives in lib/copy/family.ts under `chat`.
 import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
@@ -15,25 +17,21 @@ import {
   Screen, Slab, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
-import type { ChatMessage } from '@/lib/types';
+import { family } from '@/lib/copy/family';
+import type { ChatMessage, RefusalKind } from '@/lib/types';
 import { useSession } from '@/store/session';
-import { palette, radius, sp, type } from '@/theme/tokens';
+import { radius, sp, type, useTheme } from '@/theme';
 
-const SUGGESTIONS = [
-  'Has she eaten today?',
-  'What does she usually have for breakfast?',
-  'Where does she spend her afternoons?',
-  'How were her nights this week?',
-];
+const copy = family.chat;
 
 /** One line naming why an answer was withheld, above the answer itself. */
-const REFUSAL_LABEL: Record<string, string> = {
-  surveillance: 'Dhyaan doesn’t answer this, for anyone',
-  medical: 'Outside what Dhyaan can answer',
-  no_data: 'Dhyaan hasn’t been told or shown this',
-};
+const refusalLabel = (kind: RefusalKind | undefined): string =>
+  kind === 'surveillance' || kind === 'medical' || kind === 'no_data'
+    ? copy.refusal[kind]
+    : copy.refusal.other;
 
 export default function Ask() {
+  const t = useTheme();
   const { residentName } = useSession();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
@@ -54,7 +52,7 @@ export default function Ask() {
       const answer = await api.chat(q);
       setMessages((m) => [...m, answer]);
     } catch (e) {
-      setSendError(e instanceof Error ? e.message : 'Couldn’t reach Dhyaan. Try again.');
+      setSendError(e instanceof Error ? e.message : copy.sendError);
     } finally {
       setThinking(false);
     }
@@ -65,22 +63,22 @@ export default function Ask() {
   const composer = (
     <Row gap={2}>
       <TextInput
-        accessibilityLabel={`Ask about ${residentName}`}
+        accessibilityLabel={copy.askAbout(residentName)}
         value={draft}
         onChangeText={setDraft}
-        placeholder={`Ask anything about ${residentName}’s week`}
-        placeholderTextColor={palette.inkMuted}
+        placeholder={copy.placeholder(residentName)}
+        placeholderTextColor={t.inkMuted}
         style={{
           flex: 1, minHeight: 40, maxHeight: 110,
           paddingHorizontal: sp(3), paddingVertical: sp(2),
-          ...type.body, color: palette.ink,
+          ...type.body, color: t.ink,
         }}
         multiline
         onSubmitEditing={() => send(draft)}
       />
       <IconBtn
         name="arrow.up"
-        label="Ask"
+        label={copy.ask}
         kind="primary"
         size={38}
         disabled={!draft.trim() || thinking}
@@ -107,7 +105,7 @@ export default function Ask() {
               the screen: every answer names where it came from. */}
           <Entrance index={0}>
             <Slab>
-              <Txt kind="title">Every answer says where it came from.</Txt>
+              <Txt kind="title">{copy.everyAnswer}</Txt>
               <Rule weight="hair" style={{ marginTop: sp(3.5) }} />
               <Row gap={2} style={{ marginTop: sp(3.5), flexWrap: 'wrap' }}>
                 <KindTag kind="observed" />
@@ -119,11 +117,11 @@ export default function Ask() {
 
           <Entrance index={1}>
             <View style={{ marginTop: sp(6), gap: sp(2) }}>
-              {SUGGESTIONS.map((s) => (
+              {copy.suggestions.map((s) => (
                 <Chip key={s} label={s} onPress={() => send(s)} />
               ))}
               <Chip
-                label="Plan from group chat"
+                label={copy.planFromChat}
                 onPress={() => router.push('/(family)/chat/plan')}
               />
             </View>
@@ -136,7 +134,7 @@ export default function Ask() {
           m.role === 'user' ? (
             <View key={m.id} style={{
               alignSelf: 'flex-end', maxWidth: '85%',
-              backgroundColor: palette.ink,
+              backgroundColor: t.ink,
               borderRadius: radius.bubble, paddingHorizontal: sp(3.5), paddingVertical: sp(2.5),
             }}>
               <Txt kind="body" tone="paper">{m.text}</Txt>
@@ -144,7 +142,7 @@ export default function Ask() {
           ) : (
             <Card key={m.id} style={{ alignSelf: 'stretch' }}>
               {m.refused ? (
-                <Refusal label={REFUSAL_LABEL[m.refusal_kind ?? ''] ?? 'Dhyaan doesn’t answer this'}>
+                <Refusal label={refusalLabel(m.refusal_kind)}>
                   {m.text}
                 </Refusal>
               ) : (
@@ -152,7 +150,7 @@ export default function Ask() {
               )}
               {!!m.citations?.length && (
                 <View style={{ marginTop: sp(3.5), gap: sp(2) }}>
-                  <Rule weight="hair" color={palette.line} />
+                  <Rule weight="hair" color={t.line} />
                   {m.citations.map((c) => (
                     <CitationChip
                       key={`${c.kind}_${c.id}`}
@@ -175,7 +173,7 @@ export default function Ask() {
 
         {thinking && (
           <Card>
-            <LoadingState label="Reading her day…" />
+            <LoadingState label={copy.thinking} />
           </Card>
         )}
 

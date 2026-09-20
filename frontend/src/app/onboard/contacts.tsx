@@ -14,8 +14,11 @@ import {
 } from '@/components';
 import { Avatar, avatarTone } from '@/components/avatar';
 import { api } from '@/lib/api';
+import { onboard } from '@/lib/copy/staff';
 import { sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
+
+const copy = onboard.contacts;
 
 type Draft = { name: string; phone: string; relationship: string };
 const emptyDraft: Draft = { name: '', phone: '', relationship: '' };
@@ -50,7 +53,7 @@ export default function Contacts() {
       await api.saveContacts(contacts.map((c, i) => ({ ...c, ladder_order: i + 1 })));
       router.push('/onboard/done');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Couldn’t save the call list. Try again.');
+      setError(e instanceof Error ? e.message : copy.saveError);
     } finally {
       setBusy(false);
     }
@@ -62,7 +65,7 @@ export default function Contacts() {
       wash
       floatingBar={
         <Btn
-          label="Continue"
+          label={copy.continue}
           busy={busy}
           disabled={contacts.length < 1}
           onPress={finish}
@@ -72,11 +75,11 @@ export default function Contacts() {
       <Entrance index={0}>
         <Marquee
           first
-          title="Who should Dhyaan call?"
-          meta={contacts.length ? `${contacts.length} contacts` : undefined}
+          title={copy.title}
+          meta={contacts.length ? copy.meta(contacts.length) : undefined}
         />
         <Txt kind="body">
-          Called in order if {residentName} doesn’t answer.
+          {copy.calledInOrder(residentName)}
         </Txt>
       </Entrance>
 
@@ -84,11 +87,10 @@ export default function Contacts() {
         <Entrance index={1}>
           <Card style={{ marginTop: sp(5) }}>
             <Txt kind="body">{/* voice-ok */}
-              Add at least one person. If nobody is on this list, a call that she doesn’t
-              answer has nowhere to go.
+              {copy.emptyBody}
             </Txt>
             <Btn
-              label="Add the first person"
+              label={copy.addFirst}
               style={{ marginTop: sp(4) }}
               onPress={() => setAdding(true)}
             />
@@ -108,7 +110,7 @@ export default function Contacts() {
                   <Avatar name={c.name} size={34} tone={avatarTone(i)} />
                   <View style={{ flex: 1 }}>
                     <Txt kind="label">{c.name}</Txt>
-                    <Txt kind="caption" tone="muted">{c.relationship} · {c.phone}</Txt>
+                    <Txt kind="caption" tone="muted">{copy.contactLine(c.relationship, c.phone)}</Txt>
                   </View>
                 </Row>
                 <Row gap={1}>
@@ -116,7 +118,7 @@ export default function Contacts() {
                     kind="ghost"
                     size={34}
                     name="chevron.up"
-                    label={`Move ${c.name} earlier`}
+                    label={copy.moveEarlier(c.name)}
                     disabled={i === 0}
                     onPress={() => move(i, -1)}
                   />
@@ -124,7 +126,7 @@ export default function Contacts() {
                     kind="ghost"
                     size={34}
                     name="chevron.down"
-                    label={`Move ${c.name} later`}
+                    label={copy.moveLater(c.name)}
                     disabled={i === contacts.length - 1}
                     onPress={() => move(i, 1)}
                   />
@@ -132,7 +134,7 @@ export default function Contacts() {
                     kind="ghost"
                     size={34}
                     name="xmark"
-                    label={`Remove ${c.name}`}
+                    label={copy.remove(c.name)}
                     onPress={() => setContacts((cs) => cs.filter((_, j) => j !== i))}
                   />
                 </Row>
@@ -145,26 +147,26 @@ export default function Contacts() {
       {adding ? (
         <Card style={{ marginTop: sp(4) }}>
           <Field
-            label="Name" placeholder="Their full name"
+            label={copy.name} placeholder={copy.namePlaceholder}
             value={draft.name} onChangeText={(name) => setDraft((d) => ({ ...d, name }))}
           />
           <Field
-            label="Phone number" placeholder="+1 617 555 0142" keyboardType="phone-pad"
+            label={copy.phone} placeholder={copy.phonePlaceholder} keyboardType="phone-pad"
             style={{ marginTop: sp(3) }}
             value={draft.phone} onChangeText={(phone) => setDraft((d) => ({ ...d, phone }))}
           />
           <Field
-            label="Relationship" placeholder="Daughter, neighbour"
+            label={copy.relationship} placeholder={copy.relationshipPlaceholder}
             style={{ marginTop: sp(3) }}
             value={draft.relationship} onChangeText={(relationship) => setDraft((d) => ({ ...d, relationship }))}
           />
           <Row gap={3} style={{ marginTop: sp(4) }}>
-            <Btn kind="quiet" label="Cancel" onPress={() => setAdding(false)} style={{ flex: 1 }} />
-            <Btn label="Add" onPress={addDraft} disabled={!draft.name.trim() || !draft.phone.trim()} style={{ flex: 1 }} />
+            <Btn kind="quiet" label={copy.cancel} onPress={() => setAdding(false)} style={{ flex: 1 }} />
+            <Btn label={copy.add} onPress={addDraft} disabled={!draft.name.trim() || !draft.phone.trim()} style={{ flex: 1 }} />
           </Row>
         </Card>
       ) : contacts.length > 0 ? (
-        <Btn kind="quiet" label="Add another person" onPress={() => setAdding(true)} style={{ marginTop: sp(4) }} />
+        <Btn kind="quiet" label={copy.addAnother} onPress={() => setAdding(true)} style={{ marginTop: sp(4) }} />
       ) : null}
 
       {!!error && <ErrorState inline message={error} style={{ marginTop: sp(6) }} />}

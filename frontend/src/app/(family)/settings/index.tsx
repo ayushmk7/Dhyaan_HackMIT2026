@@ -16,6 +16,8 @@
 //   - What Dhyaan does when something happens is a STATEMENT, not a switch:
 //     there is no alert-preferences endpoint, so there are no toggles to fake.
 // The native header owns the title; long-press the first section for debug.
+//
+// Every sentence this screen says lives in lib/copy/family.ts under `settings`.
 import { useQueryClient } from '@tanstack/react-query';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
@@ -28,6 +30,7 @@ import {
 import { Avatar, avatarTone } from '@/components/avatar';
 import { api } from '@/lib/api';
 import { API_BASE, USE_MOCKS } from '@/lib/config';
+import { family } from '@/lib/copy/family';
 import { ago, timeOf, zoneLabel } from '@/lib/format';
 import { localDayKey, useContacts, useProfile } from '@/lib/hooks';
 import { registerForPush, sendTestPush } from '@/lib/push';
@@ -35,6 +38,8 @@ import { useCareFile } from '@/store/carefile';
 import { useSession } from '@/store/session';
 import type { Fact } from '@/lib/types';
 import { sp } from '@/theme/tokens';
+
+const copy = family.settings;
 
 // app.json's extra.eas.projectId. `npx eas init` writes the real one; until it
 // does, push registration cannot succeed and the button says so rather than
@@ -44,9 +49,12 @@ const EAS_PROJECT_ID = String(
 );
 const PUSH_READY = EAS_PROJECT_ID.length > 0 && !EAS_PROJECT_ID.startsWith('REPLACE');
 
+const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
+
 // Screen-only debug view, long-press the first section header to reveal. Every
 // demo control lives here so the visible app carries no demo chrome.
 function DebugPanel() {
+  const d = copy.debug;
   const qc = useQueryClient();
   const { setRole } = useSession();
   const [, setTick] = useState(0);
@@ -70,9 +78,9 @@ function DebugPanel() {
     setTestResult(null);
     try {
       await qc.fetchQuery({ queryKey: ['debug_ping'], queryFn: api.getContacts, staleTime: 0 });
-      setTestResult(`Reached it · ${new Date().toLocaleTimeString()}`);
+      setTestResult(d.reached(new Date().toLocaleTimeString()));
     } catch (e) {
-      setTestResult(`Failed: ${e instanceof Error ? e.message : 'unknown error'}`);
+      setTestResult(d.failed(errorText(e, d.unknownError)));
     } finally {
       setTesting(false);
     }
@@ -84,7 +92,7 @@ function DebugPanel() {
     try {
       await api.simulate('fall');
     } catch (e) {
-      setNote(e instanceof Error ? e.message : 'Couldn’t start the rehearsal.');
+      setNote(errorText(e, d.rehearsalError));
     } finally {
       setRehearsing(false);
     }
@@ -94,15 +102,12 @@ function DebugPanel() {
   // button carries the reason in its own label and the panel prints the id.
   const registerPush = async () => {
     if (!PUSH_READY) {
-      setNote(
-        'app.json still has extra.eas.projectId = ' + (EAS_PROJECT_ID || 'nothing') +
-        '. Run npx eas init on a machine signed in to an Expo account, put the id it writes into app.json, and rebuild.',
-      );
+      setNote(d.easMissing(EAS_PROJECT_ID));
       return;
     }
     const { token, reason } = await registerForPush();
     setPushToken(token);
-    setNote(token ? `Push registered · …${token.slice(-8)}` : reason ?? null);
+    setNote(token ? d.pushRegistered(token.slice(-8)) : reason ?? null);
   };
 
   // The on-stage fallback (§10.1): posts a canned observation sequence through
@@ -112,9 +117,9 @@ function DebugPanel() {
     try {
       await api.simulateCamera(kind);
       await qc.invalidateQueries();
-      setTestResult(`Simulated ${kind.replace(/_/g, ' ')}`);
+      setTestResult(d.simulated(kind));
     } catch (e) {
-      setTestResult(`Failed: ${e instanceof Error ? e.message : 'unknown error'}`);
+      setTestResult(d.failed(errorText(e, d.unknownError)));
     } finally {
       setSimulating(false);
     }
@@ -124,30 +129,31 @@ function DebugPanel() {
     <Card style={{ marginTop: sp(3) }}>
       <Rule weight="heavy" />
       <View style={{ gap: sp(1.5), marginTop: sp(3) }}>
-        <DataLabel value={USE_MOCKS ? 'mock' : 'live'}>Mode</DataLabel>
-        <DataLabel value={API_BASE}>API base</DataLabel>
-        <DataLabel value={lastSuccess ? ago(new Date(lastSuccess).toISOString()) : 'none yet'}>
-          Last ok
+        {/* The readings are the machine's own identifiers, not words. */}
+        <DataLabel value={USE_MOCKS ? 'mock' : 'live'}>{d.mode}</DataLabel>
+        <DataLabel value={API_BASE}>{d.apiBase}</DataLabel>
+        <DataLabel value={lastSuccess ? ago(new Date(lastSuccess).toISOString()) : d.noneYet}>
+          {d.lastOk}
         </DataLabel>
-        <DataLabel value={PUSH_READY ? EAS_PROJECT_ID : 'unset'}>EAS project</DataLabel>
+        <DataLabel value={PUSH_READY ? EAS_PROJECT_ID : d.unset}>{d.easProject}</DataLabel>
       </View>
       {/* Stacked, not a row: side-by-side buttons clip their labels at SE width. */}
       <View style={{ gap: sp(2), marginTop: sp(3) }}>
-        <Btn label="Test connection" kind="quiet" busy={testing} onPress={testConnection} />
-        <Btn label="Rehearse a fall alert" kind="quiet" busy={rehearsing} onPress={rehearse} />
-        <Btn label="Simulate a meal" kind="quiet" busy={simulating} onPress={() => simulate('meal')} />
-        <Btn label="Simulate a visitor" kind="quiet" busy={simulating} onPress={() => simulate('visitor')} />
-        <Btn label="Simulate out of view" kind="quiet" busy={simulating} onPress={() => simulate('out_of_view')} />
+        <Btn label={d.testConnection} kind="quiet" busy={testing} onPress={testConnection} />
+        <Btn label={d.rehearseFall} kind="quiet" busy={rehearsing} onPress={rehearse} />
+        <Btn label={d.simulateMeal} kind="quiet" busy={simulating} onPress={() => simulate('meal')} />
+        <Btn label={d.simulateVisitor} kind="quiet" busy={simulating} onPress={() => simulate('visitor')} />
+        <Btn label={d.simulateOutOfView} kind="quiet" busy={simulating} onPress={() => simulate('out_of_view')} />
         <Btn
-          label={PUSH_READY ? 'Register for push' : 'Push needs an EAS project id'}
+          label={PUSH_READY ? d.registerPush : d.pushNeedsId}
           kind="quiet"
           onPress={registerPush}
         />
         {pushToken && (
-          <Btn label="Send a test fall push" kind="quiet" onPress={() => sendTestPush(pushToken)} />
+          <Btn label={d.sendTestPush} kind="quiet" onPress={() => sendTestPush(pushToken)} />
         )}
         <Btn
-          label="Staff side"
+          label={d.staffSide}
           kind="quiet"
           onPress={() => { setRole('staff'); router.replace('/(staff)/triage'); }}
         />
@@ -164,16 +170,15 @@ function CareFileSummary() {
     <View>
       {sources.length > 0 ? (
         <Txt kind="label">
-          {medications.length} medication{medications.length === 1 ? '' : 's'} · {appointments.length} upcoming
+          {copy.careFile.summary(medications.length, appointments.length)}
         </Txt>
       ) : (
         <Txt kind="body">
-          Med lists and letters become an emergency card for the alert screen and a note of
-          what’s coming up on Today.
+          {copy.careFile.intro}
         </Txt>
       )}
       <Btn
-        label={sources.length ? 'Open her care file' : 'Add the first document'}
+        label={sources.length ? copy.careFile.open : copy.careFile.addFirst}
         kind="quiet"
         onPress={() => router.push('/(family)/settings/carefile')}
         style={{ marginTop: sp(3) }}
@@ -223,6 +228,7 @@ export default function Settings() {
   const signedBy = profile?.consent.signed_by || consentGivenBy;
   const relationship = profile?.consent.relationship || consentRelationship;
   const nameTyped = confirmName.trim().toLowerCase() === name.toLowerCase();
+  const teller = consentGivenBy || copy.defaultTeller;
 
   const closeFactForm = () => {
     setEditing(null);
@@ -246,14 +252,15 @@ export default function Settings() {
       if (editing) {
         // A correction never overwrites: the old row is deactivated and a new
         // one supersedes it, so last week's answers still cite what they cited.
-        await api.updateFact(residentId, editing.id, draftText, consentGivenBy || 'Family');
+        await api.updateFact(residentId, editing.id, draftText, teller);
       } else {
-        await api.addFacts(residentId, [{ key: draftKey.trim() || 'note', text: draftText }], consentGivenBy || 'Family');
+        // 'note' is the fact's key when the family didn't name one, not a label.
+        await api.addFacts(residentId, [{ key: draftKey.trim() || 'note', text: draftText }], teller);
       }
       await qc.invalidateQueries({ queryKey: ['profile', residentId] });
       closeFactForm();
     } catch (e) {
-      setFactError(e instanceof Error ? e.message : 'Couldn’t save that.');
+      setFactError(errorText(e, copy.told.saveError));
     } finally {
       setFactBusy(false);
     }
@@ -270,7 +277,7 @@ export default function Settings() {
       await qc.invalidateQueries({ queryKey: ['profile', residentId] });
       closeFactForm();
     } catch (e) {
-      setFactError(e instanceof Error ? e.message : 'Couldn’t delete that note.');
+      setFactError(errorText(e, copy.told.deleteError));
     } finally {
       setFactBusy(false);
     }
@@ -284,7 +291,7 @@ export default function Settings() {
       await qc.invalidateQueries();
       setConfirmStop(false);
     } catch (e) {
-      setCameraError(e instanceof Error ? e.message : 'Couldn’t reach her home hub.');
+      setCameraError(errorText(e, copy.camera.stopError));
     } finally {
       setCameraBusy(false);
     }
@@ -295,16 +302,12 @@ export default function Settings() {
     setForgetError(null);
     try {
       const deleted = await api.deleteMemory(residentId, 'all', confirmName);
-      setForgetResult(
-        `Deleted ${deleted.profile_facts} ${deleted.profile_facts === 1 ? 'note' : 'notes'}, ` +
-        `${deleted.observations} observations and ${deleted.camera_events} camera events. ` +
-        'There was never a picture to delete.',
-      );
+      setForgetResult(copy.profile.forgot(deleted.profile_facts, deleted.observations, deleted.camera_events));
       setDestructive('none');
       setConfirmName('');
       await qc.invalidateQueries();
     } catch (e) {
-      setForgetError(e instanceof Error ? e.message : 'Nothing was deleted.');
+      setForgetError(errorText(e, copy.profile.nothingDeleted));
     } finally {
       setForgetBusy(false);
     }
@@ -324,18 +327,17 @@ export default function Settings() {
           consent: { falls: false, camera: false, memory: false },
         });
       } catch (e) {
-        setForgetError(
-          `Deleted ${deleted.profile_facts} notes, ${deleted.observations} observations and ` +
-          `${deleted.camera_events} camera events, but Dhyaan is still running: ` +
-          `${e instanceof Error ? e.message : 'the hub did not answer'}. Try again.`,
-        );
+        setForgetError(copy.profile.stillRunning(
+          deleted.profile_facts, deleted.observations, deleted.camera_events,
+          errorText(e, copy.profile.hubNoAnswer),
+        ));
         return;
       }
       qc.clear();
       signOut();
       router.replace('/login');
     } catch (e) {
-      setForgetError(e instanceof Error ? e.message : 'Nothing was deleted.');
+      setForgetError(errorText(e, copy.profile.nothingDeleted));
     } finally {
       setForgetBusy(false);
     }
@@ -353,7 +355,7 @@ export default function Settings() {
         api.getSummaries(residentId), ...days.map((d) => api.getActivity(residentId, d)),
       ]);
       await Share.share({
-        title: `${name} export`,
+        title: copy.profile.exportTitle(name),
         message: JSON.stringify({
           resident: name,
           exported_at: new Date().toISOString(),
@@ -363,9 +365,26 @@ export default function Settings() {
         }, null, 2),
       });
     } catch (e) {
-      setExportError(e instanceof Error ? e.message : 'Couldn’t put that together. Try again.');
+      setExportError(errorText(e, copy.profile.exportError));
     }
   };
+
+  const consentLine = copy.consent.recorded(
+    name,
+    signedBy,
+    relationship,
+    profile?.consent.signed_at ? new Date(profile.consent.signed_at).toLocaleDateString() : '',
+  );
+
+  const confirmField = (
+    <Field
+      label={copy.profile.typeToConfirm(name)}
+      value={confirmName}
+      onChangeText={setConfirmName}
+      placeholder={name}
+      autoCorrect={false}
+    />
+  );
 
   return (
     <Screen native wash>
@@ -375,22 +394,19 @@ export default function Settings() {
           <Pressable onLongPress={() => setDebugOpen((v) => !v)} delayLongPress={600}>
             <Marquee
               first
-              title="What Dhyaan was told about her"
-              meta={profile ? `${facts.length} notes` : undefined}
+              title={copy.told.title}
+              meta={profile ? copy.told.notes(facts.length) : undefined}
             />
           </Pressable>
           {debugOpen && <DebugPanel />}
           {/* One plate of rows: RowGroup draws the hairlines between every child. */}
           <RowGroup>
-            {profileLoading && !profile && <LoadingState label="Loading her profile…" />}
+            {profileLoading && !profile && <LoadingState label={copy.told.loading} />}
             {profileError && !profile && (
-              <ErrorState message="Couldn’t load what Dhyaan was told." onRetry={refetchProfile} />
+              <ErrorState message={copy.told.loadError} onRetry={refetchProfile} />
             )}
             {!!profile && facts.length === 0 && (
-              <EmptyState>
-                Nothing told to Dhyaan yet. Until you add what you know, it will say it
-                wasn’t told, rather than guess.
-              </EmptyState>
+              <EmptyState>{copy.told.empty}</EmptyState>
             )}
             {facts.map((f) => (
               <FactRow
@@ -407,13 +423,13 @@ export default function Settings() {
             ))}
             {!!profile?.appearance && (
               <View style={{ paddingVertical: sp(3) }}>
-                <Txt kind="label" tone="muted">How you described her</Txt>
+                <Txt kind="label" tone="muted">{copy.told.howDescribed}</Txt>
                 <Txt kind="body" style={{ marginTop: 2 }}>{profile.appearance}</Txt>
               </View>
             )}
             {!!profile?.usual_spots?.length && (
               <View style={{ paddingVertical: sp(3) }}>
-                <Txt kind="label" tone="muted">Her usual spots</Txt>
+                <Txt kind="label" tone="muted">{copy.told.usualSpots}</Txt>
                 {profile.usual_spots.map((spot) => (
                   <Txt key={spot} kind="body" style={{ marginTop: 2 }}>{spot}</Txt>
                 ))}
@@ -425,18 +441,18 @@ export default function Settings() {
                 <Rule />
                 {adding && (
                   <Field
-                    label="About"
+                    label={copy.told.about}
                     value={draftKey}
                     onChangeText={setDraftKey}
-                    placeholder="breakfast, walk, visitors"
+                    placeholder={copy.told.keyPlaceholder}
                     autoCapitalize="none"
                   />
                 )}
                 <Field
-                  label={editing ? `About ${editing.key.replace(/_/g, ' ')}` : 'What Dhyaan should remember'}
+                  label={editing ? copy.told.aboutKey(editing.key) : copy.told.whatToRemember}
                   value={draftText}
                   onChangeText={setDraftText}
-                  placeholder="A whole sentence"
+                  placeholder={copy.told.sentencePlaceholder}
                   multiline
                   maxLength={300}
                 />
@@ -444,12 +460,12 @@ export default function Settings() {
                 <Row gap={2}>
                   <Btn
                     kind="quiet"
-                    label="Cancel"
+                    label={copy.told.cancel}
                     style={{ flex: 1 }}
                     onPress={closeFactForm}
                   />
                   <Btn
-                    label="Save"
+                    label={copy.told.save}
                     busy={factBusy}
                     disabled={!draftText.trim()}
                     style={{ flex: 1 }}
@@ -459,18 +475,15 @@ export default function Settings() {
                 {!!editing && (
                   confirmDeleteFact ? (
                     <View style={{ gap: sp(2) }}>
-                      <Txt kind="caption">
-                        Dhyaan will stop knowing this. Answers it already gave keep the
-                        words they quoted.
-                      </Txt>
+                      <Txt kind="caption">{copy.told.deleteWarning}</Txt>
                       <Btn
-                        label="Delete this note"
+                        label={copy.told.deleteNote}
                         kind="danger"
                         busy={factBusy}
                         onPress={removeFact}
                       />
                       <Btn
-                        label="Keep it"
+                        label={copy.told.keepIt}
                         kind="quiet"
                         onPress={() => setConfirmDeleteFact(false)}
                       />
@@ -479,7 +492,7 @@ export default function Settings() {
                     <Btn
                       kind="link"
                       tone="alert"
-                      label="Delete this note"
+                      label={copy.told.deleteNote}
                       onPress={() => setConfirmDeleteFact(true)}
                     />
                   )
@@ -489,7 +502,7 @@ export default function Settings() {
             {!editing && !adding && !!profile && (
               <Btn
                 kind="quiet"
-                label="Add a note"
+                label={copy.told.addNote}
                 style={{ marginVertical: sp(3) }}
                 onPress={() => { setAdding(true); setDraftKey(''); setDraftText(''); setFactError(null); }}
               />
@@ -500,15 +513,12 @@ export default function Settings() {
         {/* ---- Camera ---- */}
         <View>
           <Marquee
-            title="Her camera"
+            title={copy.camera.title}
             meta={profile?.camera ? profile.camera.state : undefined}
           />
           <Card>
             {!profile?.camera ? (
-              <EmptyState>
-                No camera is set up. Start it on the computer in her home, then finish
-                setup from there.
-              </EmptyState>
+              <EmptyState>{copy.camera.noCamera}</EmptyState>
             ) : (
               <>
                 {/* The only room name on a family screen, and it is allowed:
@@ -516,30 +526,24 @@ export default function Settings() {
                     it in onboarding), not where she is. Labelled "Where it's
                     installed" rather than "Room" so it cannot be misread as
                     whereabouts — D-001 bans her location, not the hardware's. */}
-                <KeyValue label="Where it’s installed" value={zoneLabel(profile.camera.zone)} />
+                <KeyValue label={copy.camera.whereInstalled} value={zoneLabel(profile.camera.zone)} />
                 <KeyValue
-                  label="State"
-                  value={
-                    profile.camera.state === 'watching' ? 'Watching'
-                      : profile.camera.state === 'paused'
-                        ? `Paused${profile.camera.paused_until ? ` until ${timeOf(profile.camera.paused_until)}` : ''}`
-                        : profile.camera.state === 'offline' ? 'Not running' : 'Consent off'
-                  }
+                  label={copy.camera.state}
+                  value={copy.camera.stateWord(
+                    profile.camera.state,
+                    profile.camera.paused_until ? timeOf(profile.camera.paused_until) : null,
+                  )}
                   style={{ marginTop: sp(2) }}
                 />
                 <Hairline style={{ marginVertical: sp(3) }} />
                 {!confirmStop ? (
-                  <Btn kind="link" tone="alert" label="Stop the camera" onPress={() => setConfirmStop(true)} />
+                  <Btn kind="link" tone="alert" label={copy.camera.stop} onPress={() => setConfirmStop(true)} />
                 ) : (
                   <View style={{ gap: sp(2) }}>
-                    <Txt kind="body">
-                      This turns the camera consent off. The camera on her computer stops
-                      within ten seconds. Fall detection is unaffected. There is no switch
-                      here to turn it back on; that takes setup again, with her.
-                    </Txt>
+                    <Txt kind="body">{copy.camera.stopExplained}</Txt>
                     {!!cameraError && <ErrorState inline message={cameraError} />}
-                    <Btn label="Stop the camera" kind="danger" busy={cameraBusy} onPress={stopCamera} />
-                    <Btn label="Leave it running" kind="quiet" onPress={() => setConfirmStop(false)} />
+                    <Btn label={copy.camera.stop} kind="danger" busy={cameraBusy} onPress={stopCamera} />
+                    <Btn label={copy.camera.leaveRunning} kind="quiet" onPress={() => setConfirmStop(false)} />
                   </View>
                 )}
               </>
@@ -550,19 +554,16 @@ export default function Settings() {
         {/* ---- Ladder ---- */}
         <View>
           <Marquee
-            title="Who Dhyaan calls, in order"
-            meta={contacts ? `${contacts.length} contacts` : undefined}
+            title={copy.ladder.title}
+            meta={contacts ? copy.ladder.contacts(contacts.length) : undefined}
           />
           <RowGroup>
-            {contactsLoading && !contacts && <LoadingState label="Loading…" />}
+            {contactsLoading && !contacts && <LoadingState label={copy.ladder.loading} />}
             {contactsError && !contacts && (
-              <ErrorState message="Couldn’t load her contacts." onRetry={refetchContacts} />
+              <ErrorState message={copy.ladder.loadError} onRetry={refetchContacts} />
             )}
             {!!contacts && contacts.length === 0 && (
-              <EmptyState>
-                Nobody on the list yet, so a call she doesn’t answer has nowhere to go. The
-                list is written during setup, and there isn’t a way to change it from here yet.
-              </EmptyState>
+              <EmptyState>{copy.ladder.empty}</EmptyState>
             )}
             {(contacts ?? []).map((c, i) => (
               <Row key={c.id} gap={3} style={{ paddingVertical: sp(2.5) }}>
@@ -575,7 +576,7 @@ export default function Settings() {
         </View>
 
         <View>
-          <Marquee title="Care file" />
+          <Marquee title={copy.careFile.title} />
           <Card>
             <CareFileSummary />
           </Card>
@@ -586,45 +587,35 @@ export default function Settings() {
             so this states what Dhyaan does today rather than offering switches
             that would forget themselves on unmount. */}
         <View>
-          <Marquee title="What Dhyaan does when something happens" />
+          <Marquee title={copy.happens.title} />
           <Card>
-            <Txt kind="label">If her band detects a fall</Txt>
-            <Txt kind="body" style={{ marginTop: sp(1) }}>
-              It gives her thirty seconds to cancel, then Dhyaan calls her. If she does
-              not answer, it calls the people above, in order, and your phone is told
-              at the same time.
-            </Txt>
+            <Txt kind="label">{copy.happens.ifFall}</Txt>
+            <Txt kind="body" style={{ marginTop: sp(1) }}>{copy.happens.ifFallBody}</Txt>
             <Hairline style={{ marginVertical: sp(3) }} />
-            <Txt kind="label">Everything else</Txt>
-            <Txt kind="body" style={{ marginTop: sp(1) }}>
-              Meals, walks, visitors, a long stay in one place — these go on her
-              timeline for you to read. Nobody is phoned about them.
-            </Txt>
+            <Txt kind="label">{copy.happens.everythingElse}</Txt>
+            <Txt kind="body" style={{ marginTop: sp(1) }}>{copy.happens.everythingElseBody}</Txt>
             <Hairline style={{ marginVertical: sp(3) }} />
-            <Txt kind="caption" tone="muted">{/* voice-ok */}
-              There is nothing to switch here. A fall always calls; nothing else ever
-              does. If that ever becomes a choice, it will be made here.
-            </Txt>
+            <Txt kind="caption" tone="muted">{copy.happens.nothingToSwitch}</Txt>
           </Card>
         </View>
 
         {/* ---- Consent record ---- */}
         <View>
-          <Marquee title="Consent" />
+          <Marquee title={copy.consent.title} />
           <Card>
-            <Txt kind="caption" tone="muted">
-              Recorded for {name}
-              {signedBy ? ` by ${signedBy}` : ''}
-              {relationship ? ` (${relationship})` : ''}
-              {profile?.consent.signed_at ? ` on ${new Date(profile.consent.signed_at).toLocaleDateString()}` : ''}.
-            </Txt>
+            <Txt kind="caption" tone="muted">{consentLine}</Txt>
             <View style={{ marginTop: sp(3), gap: sp(1.5) }}>
               {([
-                ['Fall detection', profile?.consent.falls],
-                ['Camera', profile?.consent.camera],
-                ['Keeping a memory of her', profile?.consent.memory],
+                [copy.consent.falls, profile?.consent.falls],
+                [copy.consent.camera, profile?.consent.camera],
+                [copy.consent.memory, profile?.consent.memory],
               ] as const).map(([label, on]) => (
-                <KeyValue key={label} label={label} value={on ? 'Agreed' : 'Declined'} tone={on ? 'ok' : 'muted'} />
+                <KeyValue
+                  key={label}
+                  label={label}
+                  value={on ? copy.consent.agreed : copy.consent.declined}
+                  tone={on ? 'ok' : 'muted'}
+                />
               ))}
             </View>
           </Card>
@@ -632,23 +623,17 @@ export default function Settings() {
 
         {/* ---- Memory / privacy ---- */}
         <View>
-          <Marquee title="Her profile" />
+          <Marquee title={copy.profile.title} />
           <Card>
-            <Txt kind="body">
-              Everything Dhyaan keeps about {name} lives on the computer in her home.
-              No frame of video was ever kept.
-            </Txt>
+            <Txt kind="body">{copy.profile.livesAtHome(name)}</Txt>
             {!!forgetResult && (
               <Txt kind="caption" tone="ok" style={{ marginTop: sp(3) }} accessibilityLiveRegion="polite">
                 {forgetResult}
               </Txt>
             )}
             <Hairline style={{ marginVertical: sp(3) }} />
-            <Btn kind="link" label="Share her data as JSON" onPress={exportData} />
-            <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>{/* voice-ok */}
-              Opens the share sheet with JSON text: her daily summaries, the last seven days
-              of her timeline, and the notes you typed. It is not a printable report.
-            </Txt>
+            <Btn kind="link" label={copy.profile.shareJson} onPress={exportData} />
+            <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>{copy.profile.shareJsonNote}</Txt>
             {exportError && <ErrorState inline message={exportError} style={{ marginTop: sp(1) }} />}
 
             <View style={{ marginTop: sp(4) }}>
@@ -661,34 +646,24 @@ export default function Settings() {
                 <Btn
                   kind="link"
                   tone="alert"
-                  label="Forget her profile"
+                  label={copy.profile.forget}
                   onPress={() => openDestructive('forget')}
                   style={{ marginTop: sp(3) }}
                 />
               ) : (
                 <View style={{ gap: sp(3), marginTop: sp(3) }}>
-                  <Txt kind="body">
-                    This deletes every note, every observation and everything Dhyaan learned
-                    about where she sits. It cannot be undone. Fall detection and the camera
-                    keep running, and you stay signed in.
-                  </Txt>
-                  <Field
-                    label={`Type “${name}” to confirm`}
-                    value={confirmName}
-                    onChangeText={setConfirmName}
-                    placeholder={name}
-                    autoCorrect={false}
-                  />
+                  <Txt kind="body">{copy.profile.forgetExplained}</Txt>
+                  {confirmField}
                   {!!forgetError && <ErrorState inline message={forgetError} />}
                   <Btn
-                    label="Forget everything about her"
+                    label={copy.profile.forgetEverything}
                     kind="danger"
                     busy={forgetBusy}
                     disabled={!nameTyped}
                     onPress={forget}
                   />
                   <Btn
-                    label="Keep her profile"
+                    label={copy.profile.keepProfile}
                     kind="quiet"
                     onPress={() => { setDestructive('none'); setConfirmName(''); }}
                   />
@@ -701,34 +676,24 @@ export default function Settings() {
                 <Btn
                   kind="link"
                   tone="alert"
-                  label="Delete everything and stop Dhyaan"
+                  label={copy.profile.wipe}
                   onPress={() => openDestructive('wipe')}
                   style={{ marginTop: sp(3) }}
                 />
               ) : (
                 <View style={{ gap: sp(3), marginTop: sp(3) }}>
-                  <Txt kind="body">
-                    This deletes everything above, then turns off fall detection, the
-                    camera and her profile, and signs this phone out. Dhyaan stops
-                    watching and stops calling. It cannot be undone.
-                  </Txt>
-                  <Field
-                    label={`Type “${name}” to confirm`}
-                    value={confirmName}
-                    onChangeText={setConfirmName}
-                    placeholder={name}
-                    autoCorrect={false}
-                  />
+                  <Txt kind="body">{copy.profile.wipeExplained}</Txt>
+                  {confirmField}
                   {!!forgetError && <ErrorState inline message={forgetError} />}
                   <Btn
-                    label="Delete everything and stop Dhyaan"
+                    label={copy.profile.wipe}
                     kind="danger"
                     busy={forgetBusy}
                     disabled={!nameTyped}
                     onPress={wipeAndStop}
                   />
                   <Btn
-                    label="Leave Dhyaan running"
+                    label={copy.profile.leaveRunning}
                     kind="quiet"
                     onPress={() => { setDestructive('none'); setConfirmName(''); }}
                   />
@@ -745,12 +710,9 @@ export default function Settings() {
             from this session's blank answers, switching everything off. Until
             setup can be re-entered safely, this says what is true. */}
         <View>
-          <Marquee title="Her band" />
+          <Marquee title={copy.band.title} />
           <Card>
-            <Txt kind="body">
-              Her band was paired during setup, and the rooms were walked then. There isn’t a
-              way to pair a new band or walk the rooms again from here yet.
-            </Txt>
+            <Txt kind="body">{copy.band.body}</Txt>
           </Card>
         </View>
       </Stagger>
@@ -758,11 +720,11 @@ export default function Settings() {
       <Entrance index={8} style={{ marginTop: sp(8) }}>
         <Btn
           kind="quiet"
-          label="Sign out"
+          label={copy.signOut}
           onPress={() => { signOut(); qc.clear(); router.replace('/login'); }}
         />
-        <Txt kind="caption" tone="muted" style={{ marginTop: sp(2), textAlign: 'center' }}>{/* voice-ok */}
-          Signing out only clears this phone. Nothing about {name} is deleted.
+        <Txt kind="caption" tone="muted" style={{ marginTop: sp(2), textAlign: 'center' }}>
+          {copy.signOutNote(name)}
         </Txt>
       </Entrance>
     </Screen>

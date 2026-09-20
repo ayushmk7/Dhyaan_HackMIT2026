@@ -26,12 +26,13 @@ import {
 } from '@/components';
 import { Avatar } from '@/components/avatar';
 import { api } from '@/lib/api';
+import { readout, triage as copy } from '@/lib/copy/staff';
 import { timeOf } from '@/lib/format';
 import { useResidents } from '@/lib/hooks';
 import type { Alert, Resident } from '@/lib/types';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
-import { palette, sp } from '@/theme/tokens';
+import { sp, useTheme } from '@/theme';
 import type { ResidentState } from '@/theme/tokens';
 import { NEEDS_EYES, TIER, deriveState, pad2, triageReason } from '../_layout';
 
@@ -47,13 +48,13 @@ function CountSlab({ needing, total, updatedAt }: {
     <Slab style={{ paddingVertical: sp(4) }}>
       <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <View>
-          <DataLabel>Needs a check</DataLabel>
+          <DataLabel>{copy.slab.needsCheck}</DataLabel>
           <Txt kind="readout" style={{ marginTop: sp(1) }}>{pad2(needing)}</Txt>
         </View>
         <View style={{ alignItems: 'flex-end', gap: sp(1.5) }}>
-          <DataLabel value={pad2(total)}>On the floor</DataLabel>
-          <DataLabel value={updatedAt ? timeOf(new Date(updatedAt).toISOString()) : '--:--'}>
-            Updated
+          <DataLabel value={pad2(total)}>{copy.slab.onFloor}</DataLabel>
+          <DataLabel value={updatedAt ? timeOf(new Date(updatedAt).toISOString()) : readout.noTime}>
+            {copy.slab.updated}
           </DataLabel>
         </View>
       </Row>
@@ -69,7 +70,7 @@ function TriageRow({ r, acking, onPress, onAck }: {
     <View style={{ paddingVertical: sp(2.5) }}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${r.display_name}, ${r.room ? `room ${r.room}` : 'no room'}`}
+        accessibilityLabel={copy.row.a11y(r.display_name, r.room)}
         onPress={onPress}
         style={({ pressed }) => [pressed && { opacity: 0.6 }]}
       >
@@ -86,7 +87,9 @@ function TriageRow({ r, acking, onPress, onAck }: {
                 <Txt kind="label" numberOfLines={1} style={{ flex: 1 }}>{r.display_name}</Txt>
               </Row>
               {/* Staff MAY see whereabouts; family never may (D-001). */}
-              <Txt kind="stamp" tone="muted">{r.room ? `RM ${r.room}` : 'NO ROOM'}</Txt>
+              <Txt kind="stamp" tone="muted">
+                {r.room ? copy.row.roomStamp(r.room) : readout.noRoomStamp}
+              </Txt>
             </Row>
             {!!r.reason && (
               <Txt
@@ -99,10 +102,12 @@ function TriageRow({ r, acking, onPress, onAck }: {
               </Txt>
             )}
             <Row gap={3} style={{ marginTop: sp(1.5), flexWrap: 'wrap' }}>
-              <DataLabel value={r.last_seen ? timeOf(r.last_seen) : '--:--'}>Seen</DataLabel>
-              {!!r.location && <DataLabel value={r.location.label}>Zone</DataLabel>}
+              <DataLabel value={r.last_seen ? timeOf(r.last_seen) : readout.noTime}>
+                {copy.row.seen}
+              </DataLabel>
+              {!!r.location && <DataLabel value={r.location.label}>{copy.row.zone}</DataLabel>}
               {r.band_battery_pct != null && (
-                <DataLabel value={`${r.band_battery_pct}%`}>Band</DataLabel>
+                <DataLabel value={`${r.band_battery_pct}%`}>{copy.row.band}</DataLabel>
               )}
             </Row>
           </View>
@@ -111,7 +116,7 @@ function TriageRow({ r, acking, onPress, onAck }: {
       </Pressable>
       {onAck && (
         <Btn
-          label="Acknowledge"
+          label={copy.row.acknowledge}
           kind="quiet"
           size="small"
           busy={acking}
@@ -124,6 +129,7 @@ function TriageRow({ r, acking, onPress, onAck }: {
 }
 
 export default function Triage() {
+  const t = useTheme();
   const qc = useQueryClient();
   const { data, isLoading, isError, refetch, dataUpdatedAt } = useResidents();
   // ponytail: no useOpenAlerts hook in lib/hooks.ts — calling the facade directly
@@ -150,20 +156,20 @@ export default function Triage() {
   }, [qc]);
 
   const refreshControl = (
-    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.inkMuted} />
+    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.inkMuted} />
   );
 
   if (isLoading && !data) {
     return (
       <Screen native wash refreshControl={refreshControl}>
-        <LoadingState label="Loading tonight's list…" />
+        <LoadingState label={copy.loading} />
       </Screen>
     );
   }
   if (isError && !data) {
     return (
       <Screen native wash refreshControl={refreshControl}>
-        <ErrorState message="Couldn’t reach the floor list." onRetry={refetch} />
+        <ErrorState message={copy.loadError} onRetry={refetch} />
       </Screen>
     );
   }
@@ -173,7 +179,7 @@ export default function Triage() {
   const ack = async (alert: Alert) => {
     setAckingAlertId(alert.id);
     try {
-      await api.ack(alert.id, user?.name ?? 'Staff');
+      await api.ack(alert.id, user?.name ?? copy.ackActorFallback);
       await qc.invalidateQueries();
     } finally {
       setAckingAlertId(null);
@@ -192,9 +198,9 @@ export default function Triage() {
       // `simulate` returns Alert | null: a bathroom dwell or a walk may
       // legitimately open nothing, and a fall can too if the FSM declines.
       if (alert) router.push(`/alert/${alert.id}`);
-      else setDemoNote('The event went in, but nothing crossed an alert threshold.');
+      else setDemoNote(copy.demo.nothingCrossed);
     } catch (e) {
-      setDemoNote(e instanceof Error ? e.message : 'Couldn’t reach the backend.');
+      setDemoNote(e instanceof Error ? e.message : copy.demo.backendError);
     } finally {
       setSimulating(false);
     }
@@ -233,8 +239,8 @@ export default function Triage() {
         {/* Long-press the heading to reveal demo controls; no visible demo chrome. */}
         <Pressable onLongPress={() => setShowDemo((v) => !v)} delayLongPress={600}>
           <Marquee
-            title="Needs a check"
-            meta={`${pad2(needsEyes.length)} of ${pad2(residents.length)}`}
+            title={copy.needsCheck}
+            meta={copy.ofMeta(pad2(needsEyes.length), pad2(residents.length))}
           />
         </Pressable>
 
@@ -250,9 +256,7 @@ export default function Triage() {
           ))}
           {needsEyes.length === 0 && (
             <EmptyState>
-              {residents.length === 0
-                ? 'No residents on this floor yet.'
-                : 'Nobody needs a check right now.'}
+              {residents.length === 0 ? copy.emptyNoResidents : copy.emptyNobody}
             </EmptyState>
           )}
         </RowGroup>
@@ -260,10 +264,10 @@ export default function Triage() {
         {normal.length > 0 && (
           <View>
             <Marquee
-              title="Doing fine"
+              title={copy.doingFine}
               right={
                 <Chip
-                  label={showOk ? 'Hide' : `Show ${pad2(normal.length)}`}
+                  label={showOk ? copy.hide : copy.showN(pad2(normal.length))}
                   onPress={() => setShowOk((v) => !v)}
                 />
               }
@@ -284,16 +288,16 @@ export default function Triage() {
 
         {showDemo && (
           <View>
-            <Marquee title="Demo" meta="Admin" />
+            <Marquee title={copy.demo.title} meta={copy.demo.meta} />
             <Card style={{ gap: sp(2) }}>
               <Btn
-                label="Simulate a fall"
+                label={copy.demo.simulateFall}
                 kind="quiet"
                 busy={simulating}
                 onPress={simulateFall}
               />
               <Btn
-                label="Family app"
+                label={copy.demo.familyApp}
                 kind="ghost"
                 onPress={() => { setRole('family'); finishOnboarding(); router.replace('/(family)/home'); }}
               />

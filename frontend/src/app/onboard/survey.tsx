@@ -17,9 +17,12 @@ import {
   Btn, Card, DataLabel, Entrance, Marquee, Row, Rule, Screen, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
+import { onboard } from '@/lib/copy/staff';
 import { homeZones } from '@/lib/mock/data';
 import { sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
+
+const copy = onboard.survey;
 
 type RoomState =
   | { kind: 'idle' }
@@ -28,6 +31,8 @@ type RoomState =
   | { kind: 'failed'; message: string };
 
 const SURVEY_S = 30;
+/** How many rooms must be mapped before the family may move on. */
+const ROOMS_NEEDED = 3;
 
 export default function Survey() {
   const { residentName, grants } = useSession();
@@ -50,7 +55,7 @@ export default function Survey() {
     } catch (e) {
       set(zoneId, {
         kind: 'failed',
-        message: e instanceof Error ? e.message : 'Her hub didn’t confirm that walk.',
+        message: e instanceof Error ? e.message : copy.stopError,
       });
     }
   };
@@ -61,7 +66,7 @@ export default function Survey() {
     } catch (e) {
       set(zoneId, {
         kind: 'failed',
-        message: e instanceof Error ? e.message : 'Couldn’t start. Is her hub running?',
+        message: e instanceof Error ? e.message : copy.startError,
       });
       return;
     }
@@ -87,20 +92,19 @@ export default function Survey() {
       wash
       floatingBar={
         <Btn
-          label={doneCount >= 3 ? 'Continue' : `Map ${3 - doneCount} more room${3 - doneCount === 1 ? '' : 's'}`}
-          disabled={doneCount < 3}
+          label={doneCount >= ROOMS_NEEDED ? copy.continue : copy.mapMore(ROOMS_NEEDED - doneCount)}
+          disabled={doneCount < ROOMS_NEEDED}
           onPress={() => router.push(grants.camera ? '/onboard/camera' : '/onboard/contacts')}
         />
       }
     >
       <Entrance index={0}>
-        <Marquee first title="Walk each room with the band" meta={`${doneCount}/3`} />
+        <Marquee first title={copy.title} meta={copy.progress(doneCount, ROOMS_NEEDED)} />
         <Txt kind="body">
-          30 seconds per room teaches Dhyaan where {residentName} is.
+          {copy.intro(residentName)}
         </Txt>
         <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>{/* voice-ok */}
-          This phone cannot read radio signal strength, so what it sends is only the
-          timing of each reading. Her band’s own readings are what teach the map.
+          {copy.honesty}
         </Txt>
       </Entrance>
 
@@ -113,10 +117,10 @@ export default function Survey() {
                 <Row style={{ justifyContent: 'space-between' }}>
                   <Txt kind="label">{z.label}</Txt>
                   {s.kind === 'surveying' && (
-                    <Txt kind="data">{s.left}s</Txt>
+                    <Txt kind="data">{copy.secondsLeft(s.left)}</Txt>
                   )}
                   {s.kind === 'done' && (
-                    <DataLabel value={String(s.scans)}>Readings</DataLabel>
+                    <DataLabel value={String(s.scans)}>{copy.readings}</DataLabel>
                   )}
                 </Row>
 
@@ -124,7 +128,7 @@ export default function Survey() {
                   <>
                     <Rule style={{ marginTop: sp(2.5) }} />
                     <Txt kind="caption" style={{ marginTop: sp(2) }}>
-                      Walking now. A reading goes to her hub every two seconds.
+                      {copy.walking}
                     </Txt>
                   </>
                 )}
@@ -137,12 +141,12 @@ export default function Survey() {
                       tone={s.warning ? 'warn' : 'ok'}
                       style={{ marginTop: sp(2) }}
                     >
-                      {s.warning ?? 'Her hub stored this walk.'}
+                      {s.warning ?? copy.stored}
                     </Txt>
                     {!!s.warning && (
                       <Btn
                         kind="quiet"
-                        label="Walk it again"
+                        label={copy.walkAgain}
                         disabled={surveying}
                         onPress={() => start(z.id)}
                         style={{ marginTop: sp(3), minHeight: 44 }}
@@ -158,7 +162,7 @@ export default function Survey() {
                     </Txt>
                     <Btn
                       kind="quiet"
-                      label="Try this room again"
+                      label={copy.tryAgain}
                       disabled={surveying}
                       onPress={() => start(z.id)}
                       style={{ marginTop: sp(3), minHeight: 44 }}
@@ -169,7 +173,7 @@ export default function Survey() {
                 {s.kind === 'idle' && (
                   <Btn
                     kind="quiet"
-                    label="Map this room"
+                    label={copy.mapRoom}
                     disabled={surveying}
                     onPress={() => start(z.id)}
                     style={{ marginTop: sp(3), minHeight: 44 }}

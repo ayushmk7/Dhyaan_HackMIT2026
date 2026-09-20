@@ -14,20 +14,22 @@ import {
   DataLabel, EmptyState, ErrorState, LoadingState, Row, Rule, Screen, Slab, Stagger, StatusDot,
   Surface, Txt,
 } from '@/components';
+import { floor as copy, readout } from '@/lib/copy/staff';
 import { timeOf } from '@/lib/format';
 import { useResidents } from '@/lib/hooks';
 import type { Resident } from '@/lib/types';
 import { useLive } from '@/store/live';
-import { elevation, palette, radius, sp, stateColor } from '@/theme/tokens';
+import { elevation, radius, sp, useTheme } from '@/theme';
 import type { ResidentState } from '@/theme/tokens';
 import { NEEDS_EYES, deriveState, pad2 } from '../_layout';
 
 type Tile = Resident & { state: ResidentState };
 
 function RoomTile({ r, onPress }: { r: Tile; onPress: () => void }) {
+  const t = useTheme();
   const alarm = r.state === 'alerting';
   const inOwnRoom = r.location?.zone === 'bedroom';
-  const where = r.location ? (inOwnRoom ? 'In room' : r.location.label) : 'No signal';
+  const where = r.location ? (inOwnRoom ? copy.tile.inRoom : r.location.label) : copy.tile.noSignal;
 
   const body = (
     <>
@@ -47,13 +49,13 @@ function RoomTile({ r, onPress }: { r: Tile; onPress: () => void }) {
         {where}
       </Txt>
       <View style={{ flex: 1 }} />
-      <DataLabel value={r.last_seen ? timeOf(r.last_seen) : '--:--'} style={{ marginTop: sp(2) }}>
-        Seen
+      <DataLabel value={r.last_seen ? timeOf(r.last_seen) : readout.noTime} style={{ marginTop: sp(2) }}>
+        {copy.tile.seen}
       </DataLabel>
     </>
   );
 
-  const a11y = `${r.room ? `Room ${r.room}` : 'No room'}, ${r.display_name}, ${stateColor[r.state].word}`;
+  const a11y = copy.tile.a11y(r.room, r.display_name, t.stateColor[r.state].word);
 
   // Rust is the alarm colour and nothing else, so exactly one kind of tile may
   // wear it, and that tile is this screen's high-contrast moment: an alarm
@@ -81,7 +83,7 @@ function RoomTile({ r, onPress }: { r: Tile; onPress: () => void }) {
         style={({ pressed }) => [
           {
             width: '47.5%',
-            backgroundColor: palette.raised,
+            backgroundColor: t.raised,
             borderRadius: radius.card,
             padding: sp(3.5),
             minHeight: 132,
@@ -97,6 +99,7 @@ function RoomTile({ r, onPress }: { r: Tile; onPress: () => void }) {
 }
 
 export default function Floor() {
+  const t = useTheme();
   const qc = useQueryClient();
   const { data, isLoading, isError, refetch, dataUpdatedAt } = useResidents();
   const liveStates = useLive((s) => s.states);
@@ -110,20 +113,20 @@ export default function Floor() {
   }, [qc]);
 
   const refreshControl = (
-    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.inkMuted} />
+    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.inkMuted} />
   );
 
   if (isLoading && !data) {
     return (
       <Screen native wash refreshControl={refreshControl}>
-        <LoadingState label="Loading rooms…" />
+        <LoadingState label={copy.loading} />
       </Screen>
     );
   }
   if (isError && !data) {
     return (
       <Screen native wash refreshControl={refreshControl}>
-        <ErrorState message="Couldn’t reach the floor list." onRetry={refetch} />
+        <ErrorState message={copy.loadError} onRetry={refetch} />
       </Screen>
     );
   }
@@ -147,7 +150,7 @@ export default function Floor() {
       {(['alerting', 'attention', 'offline', 'ok'] as ResidentState[]).map((s) => (
         <Row key={s} gap={1.5}>
           <StatusDot state={s} size={8} />
-          <Txt kind="caption" tone="muted">{stateColor[s].word}</Txt>
+          <Txt kind="caption" tone="muted">{t.stateColor[s].word}</Txt>
         </Row>
       ))}
     </Row>
@@ -159,10 +162,10 @@ export default function Floor() {
         {/* The screen's one instrument reading, in the machine face. */}
         <Slab style={{ paddingVertical: sp(3.5) }}>
           <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
-            <DataLabel value={pad2(rooms.length)}>Rooms</DataLabel>
-            <DataLabel value={pad2(needing)}>Need someone</DataLabel>
-            <DataLabel value={dataUpdatedAt ? timeOf(new Date(dataUpdatedAt).toISOString()) : '--:--'}>
-              Updated
+            <DataLabel value={pad2(rooms.length)}>{copy.slab.rooms}</DataLabel>
+            <DataLabel value={pad2(needing)}>{copy.slab.needSomeone}</DataLabel>
+            <DataLabel value={dataUpdatedAt ? timeOf(new Date(dataUpdatedAt).toISOString()) : readout.noTime}>
+              {copy.slab.updated}
             </DataLabel>
           </Row>
         </Slab>
@@ -178,7 +181,7 @@ export default function Floor() {
         </View>
 
         {rooms.length === 0 && (
-          <EmptyState style={{ marginTop: sp(6) }}>No rooms are set up on this floor yet.</EmptyState>
+          <EmptyState style={{ marginTop: sp(6) }}>{copy.empty}</EmptyState>
         )}
       </Stagger>
     </Screen>

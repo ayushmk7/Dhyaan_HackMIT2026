@@ -283,14 +283,17 @@ async def test_camera_config_withholds_appearance_without_memory_consent(client,
     assert r.json()["appearance"] is None
 
 
-@pytest.mark.parametrize("email,password,code", [
-    ("priya@dhyaan.demo", "anything", 200),
-    ("not-an-email", "anything", 401),
-    ("priya@dhyaan.demo", "   ", 401),
+@pytest.mark.parametrize("email,password", [
+    # An email-shaped name with any password used to get in. It no longer does:
+    # there is a user store now (tests/test_auth.py) and no account by that name.
+    ("priya@dhyaan.demo", "anything"),
+    ("not-an-email", "anything"),
+    ("priya@dhyaan.demo", "   "),
+    ("", ""),
 ])
-async def test_login_validates_shape(client, resident, email, password, code):
+async def test_login_rejects_anyone_not_on_file(client, resident, email, password):
     r = await client.post("/v1/auth/login", json={"email": email, "password": password})
-    assert r.status_code == code
+    assert r.status_code == 401
 
 
 async def test_simulate_meal_goes_through_the_real_ingest_path(client, camera, db):

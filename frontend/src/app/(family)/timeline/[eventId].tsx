@@ -4,6 +4,8 @@
 // record of how it got there, set in the machine's voice. That split is the
 // whole screen: a human sentence you can read out loud, and a readout you can
 // audit it against.
+//
+// Every sentence this screen says lives in lib/copy/family.ts under `event`.
 import { useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
@@ -12,21 +14,24 @@ import {
   Txt,
 } from '@/components';
 import { api } from '@/lib/api';
+import { family } from '@/lib/copy/family';
 import { dayOf, displaySentence, eventTitle, timeOf } from '@/lib/format';
 import { useEvent } from '@/lib/hooks';
 import type { KEvent, SourceKind } from '@/lib/types';
 import { sp } from '@/theme/tokens';
+
+const copy = family.event;
 
 function sensorSentence(e: KEvent): string {
   switch (e.source) {
     // Deliberately never `e.zone`, even though a raw event carries one: this
     // is a family screen, and a room name must not reach one (§5.2, D-001).
     // GET /activity already strips it; this is the second lock.
-    case 'camera': return 'The camera in her home';
-    case 'band': return 'Her band';
-    case 'voice': return 'A phone call';
-    case 'derived': return 'The pattern of her day';
-    default: return 'A person';
+    case 'camera': return copy.source.camera;
+    case 'band': return copy.source.band;
+    case 'voice': return copy.source.voice;
+    case 'derived': return copy.source.derived;
+    default: return copy.source.other;
   }
 }
 
@@ -36,22 +41,14 @@ function sensorSentence(e: KEvent): string {
  * a sentence. Nothing is added that the record does not say.
  */
 const familySentence = (e: KEvent): string => {
-  if (e.type === 'fall_suspected') return 'Her band reported a possible fall.';
-  if (e.type === 'fall_confirmed') return 'Her band confirmed a fall.';
+  if (e.type === 'fall_suspected') return family.shared.fallSuspected;
+  if (e.type === 'fall_confirmed') return family.shared.fallConfirmed;
   return displaySentence(e.embedding_text);
 };
 
 /** §6.5's three kinds, read off the one field that decides them. */
 const kindOf = (e: KEvent): SourceKind =>
   e.source === 'derived' ? 'pattern' : e.source === 'manual' ? 'told' : 'observed';
-
-/** How sure it is, in words a person would use — and what that means for them. */
-const certaintyLine = (c: number) =>
-  c >= 0.95
-    ? 'It is sure enough about this one to say it as a plain sentence.'
-    : c >= 0.8
-      ? 'It is fairly sure about this one. Tell it below if it got this wrong.'
-      : 'It is not certain about this one. Tell it below if it got this wrong.';
 
 export default function EventDetail() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
@@ -64,11 +61,11 @@ export default function EventDetail() {
     return (
       <Screen native>
         {isError ? (
-          <ErrorState message="Couldn’t load that observation." onRetry={refetch} />
+          <ErrorState message={copy.loadError} onRetry={refetch} />
         ) : isLoading ? (
-          <LoadingState label="Looking that up…" />
+          <LoadingState label={copy.loading} />
         ) : (
-          <EmptyState>That observation isn’t here any more.</EmptyState>
+          <EmptyState>{copy.gone}</EmptyState>
         )}
       </Screen>
     );
@@ -81,7 +78,7 @@ export default function EventDetail() {
       await api.feedback(event.id, v);
       setVerdict(v);
     } catch {
-      setFeedbackError('Couldn’t save that. Try again.');
+      setFeedbackError(copy.feedbackError);
     } finally {
       setBusy(false);
     }
@@ -98,34 +95,34 @@ export default function EventDetail() {
         {/* The screen's one uncompromising surface: paper on ink, every figure
             tabular, nothing softened. This is the record, not the reassurance. */}
         <Slab style={{ gap: sp(3) }}>
-          <DataLabel value={`${dayOf(event.ts)} · ${timeOf(event.ts)}`}>Recorded</DataLabel>
+          <DataLabel value={`${dayOf(event.ts)} · ${timeOf(event.ts)}`}>{copy.recorded}</DataLabel>
           <Rule weight="hair" />
-          <DataLabel value={event.source.toUpperCase()}>Source</DataLabel>
+          <DataLabel value={event.source.toUpperCase()}>{copy.sourceLabel}</DataLabel>
           <Rule weight="hair" />
-          <DataLabel value={event.confidence.toFixed(2)}>Confidence</DataLabel>
+          <DataLabel value={event.confidence.toFixed(2)}>{copy.confidence}</DataLabel>
         </Slab>
 
         <View>
           <Txt kind="body">
-            {sensorSentence(event)} noticed this, and Dhyaan filed it as “{eventTitle(event.type)}”.
+            {copy.filedAs(sensorSentence(event), eventTitle(event.type))}
           </Txt>
           <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>
-            {certaintyLine(event.confidence)}
+            {copy.certainty(event.confidence)}
           </Txt>
         </View>
 
         <View>
-          <Marquee title="Did Dhyaan get this right?" first />
+          <Marquee title={copy.didItGetThisRight} first />
           {verdict ? (
             // True as written: the route records the verdict against this
             // observation. Nothing reads it back for you, so don't promise
             // that it will — the old copy said Dhyaan would "weigh this
             // differently next time", and nothing does.
-            <Txt kind="body" tone="ok">Got it. That’s recorded against this observation.</Txt>
+            <Txt kind="body" tone="ok">{copy.feedbackSaved}</Txt>
           ) : (
             <View style={{ gap: sp(2) }}>
-              <Btn label="This was expected" kind="quiet" busy={busy} onPress={() => give('expected')} />
-              <Btn label="This didn’t happen" kind="quiet" busy={busy} onPress={() => give('false_positive')} />
+              <Btn label={copy.wasExpected} kind="quiet" busy={busy} onPress={() => give('expected')} />
+              <Btn label={copy.didNotHappen} kind="quiet" busy={busy} onPress={() => give('false_positive')} />
               {feedbackError && <ErrorState inline message={feedbackError} />}
             </View>
           )}

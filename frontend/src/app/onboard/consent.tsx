@@ -2,8 +2,9 @@
 // The full §5.4 text (the product's legal defence, VERBATIM) lives behind a
 // collapsed "How it works" per grant — complete, but never a wall.
 //
-// Nothing in `line` or `detail` may be reworded: that copy is the spec's, to
-// the letter. Only the surface around it is design.
+// The grant copy itself is `onboard.consent.grants` in `lib/copy/staff.ts`,
+// where it is marked verbatim from the spec. Nothing in a grant's `title`,
+// `line` or `detail` may be reworded. Only the surface around it is design.
 //
 // ponytail: answers are held in the session; the whole profile is PUT once in
 // done.tsx. Quitting mid-onboarding loses the draft.
@@ -14,47 +15,17 @@ import {
   Btn, Card, Entrance, Field, Marquee, Row, Rule, Screen, Stagger, Txt,
 } from '@/components';
 import { Icon, IconBadge } from '@/components/icon';
-import { sp, palette, radius } from '@/theme/tokens';
+import { onboard } from '@/lib/copy/staff';
+import { sp, radius, useTheme } from '@/theme';
 import { useSession, type Grants } from '@/store/session';
 
-type GrantKey = keyof Grants;
-
-const GRANTS: {
-  key: GrantKey; icon: string; title: string; line: string; detail: string[];
-}[] = [
-  {
-    key: 'falls',
-    icon: 'figure.fall',
-    title: 'Fall detection',
-    line: 'Detects falls and calls her, then her contacts.',
-    detail: [
-      'Her band notices movement, stillness, and a fall. If it thinks she has fallen, it gives her thirty seconds to cancel, then Dhyaan calls her. If she does not answer, it calls the people on her list, in order.',
-      'It does not record audio or video. It does not call 911.',
-    ],
-  },
-  {
-    key: 'camera',
-    icon: 'eye',
-    title: 'One room camera',
-    line: 'Describes her day in text. No video is saved.',
-    detail: [
-      'One camera in the room she spends her day in. It is never put in a bedroom or bathroom. It notices whether she is up, whether she has eaten, whether she is settled or moving about, and whether someone is visiting. It turns that into a sentence, on the computer in her home, and throws the picture away. No video is stored. No video is ever shown to family, and there is no way to turn that on. It cannot hear anything. If someone else is alone in the room, Dhyaan may mistake them for her. She can pause it for two hours from the computer, and pausing never affects fall detection.',
-    ],
-  },
-  {
-    key: 'memory',
-    icon: 'lock',
-    title: 'Remembers her routine',
-    line: 'Saves her routine on the computer at her house.',
-    detail: [
-      'To make sense of what it sees, Dhyaan keeps what you tell us about her routine, a few words describing her, and where she usually sits at different times of day. None of this leaves her home, none of it is a face or a photograph, and Forget her profile in Settings removes all of it at once.',
-    ],
-  },
-];
+const copy = onboard.consent;
+const GRANTS = copy.grants;
 
 function YesNo({ value, onChange, label }: {
   value: boolean | null; onChange: (v: boolean) => void; label: string;
 }) {
+  const t = useTheme();
   const opt = (v: boolean, word: string) => {
     const on = value === v;
     return (
@@ -62,7 +33,7 @@ function YesNo({ value, onChange, label }: {
         key={word}
         accessibilityRole="radio"
         accessibilityState={{ selected: on }}
-        accessibilityLabel={`${word} to ${label}`}
+        accessibilityLabel={copy.yesNoA11y(word, label)}
         onPress={() => onChange(v)}
         style={({ pressed }) => ({
           flex: 1,
@@ -70,26 +41,27 @@ function YesNo({ value, onChange, label }: {
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: radius.card,
-          backgroundColor: on ? palette.ink : pressed ? palette.line : palette.slateWash,
+          backgroundColor: on ? t.ink : pressed ? t.line : t.slateWash,
         })}
       >
         <Txt kind="label" tone={on ? 'paper' : 'muted'}>{word}</Txt>
       </Pressable>
     );
   };
-  return <Row gap={2} style={{ marginTop: sp(3) }}>{[opt(true, 'Yes'), opt(false, 'No')]}</Row>;
+  return <Row gap={2} style={{ marginTop: sp(3) }}>{[opt(true, copy.yes), opt(false, copy.no)]}</Row>;
 }
 
 function GrantCard({ g, value, onChange }: {
   g: (typeof GRANTS)[number]; value: boolean | null; onChange: (v: boolean) => void;
 }) {
+  const t = useTheme();
   const [open, setOpen] = useState(false);
   return (
     <Card style={{ marginTop: sp(3) }}>
       <Row gap={3}>
         {/* Ink, not a hue: chrome carries no colour, and none of the three
             grants is more or less alarming than another. */}
-        <IconBadge name={g.icon} color={palette.ink} size={34} />
+        <IconBadge name={g.icon} color={t.ink} size={34} />
         <View style={{ flex: 1 }}>
           <Txt kind="label">{g.title}</Txt>
           <Txt kind="caption" style={{ marginTop: 1 }}>{g.line}</Txt>
@@ -98,18 +70,18 @@ function GrantCard({ g, value, onChange }: {
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={`How ${g.title} works`}
+        accessibilityLabel={copy.howItWorksA11y(g.title)}
         onPress={() => setOpen((v) => !v)}
         style={{ marginTop: sp(1), alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' }}
       >
         <Row gap={1}>
-          <Icon name={open ? 'chevron.down' : 'chevron.right'} size={11} color={palette.ink} />
-          <Txt kind="tag">How it works</Txt>
+          <Icon name={open ? 'chevron.down' : 'chevron.right'} size={11} color={t.ink} />
+          <Txt kind="tag">{copy.howItWorks}</Txt>
         </Row>
       </Pressable>
       {open && (
         <View style={{ marginTop: sp(2.5) }}>
-          <Rule weight="hair" color={palette.line} />
+          <Rule weight="hair" color={t.line} />
           {g.detail.map((para) => (
             <Txt key={para.slice(0, 24)} kind="caption" style={{ marginTop: sp(2.5) }}>
               {para}
@@ -157,21 +129,21 @@ export default function Consent() {
     <Screen
       native
       wash
-      floatingBar={<Btn label="Agree and continue" disabled={!ready} onPress={agree} />}
+      floatingBar={<Btn label={copy.agree} disabled={!ready} onPress={agree} />}
     >
       <Stagger>
         <View>
-          <Marquee first title="Permissions" />
+          <Marquee first title={copy.title} />
           <Txt kind="body">
-            She can change these anytime in Settings.
+            {copy.intro}
           </Txt>
         </View>
 
         <Field
-          label="Her name"
+          label={copy.herName}
           value={resident}
           onChangeText={setResident}
-          placeholder="Her name"
+          placeholder={copy.herNamePlaceholder}
           style={{ marginTop: sp(5) }}
         />
 
@@ -188,19 +160,19 @@ export default function Consent() {
 
         <View style={{ marginTop: sp(6) }}>
           <Rule weight="heavy" />
-          <Txt kind="label" style={{ marginTop: sp(3) }}>Who is agreeing</Txt>
+          <Txt kind="label" style={{ marginTop: sp(3) }}>{copy.whoIsAgreeing}</Txt>
           <Field
-            label="Your name"
+            label={copy.yourName}
             value={signer}
             onChangeText={setSigner}
-            placeholder="Full name"
+            placeholder={copy.yourNamePlaceholder}
             style={{ marginTop: sp(3) }}
           />
           <Field
-            label="Relationship"
+            label={copy.relationship}
             value={relationship}
             onChangeText={setRelationship}
-            placeholder="Daughter, son, carer"
+            placeholder={copy.relationshipPlaceholder}
             style={{ marginTop: sp(3) }}
           />
         </View>
@@ -210,10 +182,10 @@ export default function Consent() {
         <Entrance index={5}>
           <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>{/* voice-ok */}
             {!answeredAll
-              ? 'Answer all three.'
+              ? copy.needAnswers
               : !anyYes
-                ? 'Say yes to at least one.'
-                : 'Add her name, your name, and your relationship.'}
+                ? copy.needOneYes
+                : copy.needNames}
           </Txt>
         </Entrance>
       )}

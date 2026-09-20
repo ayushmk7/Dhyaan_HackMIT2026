@@ -11,9 +11,12 @@ import { Pressable, View } from 'react-native';
 import { Btn, DataLabel, Entrance, Mark, Rule, Screen, Txt } from '@/components';
 import { seedDemoResident } from '@/lib/api';
 import { USE_MOCKS } from '@/lib/config';
+import { onboard } from '@/lib/copy/staff';
 import { SEEDED_FACTS } from '@/lib/mock/camera';
 import { useSession } from '@/store/session';
 import { sp } from '@/theme/tokens';
+
+const copy = onboard.welcome;
 
 export default function Welcome() {
   const { setRole, seedDemoSession } = useSession();
@@ -40,34 +43,34 @@ export default function Welcome() {
 
         <Entrance index={1} style={{ alignSelf: 'stretch', marginTop: sp(8) }}>
           <Txt kind="hero" style={{ textAlign: 'center' }} accessibilityRole="header">
-            Dhyaan
+            {copy.title}
           </Txt>
           <Rule style={{ marginTop: sp(3), marginHorizontal: sp(10) }} />
           <Txt kind="body" style={{ textAlign: 'center', marginTop: sp(3) }}>
-            Keeps an eye on your mom and calls you if something’s wrong.
+            {copy.tagline}
           </Txt>
         </Entrance>
       </View>
 
       <Entrance index={2}>
-        <Btn label="Get started" onPress={() => router.push('/onboard/consent')} />
+        <Btn label={copy.getStarted} onPress={() => router.push('/onboard/consent')} />
         {/* The Pressable owns both gestures so the long-press dev affordance
             (staff demo) survives; the link inside it is the visible control
             and never the responder. */}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Explore the demo. Long-press for the staff demo."
+          accessibilityLabel={copy.exploreDemoA11y}
           onPress={familyDemo}
           onLongPress={staffDemo}
           style={{ paddingVertical: sp(3), alignItems: 'center', gap: sp(1.5) }}
         >
           <View pointerEvents="none" style={{ alignItems: 'center', gap: sp(1.5) }}>
-            <Btn kind="link" label="Explore the demo" onPress={familyDemo} style={{ alignSelf: 'center' }} />
-            <DataLabel value={USE_MOCKS ? 'sample data' : 'live backend'}>Source</DataLabel>
+            <Btn kind="link" label={copy.exploreDemo} onPress={familyDemo} style={{ alignSelf: 'center' }} />
+            <DataLabel value={USE_MOCKS ? copy.sourceSample : copy.sourceLive}>{copy.source}</DataLabel>
           </View>
         </Pressable>
         <Txt kind="caption" tone="muted" style={{ textAlign: 'center' }}>{/* voice-ok */}
-          Dhyaan is not a medical device and never dials 911.
+          {copy.disclaimer}
         </Txt>
       </Entrance>
     </Screen>

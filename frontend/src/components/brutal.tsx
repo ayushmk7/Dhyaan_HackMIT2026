@@ -1,17 +1,22 @@
 // Brutalism, as seasoning. Three pieces: the hard rule, the heading that sits
-// on it, and the machine micro-label. Nothing here imports from ui.tsx — the
+// on it, and the machine micro-label. Nothing here imports from ui.tsx; the
 // dependency runs one way, ui -> brutal, so SectionTitle can reuse Marquee.
 //
 // The standing rule: brutalism marks MACHINE origin. It never touches the
-// reassuring human sentences — no ALL-CAPS eyebrows over prose, ever.
+// reassuring human sentences: no ALL-CAPS eyebrows over prose, ever.
 //
-// Every piece reads the Surface it sits on: inside a <Slab> or a night Screen
-// the rule, the heading and the label pick their own colours. `night` and
-// `color`/`tone` props still win when given.
+// Every piece reads the Surface it sits on and the scheme it is drawn in:
+// inside a <Slab>, on a night Screen or in dark mode the rule, the heading and
+// the label pick their own colours. `night` and `color`/`tone` props still win.
 import React from 'react';
 import { StyleSheet, View, ViewStyle } from 'react-native';
-import { palette, rule, sp } from '@/theme/tokens';
-import { isDarkSurface, surfaceColors, Txt, useSurface } from './text';
+import { useTheme } from '@/theme/theme';
+import { rule, sp } from '@/theme/tokens';
+import { Txt, useSurfaceColors } from './text';
+
+/** `night` prop wins; otherwise the surface decides. */
+const useColors = (night: boolean | undefined) =>
+  useSurfaceColors(night === undefined ? undefined : night ? 'night' : 'paper');
 
 // ---- Rule ---------------------------------------------------------------------
 
@@ -19,8 +24,7 @@ import { isDarkSurface, surfaceColors, Txt, useSurface } from './text';
 export function Rule({
   weight = 'ink', night, color, style,
 }: { weight?: keyof typeof rule; night?: boolean; color?: string; style?: ViewStyle }) {
-  const surface = useSurface();
-  const c = surfaceColors(night === undefined ? surface : night ? 'night' : 'paper');
+  const c = useColors(night);
   const h = weight === 'hair' ? StyleSheet.hairlineWidth : rule[weight];
   return (
     <View
@@ -42,7 +46,7 @@ export function Marquee({
   title, meta, right, night, first = false, style,
 }: {
   title: React.ReactNode;
-  /** Machine metadata only — a count, a timestamp, a source. Uppercased. */
+  /** Machine metadata only: a count, a timestamp, a source. Uppercased. */
   meta?: string;
   /** Anything richer than `meta` (a button, a chip). Wins over `meta`. */
   right?: React.ReactNode;
@@ -51,12 +55,11 @@ export function Marquee({
   first?: boolean;
   style?: ViewStyle;
 }) {
-  const surface = useSurface();
-  const dark = night ?? isDarkSurface(surface);
+  const c = useColors(night);
   return (
     <View style={[{ marginTop: first ? 0 : sp(7), marginBottom: sp(2.5) }, style]}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: sp(3) }}>
-        <Txt kind="heading" tone={night === undefined ? undefined : dark ? 'nightInk' : 'ink'} style={{ flexShrink: 1 }}>
+        <Txt kind="heading" style={[{ flexShrink: 1 }, night === undefined ? {} : { color: c.ink }]}>
           {title}
         </Txt>
         {right ?? (!!meta && <DataLabel night={night}>{meta}</DataLabel>)}
@@ -84,8 +87,7 @@ export function DataLabel({
   night?: boolean;
   style?: ViewStyle;
 }) {
-  const surface = useSurface();
-  const c = surfaceColors(night === undefined ? surface : night ? 'night' : 'paper');
+  const c = useColors(night);
   return (
     <View style={[{ flexDirection: 'row', alignItems: 'baseline', gap: sp(1.5) }, style]}>
       <Txt kind="micro" style={{ color: tone ?? c.label }}>
@@ -98,13 +100,16 @@ export function DataLabel({
 
 // ---- Ticks --------------------------------------------------------------------
 // Corner tick marks: the camera console's "this is a machine looking" frame.
+// The camera is Dhyaan pointing, so the ticks default to the accent.
 // ponytail: four absolutely-positioned L's, not a border image. Ceiling: they
 // do not follow a non-rectangular crop, and nothing here has one.
 
 export function CornerTicks({
-  color = palette.amber, size = 14, inset = 0, weight = rule.ink,
+  color, size = 14, inset = 0, weight = rule.ink,
 }: { color?: string; size?: number; inset?: number; weight?: number }) {
-  const arm = (s: ViewStyle) => <View style={[{ position: 'absolute', backgroundColor: color }, s]} />;
+  const t = useTheme();
+  const fill = color ?? t.accent;
+  const arm = (s: ViewStyle) => <View style={[{ position: 'absolute', backgroundColor: fill }, s]} />;
   return (
     <View pointerEvents="none" style={{ position: 'absolute', top: inset, left: inset, right: inset, bottom: inset }}>
       {arm({ top: 0, left: 0, width: size, height: weight })}

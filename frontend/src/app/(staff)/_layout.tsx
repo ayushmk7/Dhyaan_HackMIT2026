@@ -9,9 +9,10 @@
 import { Tabs } from 'expo-router/js-tabs';
 import React from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { reason, shell } from '@/lib/copy/staff';
 import { ago } from '@/lib/format';
 import type { Alert, Resident } from '@/lib/types';
-import { palette } from '@/theme/tokens';
+import { useTheme } from '@/theme';
 import type { ResidentState } from '@/theme/tokens';
 // The floating glass bar and its inset provider are shared with the family
 // shell. They live in that layout file, not in src/components, only because
@@ -56,30 +57,20 @@ export function deriveState(
   return server;
 }
 
-const ALERT_WORD: Record<string, string> = {
-  fall: 'Possible fall',
-  bathroom: 'Long bathroom stay',
-  sos: 'Help button pressed',
-  inactivity: 'Unusually still',
-  baseline_deviation: 'Change in routine',
-};
-
 /**
  * The one-line reason a row is where it is — derived from what the wire
  * actually carries (an open alert's kind and clock, the age of `last_seen`).
  * Returns null when there is no real reason: a row with nothing to say says
  * nothing. `attention_reason` is mock-only (`types.ts`), so it is used when
- * present and never stood in for.
+ * present and never stood in for. The words are `copy/staff.ts`'s `reason`.
  */
 export function triageReason(
   r: Resident, state: ResidentState, alert: Alert | undefined,
 ): string | null {
-  if (alert) return `${ALERT_WORD[alert.kind] ?? 'Alert'}, opened ${ago(alert.opened_at)}`;
-  if (state === 'alerting') return 'An alert is open for this resident';
+  if (alert) return reason.alertOpened(alert.kind, ago(alert.opened_at));
+  if (state === 'alerting') return reason.alertOpen;
   if (state === 'offline') {
-    return r.last_seen
-      ? `No signal from the band since ${ago(r.last_seen)}`
-      : 'The band has never checked in';
+    return r.last_seen ? reason.noSignalSince(ago(r.last_seen)) : reason.neverCheckedIn;
   }
   return r.attention_reason ?? null;
 }
@@ -88,6 +79,8 @@ export const pad2 = (n: number) => String(n).padStart(2, '0');
 
 export default function StaffLayout() {
   const insets = useSafeAreaInsets();
+  const t = useTheme();
+  const tabs = shell.staffTabs;
   return (
     <TabBarInsets>
       <Tabs
@@ -102,12 +95,12 @@ export default function StaffLayout() {
         )}
         screenOptions={{
           headerShown: false,
-          sceneStyle: { backgroundColor: palette.paper },
+          sceneStyle: { backgroundColor: t.paper },
         }}
       >
-        <Tabs.Screen name="triage" options={{ title: 'Triage', tabBarIcon: glyph('list.bullet') }} />
-        <Tabs.Screen name="floor" options={{ title: 'Floor', tabBarIcon: glyph('square.grid.2x2') }} />
-        <Tabs.Screen name="rounds" options={{ title: 'Rounds', tabBarIcon: glyph('moon.stars') }} />
+        <Tabs.Screen name="triage" options={{ title: tabs.triage, tabBarIcon: glyph('list.bullet') }} />
+        <Tabs.Screen name="floor" options={{ title: tabs.floor, tabBarIcon: glyph('square.grid.2x2') }} />
+        <Tabs.Screen name="rounds" options={{ title: tabs.rounds, tabBarIcon: glyph('moon.stars') }} />
       </Tabs>
     </TabBarInsets>
   );

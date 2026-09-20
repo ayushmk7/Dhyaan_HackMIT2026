@@ -3,7 +3,7 @@
 // SAW from what the family TOLD it from what it has INFERRED (§6.5). That is
 // `KindTag`, and every citation and timeline row goes through it.
 //
-// Nothing in this file can render a room name — none of these components
+// Nothing in this file can render a room name: none of these components
 // takes a zone, and the presence sentence arrives room-free from the server
 // (§5.2 / D-001). That is structural, not a styling choice.
 import React, { useEffect, useState } from 'react';
@@ -12,16 +12,20 @@ import { Icon } from '@/components/icon';
 import { Row, Txt } from '@/components/ui';
 import { useReducedMotion } from '@/components/entrance';
 import type { ChatCitation, Fact, SourceKind } from '@/lib/types';
-import { cardShadow, palette, radius, sp, type } from '@/theme/tokens';
+import { useTheme } from '@/theme/theme';
+import { cardShadow, radius, sp, type } from '@/theme/tokens';
+import { useSurfaceColors } from './text';
 
 // ---- KindTag -----------------------------------------------------------------
 
-const KIND: Record<SourceKind, { word: string; fg: string; wash: string; symbol: string }> = {
-  // Amber is the camera's colour — "observed just now". It is not a status and
-  // never means alert; rust still owns that alone.
-  observed: { word: 'Dhyaan saw', fg: palette.amber, wash: palette.amberWash, symbol: 'eye' },
-  told: { word: 'You told us', fg: palette.slate, wash: palette.slateWash, symbol: 'text.quote' },
-  pattern: { word: 'From her pattern', fg: palette.moss, wash: palette.mossWash, symbol: 'chart.bar' },
+// Three sources, three FORMS. Observed is the accent on a pointed fill: the
+// camera is Dhyaan pointing. Told is ink on the quiet wash: your own words,
+// plain. Pattern is an outline with no fill: an inference, held lightly. The
+// word does the real work; the form only reinforces it.
+const KIND: Record<SourceKind, { word: string; symbol: string; form: 'accent' | 'plain' | 'outline' }> = {
+  observed: { word: 'Dhyaan saw', symbol: 'eye', form: 'accent' },
+  told: { word: 'You told us', symbol: 'text.quote', form: 'plain' },
+  pattern: { word: 'From her pattern', symbol: 'chart.bar', form: 'outline' },
 };
 
 const asKind = (k: string): SourceKind =>
@@ -29,16 +33,22 @@ const asKind = (k: string): SourceKind =>
 
 export function KindTag({ kind, detail }: { kind: string; detail?: string }) {
   const k = KIND[asKind(kind)];
+  const c = useSurfaceColors();
+  const fg = k.form === 'accent' ? c.accent : k.form === 'plain' ? c.ink : c.muted;
+  const plate: ViewStyle =
+    k.form === 'accent' ? { backgroundColor: c.accentWash }
+    : k.form === 'plain' ? { backgroundColor: c.wash }
+    : { borderWidth: 1, borderColor: c.line, paddingVertical: sp(1) - 1, paddingHorizontal: sp(2) - 1 };
   return (
     <View
-      style={[styles.tag, { backgroundColor: k.wash }]}
-      // The word carries the meaning; the colour only reinforces it, so this
+      style={[styles.tag, plate]}
+      // The word carries the meaning; the form only reinforces it, so this
       // still reads correctly without colour vision.
       accessibilityLabel={detail ? `${k.word}, ${detail}` : k.word}
     >
-      <Icon name={k.symbol} size={11} color={k.fg} />
-      <Txt kind="label" style={{ color: k.fg }}>{k.word}</Txt>
-      {!!detail && <Txt kind="caption" style={{ color: k.fg, opacity: 0.8 }}>· {detail}</Txt>}
+      <Icon name={k.symbol} size={11} color={fg} />
+      <Txt kind="label" style={{ color: fg }}>{k.word}</Txt>
+      {!!detail && <Txt kind="caption" style={{ color: fg, opacity: 0.8 }}>· {detail}</Txt>}
     </View>
   );
 }
@@ -54,9 +64,16 @@ const detailOf = (label: string) => {
 export function CitationChip({ citation, onPress }: {
   citation: ChatCitation; onPress?: () => void;
 }) {
+  const t = useTheme();
   const tappable = !!onPress && citation.event_ids.length > 0;
   const body = (
-    <View style={styles.citation}>
+    <View
+      style={[
+        styles.citation,
+        { backgroundColor: t.raised },
+        t.isDark ? { borderWidth: 1, borderColor: t.line } : cardShadow,
+      ]}
+    >
       <KindTag kind={citation.kind} detail={detailOf(citation.label)} />
       {!!citation.text && (
         <Txt kind="caption" tone="muted" numberOfLines={2} style={{ marginTop: sp(1.5) }}>
@@ -82,7 +99,7 @@ export function CitationChip({ citation, onPress }: {
 
 /**
  * The one sentence per screen, at 40px, fading in whenever presence changes.
- * `sentence` is empty when nothing has been noticed yet — that is the state
+ * `sentence` is empty when nothing has been noticed yet. That is the state
  * the demo opens in, so `emptySentence` is a required prop, not an
  * afterthought.
  *
@@ -93,6 +110,7 @@ export function CitationChip({ citation, onPress }: {
  */
 function HeroLine({ text }: { text: string }) {
   const reduced = useReducedMotion();
+  const c = useSurfaceColors();
   const [progress] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
@@ -109,7 +127,7 @@ function HeroLine({ text }: { text: string }) {
       // sentence changes under the camera.
       accessibilityRole="header"
       accessibilityLiveRegion="polite"
-      style={[type.hero as TextStyle, { color: palette.ink, opacity: reduced ? 1 : progress }]}
+      style={[type.hero as TextStyle, { color: c.ink, opacity: reduced ? 1 : progress }]}
     >
       {text}
     </Animated.Text>
@@ -134,6 +152,7 @@ export function PresenceHero({ sentence, emptySentence, sub, style }: {
 
 /** One thing the family told Dhyaan. Tapping it supersedes, never overwrites. */
 export function FactRow({ fact, onPress }: { fact: Fact; onPress?: () => void }) {
+  const c = useSurfaceColors();
   const label = fact.key.replace(/_/g, ' ');
   return (
     <Pressable
@@ -149,7 +168,7 @@ export function FactRow({ fact, onPress }: { fact: Fact; onPress?: () => void })
       </View>
       {!!onPress && (
         <Row gap={1}>
-          <Icon name="pencil" size={13} color={palette.inkMuted} />
+          <Icon name="pencil" size={13} color={c.muted} />
         </Row>
       )}
     </Pressable>
@@ -167,13 +186,11 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   // A citation is a small raised plate, not a wireframe box. Cards in this app
-  // are separated by elevation; a border around one is the look the whole
-  // design system exists to avoid.
+  // are separated by elevation in light mode and by a hairline edge in dark,
+  // where a shadow on black is invisible.
   citation: {
-    backgroundColor: palette.raised,
     borderRadius: radius.tile,
     padding: sp(2.5),
-    ...cardShadow,
   },
   fact: {
     flexDirection: 'row',

@@ -1,17 +1,22 @@
 // Her care file — the paper folder, turned into action (Dropbox: files → action).
 // Paste or photograph a care document; medications, appointments, and the
 // emergency card come out the other side and show up where they matter.
+//
+// Every sentence this screen says lives in lib/copy/family.ts under `carefile`.
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Linking, View } from 'react-native';
 import { Btn, Card, ErrorState, Field, Row, RowGroup, Screen, SectionTitle, Txt } from '@/components';
+import { family } from '@/lib/copy/family';
 import { EXAMPLE_DISCHARGE } from '@/lib/example-docs';
 import { ago } from '@/lib/format';
 import { useContacts } from '@/lib/hooks';
 import { useCareFile } from '@/store/carefile';
 import { useSession } from '@/store/session';
 import { sp } from '@/theme/tokens';
+
+const copy = family.carefile;
 
 export default function CareFileScreen() {
   const file = useCareFile();
@@ -34,7 +39,7 @@ export default function CareFileScreen() {
   useEffect(() => {
     if (demo && !file.sources.length && !file.busy) {
       file.addDocument({ text: EXAMPLE_DISCHARGE }).then((r) => {
-        if ('added' in r) setNote({ kind: 'ok', text: `Added: ${r.added}.` });
+        if ('added' in r) setNote({ kind: 'ok', text: copy.added(r.added) });
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -42,7 +47,7 @@ export default function CareFileScreen() {
 
   const finish = (result: { added: string } | { error: string }) => {
     if ('added' in result) {
-      setNote({ kind: 'ok', text: `Added: ${result.added}.` });
+      setNote({ kind: 'ok', text: copy.added(result.added) });
       setDraft('');
       setAdding(false);
     } else {
@@ -81,29 +86,25 @@ export default function CareFileScreen() {
         <View style={{ marginTop: sp(2) }}>
           {empty && (
             <View style={{ marginBottom: sp(3) }}>
-              <Txt kind="body">
-                Paste or photograph a care document.
-              </Txt>
-              <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{/* voice-ok */}
-                What it finds stays on this phone until the app is closed. It is not sent to her home hub.
-              </Txt>
+              <Txt kind="body">{copy.intro}</Txt>
+              <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>{copy.introNote}</Txt>
             </View>
           )}
           {/* The sentence above names the field, so it carries no label of its own. */}
           <Field
             value={draft}
             onChangeText={setDraft}
-            placeholder="Paste a document here"
+            placeholder={copy.placeholder}
             multiline
             minHeight={120}
             maxHeight={220}
           />
           <View style={{ gap: sp(2), marginTop: sp(3) }}>
-            <Btn label="Read it" onPress={addText} busy={file.busy} disabled={!draft.trim()} />
-            <Btn label="Add a photo" kind="quiet" onPress={addPhoto} busy={file.busy} />
+            <Btn label={copy.readIt} onPress={addText} busy={file.busy} disabled={!draft.trim()} />
+            <Btn label={copy.addPhoto} kind="quiet" onPress={addPhoto} busy={file.busy} />
             {!draft && (
               <Btn
-                label="Try an example"
+                label={copy.tryExample}
                 kind="quiet"
                 onPress={() => setDraft(EXAMPLE_DISCHARGE)}
               />
@@ -121,10 +122,11 @@ export default function CareFileScreen() {
 
       {file.medications.length > 0 && (
         <>
-          <SectionTitle>Medications</SectionTitle>
+          <SectionTitle>{copy.medications}</SectionTitle>
           <RowGroup>
             {file.medications.map((m) => (
               <Row key={m.name} style={{ justifyContent: 'space-between', paddingVertical: sp(2.5) }}>
+                {/* Name and dose are the document's own values, joined, not a sentence. */}
                 <Txt kind="label">{m.name}{m.dose ? ` · ${m.dose}` : ''}</Txt>
                 <Txt kind="caption" tone="muted">{m.timing ?? ''}</Txt>
               </Row>
@@ -135,7 +137,7 @@ export default function CareFileScreen() {
 
       {file.appointments.length > 0 && (
         <>
-          <SectionTitle>Coming up</SectionTitle>
+          <SectionTitle>{copy.comingUp}</SectionTitle>
           {file.appointments.map((a) => (
             <Card key={`${a.title}${a.when}`} style={{ marginBottom: sp(2) }}>
               <Txt kind="label">{a.title}</Txt>
@@ -145,11 +147,11 @@ export default function CareFileScreen() {
               {!!driver && (
                 <Btn
                   kind="link"
-                  label={`Text ${driver.name.split(' ')[0]} about driving her`}
+                  label={copy.textAboutDriving(driver.name)}
                   onPress={() =>
                     Linking.openURL(
                       `sms:${driver.phone_e164}&body=${encodeURIComponent(
-                        `${residentName} has ${a.title} on ${a.when}. Can you drive her?`,
+                        copy.drivingMessage(residentName, a.title, a.when),
                       )}`,
                     )
                   }
@@ -165,10 +167,10 @@ export default function CareFileScreen() {
         <>
           {/* The heading carries the meaning; the plate stays white. Ochre is
               a resident state, not a mood for a card. */}
-          <SectionTitle>In an emergency</SectionTitle>
+          <SectionTitle>{copy.inEmergency}</SectionTitle>
           <Card>
             {file.emergency.allergies.length > 0 && (
-              <Txt kind="body">Allergic to {file.emergency.allergies.join(', ')}</Txt>
+              <Txt kind="body">{copy.allergicTo(file.emergency.allergies)}</Txt>
             )}
             {file.emergency.conditions.length > 0 && (
               <Txt kind="body" style={{ marginTop: sp(1) }}>
@@ -187,17 +189,17 @@ export default function CareFileScreen() {
 
       {file.sources.length > 0 && (
         <>
-          <SectionTitle>Documents read</SectionTitle>
+          <SectionTitle>{copy.documentsRead}</SectionTitle>
           {file.sources.map((s) => (
             <Row key={s.id} style={{ paddingVertical: sp(1.5), justifyContent: 'space-between' }}>
-              <Txt kind="caption" tone="muted" style={{ flex: 1, paddingRight: sp(2) }}>{/* voice-ok */}
-                {s.kind === 'photo' ? 'Photo' : 'Pasted'} · {s.summary}
+              <Txt kind="caption" tone="muted" style={{ flex: 1, paddingRight: sp(2) }}>
+                {copy.source(s.kind, s.summary)}
               </Txt>
               <Txt kind="caption" tone="muted">{ago(s.added_at)}</Txt>
             </Row>
           ))}
           {!adding && (
-            <Btn label="Add another document" kind="quiet" onPress={() => setAdding(true)} style={{ marginTop: sp(3) }} />
+            <Btn label={copy.addAnother} kind="quiet" onPress={() => setAdding(true)} style={{ marginTop: sp(3) }} />
           )}
         </>
       )}

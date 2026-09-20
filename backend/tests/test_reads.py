@@ -110,7 +110,21 @@ async def test_summaries_unknown_resident_404s(client, resident):
 # ---------------------------------------------------------------------------
 
 async def test_location_history_segments_and_open_final_runs_to_now(client, resident, db):
-    now = datetime.now(timezone.utc)
+    # Anchor to the RESIDENT's local day, not UTC's. The events used to be
+    # placed at `utcnow() - 30min` while the query asked for "today in New
+    # York", so for the ~30 minutes either side of local midnight the two
+    # disagreed about which day it was and the endpoint correctly returned
+    # nothing. A test that only fails between 23:30 and 00:30 is worse than a
+    # test that fails always: it passes CI and breaks during a late demo.
+    tz = ZoneInfo("America/New_York")
+    local_now = datetime.now(tz)
+    # Keep the whole 30-minute window inside one local day, and in the PAST:
+    # the endpoint closes an open final segment at "now", so events dated into
+    # the future produce a zero-length segment. Just before local midnight,
+    # slide the scenario back an hour into yesterday evening.
+    if local_now.hour == 0 and local_now.minute < 35:
+        local_now -= timedelta(hours=1)
+    now = local_now.astimezone(timezone.utc)
     t_enter_kitchen = now - timedelta(minutes=30)
     t_exit_kitchen = now - timedelta(minutes=20)
     t_enter_hallway = t_exit_kitchen + timedelta(seconds=1)
@@ -131,8 +145,7 @@ async def test_location_history_segments_and_open_final_runs_to_now(client, resi
         confidence=0.8, payload={"from_zone": "kitchen"},
     )
 
-    tz = ZoneInfo("America/New_York")
-    date_local = datetime.now(tz).date().isoformat()
+    date_local = t_enter_kitchen.astimezone(tz).date().isoformat()
     r = await client.get(
         f"/v1/residents/{resident}/location/history?date={date_local}", headers=APP_HEADERS,
     )

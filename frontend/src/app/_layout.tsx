@@ -13,7 +13,7 @@ import { AppState } from 'react-native';
 import { api } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
 import { useLive } from '@/store/live';
-import { palette } from '@/theme/tokens';
+import { useTheme } from '@/theme';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -53,6 +53,9 @@ export default function RootLayout() {
     Fraunces_700Bold, Fraunces_900Black,
   });
   const connect = useLive((s) => s.connect);
+  // Resolved for the current colour scheme; called before the fonts early
+  // return so the hook order never changes.
+  const t = useTheme();
 
   useEffect(() => { connect(); }, [connect]);
 
@@ -92,12 +95,14 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <StatusBar style="dark" />
+      {/* Follows the scheme the theme resolved, so a forced <ThemeProvider>
+          is honoured too: light glyphs on the night ground, dark on paper. */}
+      <StatusBar style={t.isDark ? 'light' : 'dark'} />
       <AlertWatcher />
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: palette.paper },
+          contentStyle: { backgroundColor: t.paper },
         }}
       >
         <Stack.Screen

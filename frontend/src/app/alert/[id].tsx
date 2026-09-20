@@ -12,6 +12,10 @@
 // Everything white sits on vermilion, and vermilion means alarm and nothing
 // else in this app. The hard cream rules and the mono state readout are the
 // counterweight: under the noise, this is a machine you can audit.
+//
+// Every sentence this screen says lives in lib/copy/family.ts under `alert`,
+// including the two state-to-sentence tables (how it closed, why she didn't
+// answer), which are copy with a switch in front of them.
 import * as Haptics from 'expo-haptics';
 import { useAudioPlayer } from 'expo-audio';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -22,6 +26,7 @@ import {
 } from '@/components';
 import { CancelCountdownRing, ElapsedStat, RingingPulse } from '@/components/alert-extras';
 import { api } from '@/lib/api';
+import { family } from '@/lib/copy/family';
 import { residentNumber, timeOf } from '@/lib/format';
 import { useAlert, useContacts, useResident } from '@/lib/hooks';
 import { emergencyLine, useCareFile } from '@/store/carefile';
@@ -29,13 +34,7 @@ import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
 import { sp } from '@/theme/tokens';
 
-const kindWord: Record<string, string> = {
-  fall: 'Possible fall',
-  bathroom: 'Long bathroom stay',
-  sos: 'Help button pressed',
-  inactivity: 'Unusually still',
-  baseline_deviation: 'Change in routine',
-};
+const copy = family.alert;
 
 type Phase = 'suspected' | 'ringing_resident' | 'no_answer' | 'contacts' | 'final' | 'closed';
 
@@ -61,44 +60,6 @@ const PHASE_BY_STATE: Record<string, Phase> = {
   exhausted: 'final',
 };
 
-/**
- * How it ended, from the one field that says so. The FSM closes an alert five
- * different ways and only one of them means a person picked up: CANCELLED is
- * her button, RESOLVED_OK is her voice, ACKNOWLEDGED is a family member,
- * EXHAUSTED is nobody at all. One sentence for each, because "this alert has
- * been answered" over an EXHAUSTED alert is the wrong thing to be soothing
- * about. Lower-cased so the mock's step names and the real FSM's states match.
- */
-function closedSentence(
-  state: string, resolution: string | null, who: string | undefined, name: string,
-): string {
-  switch (state) {
-    case 'cancelled':
-      return resolution === 'false_positive' && !who
-        ? `${name} cancelled it from her band. Nobody was called.`
-        : `Cancelled${who ? ` by ${who}` : ''}. Nobody was called.`;
-    case 'resolved_ok':
-    case 'resolved':
-      return `${name} answered and said she is all right. Nobody else was called.`;
-    case 'exhausted':
-      return `Nobody answered. Dhyaan has run out of people to call.`;
-    case 'acknowledged':
-      return who ? `${who} is on it. The ladder has stopped.` : 'Someone has got her. The ladder has stopped.';
-    case 'manually_resolved':
-      switch (resolution) {
-        case 'ok': return 'Resolved. Someone checked on her.';
-        case 'fell_ok': return `${name} fell but is all right.`;
-        case 'ems': return 'Paramedics were called. The ladder has stopped.';
-        case 'false_positive': return 'Marked as a false alarm. Nothing else will happen.';
-        default: return 'Closed. The ladder has stopped.';
-      }
-    default:
-      return resolution === 'false_positive'
-        ? 'Marked as a false alarm. Nothing else will happen.'
-        : 'This alert has been closed. The ladder has stopped.';
-  }
-}
-
 /** A person acted, so the seconds-until-a-human-was-told line is true. */
 const humanActed = (state: string) => state === 'acknowledged' || state === 'manually_resolved';
 
@@ -111,22 +72,10 @@ const humanActed = (state: string) => state === 'acknowledged' || state === 'man
 const CANCEL_WINDOW_S = 30;
 const inCancelWindow = (state: string) => state === 'suspected' || state === 'local_cancel';
 
-/** The line for a phase the FSM expresses several different ways. */
-const noAnswerLine = (state: string, name: string): string => {
-  switch (state) {
-    case 'retry_resident':
-      return `${name} didn’t pick up. Dhyaan is trying her once more.`;
-    case 'voicemail':
-      return `${name} didn’t pick up. Dhyaan left her a message and is calling her family next.`;
-    case 'fell_but_fine':
-      return `${name} says she fell but is all right. Dhyaan is telling her family anyway.`;
-    case 'scheduled_callback':
-      return `${name} asked Dhyaan to call back. Her family is being told too.`;
-    default:
-      return `${name} didn’t answer. Calling her family next.`;
-  }
-};
+// The emergency number is a value the button dials, not a sentence.
+const EMERGENCY_NUMBER = '911';
 
+const firstName = (full: string) => full.split(' ')[0];
 
 // Outside the component so the compiler's immutability rule doesn't apply;
 // wrapped so a sound failure never kills the takeover.
@@ -139,7 +88,7 @@ export default function AlertTakeover() {
   const { data: alert, isLoading, isError, refetch } = useAlert(id ?? '');
   const { data: contacts } = useContacts();
   const live = useLive();
-  const { role, residentName, user } = useSession();
+  const { role, residentId, residentName, user } = useSession();
   const careFile = useCareFile();
   const emsLine = emergencyLine(careFile);
   const { data: resident } = useResident(alert?.resident_id ?? '');
@@ -165,16 +114,19 @@ export default function AlertTakeover() {
   const phase: Phase =
     statePhase === 'ringing_resident' && lastStep === 'no_answer' ? 'no_answer' : statePhase;
 
+  // Her name comes from the session when the alert is about the resident this
+  // phone is signed in for, and from the roster otherwise (a staff phone sees
+  // every resident's alerts). It used to compare against a demo id.
   const name =
-    alert?.resident_id === 'res_eleanor'
+    alert?.resident_id === residentId
       ? residentName
-      : resident?.display_name?.split(' ')[0] ?? 'the resident';
-  const contact1 = contacts?.[0]?.name.split(' ')[0] ?? 'her family';
-  const contact2 = contacts?.[1]?.name.split(' ')[0];
+      : resident?.display_name ? firstName(resident.display_name) : copy.unknownResident;
+  const contact1 = contacts?.[0] ? firstName(contacts[0].name) : copy.unknownFamily;
+  const contact2 = contacts?.[1] ? firstName(contacts[1].name) : undefined;
   const herPhone = residentNumber(resident, contacts, name);
   // Who is actually tapping the button. `acked_by` used to be hard-coded to a
   // demo name on each branch.
-  const actor = user?.name?.trim() || (role === 'staff' ? 'Staff' : 'Family');
+  const actor = user?.name?.trim() || (role === 'staff' ? copy.actorStaff : copy.actorFamily);
 
   const hasAlert = !!alert;
 
@@ -206,17 +158,21 @@ export default function AlertTakeover() {
     } catch {
       // ponytail: someone else may have already closed this alert — a refetch
       // picks that up (poll below) instead of leaving the button silently dead.
-      setActionError('That didn’t go through. Someone else may already be on it.');
+      setActionError(copy.actionError);
       refetch();
     }
   };
+
+  const callHer = () => herPhone && Linking.openURL(`tel:${herPhone}`);
+  const call911 = () => Linking.openURL(`tel:${EMERGENCY_NUMBER}`);
+  const goHome = () => router.replace('/');
 
   // A flaky LAN hop, not "nobody needs help any more" — never conflate the two.
   if (isError && !alert) {
     return (
       <Screen scroll={false} style={{ justifyContent: 'center' }}>
-        <ErrorState message="Couldn’t reach Dhyaan to load this alert." onRetry={refetch} />
-        <Btn label="Back to home" kind="quiet" onPress={() => router.replace('/')} style={{ marginTop: sp(3) }} />
+        <ErrorState message={copy.loadError} onRetry={refetch} />
+        <Btn label={copy.backHome} kind="quiet" onPress={goHome} style={{ marginTop: sp(3) }} />
       </Screen>
     );
   }
@@ -224,8 +180,8 @@ export default function AlertTakeover() {
   if (!alert && !isLoading) {
     return (
       <Screen scroll={false} style={{ justifyContent: 'center' }}>
-        <Txt kind="title">That alert has already been handled.</Txt>
-        <Btn label="Back to home" onPress={() => router.replace('/')} style={{ marginTop: sp(5) }} />
+        <Txt kind="title">{copy.alreadyHandled}</Txt>
+        <Btn label={copy.backHome} onPress={goHome} style={{ marginTop: sp(5) }} />
       </Screen>
     );
   }
@@ -235,7 +191,7 @@ export default function AlertTakeover() {
     // `acked_by` is null for every real alert (the backend takes `by` on the
     // ack and never stores it). Say what is true instead of naming "Someone".
     const who = alert.acked_by?.trim();
-    const sentence = closedNote ?? closedSentence(state, alert.resolution, who, name);
+    const sentence = closedNote ?? copy.closed(state, alert.resolution, who, name);
     // Nobody picked up. That is not an OK, and it is not over for the family:
     // the two ways to reach her stay on the screen.
     const exhausted = !closedNote && state === 'exhausted';
@@ -244,25 +200,23 @@ export default function AlertTakeover() {
         <Stagger gap={4}>
           <Txt kind="display" tone={exhausted ? 'ink' : 'ok'}>{sentence}</Txt>
           <View>
-            <Txt kind="body" tone="muted">Saved to {name}’s timeline.</Txt>
+            <Txt kind="body" tone="muted">{copy.savedToTimeline(name)}</Txt>
             {!closedNote && state === 'acknowledged' && !who && (
               <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
-                Dhyaan didn’t record who answered it.
+                {copy.noRecordOfWho}
               </Txt>
             )}
           </View>
           {exhausted && (
             <View style={{ gap: sp(2.5) }}>
               {herPhone ? (
-                <Btn label={`Call ${name}`} onPress={() => Linking.openURL(`tel:${herPhone}`)} />
+                <Btn label={copy.call(name)} onPress={callHer} />
               ) : (
-                <Txt kind="caption" tone="muted">{/* voice-ok */}
-                  Dhyaan doesn’t have a number for {name}, so it can’t hand you one to dial.
-                </Txt>
+                <Txt kind="caption" tone="muted">{copy.noNumber(name)}</Txt>
               )}
-              <Btn label="Call 911" onPress={() => Linking.openURL('tel:911')} />
-              <Txt kind="caption" tone="muted" style={{ textAlign: 'center' }}>{/* voice-ok */}
-                Opens your dialer. Dhyaan never calls 911 itself.
+              <Btn label={copy.call911} onPress={call911} />
+              <Txt kind="caption" tone="muted" style={{ textAlign: 'center' }}>
+                {copy.dialerNote}
               </Txt>
             </View>
           )}
@@ -276,7 +230,7 @@ export default function AlertTakeover() {
               <ElapsedStat openedAt={alert.opened_at} closedAt={alert.closed_at} name={name} />
             </View>
           ) : null}
-          <Btn label="Back to home" kind={exhausted ? 'quiet' : 'primary'} onPress={() => router.replace('/')} />
+          <Btn label={copy.backHome} kind={exhausted ? 'quiet' : 'primary'} onPress={goHome} />
         </Stagger>
       </Screen>
     );
@@ -292,32 +246,28 @@ export default function AlertTakeover() {
           windowS={alert?.cancel_window_s ?? CANCEL_WINDOW_S}
         />
       ) : (
-        <Txt kind="body" style={styles.betweenLine}>
-          Dhyaan is working out what to do next.
-        </Txt>
+        <Txt kind="body" style={styles.betweenLine}>{copy.workingOut}</Txt>
       );
     }
-    if (phase === 'ringing_resident') return <RingingPulse label={`Calling ${name} now…`} />;
+    if (phase === 'ringing_resident') return <RingingPulse label={copy.calling(name)} />;
     if (phase === 'no_answer') {
-      return <Txt kind="body" style={styles.betweenLine}>{noAnswerLine(state, name)}</Txt>;
+      return <Txt kind="body" style={styles.betweenLine}>{copy.noAnswer(state, name)}</Txt>;
     }
     if (phase === 'contacts') {
       return (
         <RingingPulse
           label={
             state === 'calling_contact_2' && contact2
-              ? `Calling ${contact1} and ${contact2} at the same time`
+              ? copy.callingBoth(contact1, contact2)
               : contact2
-                ? `Calling ${contact1} · ${contact2} is next if she doesn’t pick up`
-                : `Calling ${contact1}`
+                ? copy.callingThenNext(contact1, contact2)
+                : copy.callingOne(contact1)
           }
         />
       );
     }
     return (
-      <Txt kind="body" style={styles.betweenLine}>
-        Nobody has answered yet. Every contact is being told, with her address.
-      </Txt>
+      <Txt kind="body" style={styles.betweenLine}>{copy.nobodyYet}</Txt>
     );
   })();
 
@@ -328,14 +278,14 @@ export default function AlertTakeover() {
       {role === 'staff' ? (
         <Btn
           kind="inverse"
-          label="Assign to me"
-          onPress={() => act(() => api.ack(id!, actor), 'Assigned to you. The ladder has stopped.')}
+          label={copy.assignToMe}
+          onPress={() => act(() => api.ack(id!, actor), copy.assigned)}
         />
       ) : (
         <Btn
           kind="inverse"
-          label="I’ve got her"
-          onPress={() => act(() => api.ack(id!, actor), 'You’ve got her. The ladder has stopped.')}
+          label={copy.gotHer}
+          onPress={() => act(() => api.ack(id!, actor), copy.youHaveGotHer)}
         />
       )}
     </>
@@ -347,34 +297,31 @@ export default function AlertTakeover() {
           and nowhere else on this screen: it is telemetry, not a sentence. */}
       <Entrance index={0}>
         <DataLabel value={alert ? timeOf(alert.opened_at) : ''}>
-          {kindWord[alert?.kind ?? 'fall']}
+          {copy.kind[alert?.kind ?? 'fall'] ?? copy.kind.fall}
         </DataLabel>
         <Rule style={{ marginTop: sp(2) }} />
       </Entrance>
 
       <Entrance index={1}>
         <Txt kind="display" style={{ marginTop: sp(4) }}>
-          {alert?.kind === 'bathroom'
-            ? `${name} has been in the bathroom a long time.`
-            : `${name} may have fallen.`}
+          {copy.headline(alert?.kind ?? 'fall', name)}
         </Txt>
       </Entrance>
 
       <Entrance index={2}>{middle}</Entrance>
 
       <Entrance index={3}>
-        <Marquee title="What Dhyaan has done" />
+        <Marquee title={copy.whatDone} />
         {ladder.length > 0 ? (
           <LadderTimeline steps={ladder} />
         ) : (
           // No ladder history over REST (lib/http.ts sends []). Show the
           // machine's real position instead of an empty timeline.
           <Slab tone="alarm" style={{ gap: sp(2.5) }}>
-            <DataLabel value={alert?.state ?? '—'}>State</DataLabel>
-            <DataLabel value={alert ? timeOf(alert.opened_at) : '—'}>Opened</DataLabel>
+            <DataLabel value={alert?.state ?? '—'}>{copy.state}</DataLabel>
+            <DataLabel value={alert ? timeOf(alert.opened_at) : '—'}>{copy.opened}</DataLabel>
             <Txt kind="caption" style={{ opacity: 0.85, marginTop: sp(1) }}>
-              Dhyaan isn’t sending the step-by-step history for this alert. This is where it has
-              got to, and it is updating as it goes.
+              {copy.noHistory}
             </Txt>
           </Slab>
         )}
@@ -382,7 +329,7 @@ export default function AlertTakeover() {
 
       {transcript.length > 0 && (
         <Entrance index={4}>
-          <Marquee title="What the call is hearing" />
+          <Marquee title={copy.hearing} />
           {transcript.map((line, i) => (
             <Txt
               key={i}
@@ -393,7 +340,7 @@ export default function AlertTakeover() {
                   : { fontWeight: '700', marginBottom: sp(2) }
               }
             >
-              {line.speaker === 'agent' ? 'Dhyaan: ' : `${name}: `}{line.text}
+              {line.speaker === 'agent' ? copy.speakerDhyaan : copy.speakerHer(name)}{line.text}
             </Txt>
           ))}
         </Entrance>
@@ -402,36 +349,31 @@ export default function AlertTakeover() {
       {/* Beat 5 — everything that is not the one commitment. The floating bar
           below holds that, and only that. */}
       <Entrance index={5}>
-        <Marquee title="If you’d rather do it yourself" />
+        <Marquee title={copy.ratherYourself} />
         <View style={{ gap: sp(2.5) }}>
           {role === 'staff' ? (
             <>
               <Btn
                 kind="outline"
-                label="Resolved, checked on her"
-                onPress={() => act(() => api.resolve(id!, 'ok'), 'Resolved. Noted on her record.')}
+                label={copy.resolvedChecked}
+                onPress={() => act(() => api.resolve(id!, 'ok'), copy.resolvedNote)}
               />
               <Btn
                 kind="outline"
-                label="False alarm"
-                onPress={() => act(() => api.resolve(id!, 'false_positive'), 'Marked as a false alarm. Nothing else will happen.')}
+                label={copy.falseAlarm}
+                onPress={() => act(() => api.resolve(id!, 'false_positive'), copy.falseAlarmNote)}
               />
             </>
           ) : (
             <>
               {herPhone ? (
-                <Btn kind="outline" label={`Call ${name}`} onPress={() => Linking.openURL(`tel:${herPhone}`)} />
+                <Btn kind="outline" label={copy.call(name)} onPress={callHer} />
               ) : (
-                <Txt kind="caption" style={{ opacity: 0.8 }}>
-                  Dhyaan doesn’t have a number for {name} — it has her contacts, not her own line —
-                  so it can’t hand you one to dial. Dhyaan is calling her itself.
-                </Txt>
+                <Txt kind="caption" style={{ opacity: 0.8 }}>{copy.noNumberCalling(name)}</Txt>
               )}
-              <Btn kind="outline" label="Call 911" onPress={() => Linking.openURL('tel:911')} />
+              <Btn kind="outline" label={copy.call911} onPress={call911} />
               <Txt kind="caption" style={{ opacity: 0.8, textAlign: 'center' }}>
-                {phase === 'final'
-                  ? 'Dhyaan does not dial 911 for you. If you can’t reach her, this button opens your dialer.'
-                  : 'Opens your dialer. Dhyaan never calls 911 itself.'}
+                {phase === 'final' ? copy.dialerNoteFinal : copy.dialerNote}
               </Txt>
             </>
           )}
@@ -440,9 +382,9 @@ export default function AlertTakeover() {
 
       {emsLine && (
         <Entrance index={6}>
-          <Marquee title="For the paramedics" />
+          <Marquee title={copy.paramedics} />
           <Slab tone="alarm">
-            <DataLabel>From her care file</DataLabel>
+            <DataLabel>{copy.fromCareFile}</DataLabel>
             <Txt kind="body" style={{ marginTop: sp(2) }}>{emsLine}</Txt>
           </Slab>
         </Entrance>

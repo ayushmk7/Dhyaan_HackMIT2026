@@ -1,5 +1,5 @@
-// The one glass surface in the app. Every floating thing — tab bar, header,
-// sheet, the alert takeover, the presence hero — goes through <Glass/>, so the
+// The one glass surface in the app. Every floating thing (tab bar, header,
+// sheet, the alert takeover, the presence hero) goes through <Glass/>, so the
 // availability check and its fallback exist in exactly one place.
 //
 // The law: glass is for chrome that content passes UNDER. A surface that
@@ -11,12 +11,13 @@ import {
 import React from 'react';
 import { StyleProp, StyleSheet, View, ViewProps, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { elevation, glass, radius as R, sp } from '@/theme/tokens';
+import { useTheme } from '@/theme/theme';
+import { elevation, radius as R, sp } from '@/theme/tokens';
 
 export type GlassTone = 'neutral' | 'night' | 'alarm';
 
 // BOTH checks, and the order matters. `isGlassEffectAPIAvailable` is the
-// runtime one — some iOS 26 betas ship the design without the API and calling
+// runtime one: some iOS 26 betas ship the design without the API and calling
 // into it crashes. `isLiquidGlassAvailable` is the design one. On Android, in
 // older iOS and wherever the native module is absent these throw or return
 // false, hence the try/catch. Module scope: the answer cannot change mid-session.
@@ -38,8 +39,13 @@ export function Glass({
   interactive?: boolean;
   style?: StyleProp<ViewStyle>;
 } & Omit<ViewProps, 'style'>) {
+  const t = useTheme();
   const base: ViewStyle = { borderRadius: radius, overflow: 'hidden' };
   const shadow = elevation[lift] as ViewStyle;
+  // Neutral glass follows the scheme; night glass is always dark; alarm glass
+  // sits on the takeover, which is the inverse of the scheme.
+  const glassScheme =
+    tone === 'night' ? 'dark' : tone === 'alarm' ? (t.isDark ? 'light' : 'dark') : t.scheme;
 
   if (glassAvailable) {
     return (
@@ -49,9 +55,9 @@ export function Glass({
         <GlassView
           {...rest}
           glassEffectStyle={clear ? 'clear' : 'regular'}
-          tintColor={glass.tint[tone]}
+          tintColor={t.glass.tint[tone]}
           isInteractive={interactive}
-          colorScheme={tone === 'neutral' ? 'light' : 'dark'}
+          colorScheme={glassScheme}
           style={[base, style]}
         >
           {children}
@@ -60,7 +66,7 @@ export function Glass({
     );
   }
 
-  const f = glass.fallback[tone];
+  const f = t.glass.fallback[tone];
   return (
     <View style={[{ borderRadius: radius }, shadow]}>
       <View

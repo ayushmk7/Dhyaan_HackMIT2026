@@ -32,7 +32,8 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Glass, Txt, useReducedMotion, type GlassTone } from '@/components';
 import { Icon } from '@/components/icon';
-import { motion, palette, radius, sp } from '@/theme/tokens';
+import { shell } from '@/lib/copy/staff';
+import { motion, radius, sp, useTheme } from '@/theme';
 
 // ---- geometry ------------------------------------------------------------------
 
@@ -60,6 +61,7 @@ export function FloatingTabBar({
   bottomInset: number;
   tone?: GlassTone;
 }) {
+  const t = useTheme();
   const reportHeight = useContext(BottomTabBarHeightCallbackContext);
   useEffect(() => {
     // Anyone calling `useBottomTabBarHeight()` gets the truth, not the default
@@ -88,11 +90,12 @@ export function FloatingTabBar({
   const pillStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
 
   const night = tone !== 'neutral';
-  const ink = night ? palette.nightInk : palette.ink;
-  const dim = night ? palette.nightMuted : palette.inkMuted;
+  const ink = night ? t.nightInk : t.ink;
+  const dim = night ? t.nightMuted : t.inkMuted;
   // Chrome carries no hue: the selection is ink at low alpha, borrowing the
-  // rest of its colour from whatever the glass is refracting.
-  const pillFill = night ? 'rgba(234,229,214,0.10)' : 'rgba(28,28,30,0.07)';
+  // rest of its colour from whatever the glass is refracting. Ink is light on
+  // a night bar and in the dark scheme, so the pill goes light with it.
+  const pillFill = night || t.isDark ? 'rgba(255,255,255,0.10)' : 'rgba(28,28,30,0.07)';
 
   return (
     <View
@@ -185,6 +188,8 @@ export const glyph = (name: string) => {
 
 export default function FamilyLayout() {
   const insets = useSafeAreaInsets();
+  const t = useTheme();
+  const tabs = shell.familyTabs;
   return (
     <TabBarInsets>
       <Tabs
@@ -192,16 +197,16 @@ export default function FamilyLayout() {
         tabBar={(props) => <FloatingTabBar {...props} bottomInset={insets.bottom} />}
         screenOptions={{
           headerShown: false,
-          sceneStyle: { backgroundColor: palette.paper },
+          sceneStyle: { backgroundColor: t.paper },
         }}
       >
-        <Tabs.Screen name="home" options={{ title: 'Today', tabBarIcon: glyph('house') }} />
-        <Tabs.Screen name="timeline" options={{ title: 'Her day', tabBarIcon: glyph('calendar.day.timeline.left') }} />
-        <Tabs.Screen name="chat" options={{ title: 'Ask', tabBarIcon: glyph('bubble.left') }} />
+        <Tabs.Screen name="home" options={{ title: tabs.today, tabBarIcon: glyph('house') }} />
+        <Tabs.Screen name="timeline" options={{ title: tabs.herDay, tabBarIcon: glyph('calendar.day.timeline.left') }} />
+        <Tabs.Screen name="chat" options={{ title: tabs.ask, tabBarIcon: glyph('bubble.left') }} />
         {/* The console. A viewfinder glyph, because that is honestly all it is —
             the frame the camera looks through, with no picture inside it. */}
-        <Tabs.Screen name="camera" options={{ title: 'Camera', tabBarIcon: glyph('camera.viewfinder') }} />
-        <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: glyph('gearshape') }} />
+        <Tabs.Screen name="camera" options={{ title: tabs.camera, tabBarIcon: glyph('camera.viewfinder') }} />
+        <Tabs.Screen name="settings" options={{ title: tabs.settings, tabBarIcon: glyph('gearshape') }} />
       </Tabs>
     </TabBarInsets>
   );

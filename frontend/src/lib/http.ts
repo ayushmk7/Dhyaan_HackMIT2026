@@ -10,6 +10,7 @@
 // the function says so and throws or degrades instead of faking data.
 import { draftOpeners, planFromThread as aiPlanFromThread, polishLetter, type FamilyPlan } from './ai';
 import { API_BASE, API_KEY } from './config';
+import { auth } from './copy/auth';
 import { useSession } from '@/store/session';
 import type {
   ActivityDay, Alert, AlertKind, AlertSeverity, BaselineFeature, CallRow,
@@ -517,18 +518,17 @@ export const httpApi = {
   },
   // ---- camera lane (VLM_PLAN §6.1) ------------------------------------------
 
-  // POST /auth/login. Faux by contract: the server validates an email shape
-  // and a non-empty password and hands back the one static key. This client
-  // deliberately does not claim more than that — there is no password store
-  // behind it, and the sign-in copy says so.
-  login: async (email: string, password: string): Promise<LoginResult> => {
-    const trimmed = email.trim();
-    // Checked here too so a typo doesn't cost a round trip, and so the same
-    // message appears whether or not the route exists yet.
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      throw new Error('That doesn’t look like an email address.');
-    }
-    if (!password) throw new Error('Enter your password.');
+  // POST /auth/login. The server looks the username up in its `users` store
+  // and checks the password against a stored hash; a miss on either is a 401
+  // with one sentence, which surfaces here as the thrown Error's message.
+  // The wire field is still called `email` so the route's shape is unchanged,
+  // but it carries a username now (`user`), so no email check happens here:
+  // only "did you type anything", which saves a round trip and nothing more.
+  // The token that comes back is still the one shared app key.
+  login: async (username: string, password: string): Promise<LoginResult> => {
+    const trimmed = username.trim();
+    if (!trimmed) throw new Error(auth.errors.enterUsername);
+    if (!password) throw new Error(auth.errors.enterPassword);
     return post<LoginResult>('/auth/login', { email: trimmed, password });
   },
 

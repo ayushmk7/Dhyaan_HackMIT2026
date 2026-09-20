@@ -2,8 +2,8 @@
 file implements exactly that.
 
 Three routers because three trust levels: the worker on the hub (`X-Band-Key`),
-the family app (`Bearer API_KEY`), and the faux login, which by definition has
-no credential yet.
+the family app (`Bearer API_KEY`), and the login, which is the one route a
+person reaches before they hold a credential.
 
 The two things that must never be relaxed here:
 
@@ -16,7 +16,6 @@ The two things that must never be relaxed here:
 """
 
 import os
-import re
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo
@@ -24,7 +23,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, field_validator
 
-from .. import memory, presence, rag
+from .. import auth, memory, presence, rag
 from ..config import API_KEY
 from ..db import db
 from ..deps import require_app_key, require_band_key
@@ -270,28 +269,48 @@ async def camera_config(camera_id: str = Query(..., min_length=1)):
 
 
 # ---------------------------------------------------------------------------
-# Faux login
+# Login
 # ---------------------------------------------------------------------------
 
-_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-
 class LoginIn(BaseModel):
+    # Still called `email` on the wire so no client changes shape. It is a
+    # username now: the seeded demo account is `user`, which is not an email.
     email: str
     password: str
 
 
+# One sentence for every failure. Saying "no such user" would confirm which
+# usernames exist; saying "wrong password" would confirm the username.
+_BAD_LOGIN = "check your username and password"
+
+
 @public.post("/auth/login")
 async def login(body: LoginIn):
-    # ponytail: no user table, no hashing. This validates the shape of what was
-    # typed and hands back the one static app key. Upgrade: a users collection
-    # and a real session token the day there is a second family.
-    if not _EMAIL.match(body.email or "") or not (body.password or "").strip():
-        raise HTTPException(401, "check your email and password")
-    r = await db().residents.find_one({}, {"_id": 1, "display_name": 1})
-    name = (body.email.split("@")[0] or "there").replace(".", " ").title()
-    return {"ok": True, "token": API_KEY, "user": {"name": name, "email": body.email},
-            "resident_id": r["_id"] if r else None}
+    """A real password check, then the shared key.
+
+    The username is looked up in `users` (trimmed, case-insensitive) and the
+    password is verified against its scrypt hash in constant time. That is real
+    authentication. What follows is not a session: the token handed back is the
+    one static `API_KEY` every family route accepts, so every person who signs
+    in holds the same credential afterwards, and nothing here can be revoked
+    per person. There is no longer an email-shaped bypass: with an account on
+    file, "any email and any password gets in" would make the check a lie.
+
+    # ponytail: ceiling is the shared key. Upgrade path, in order: mint a random
+    # session token per login and store it on the user doc; have
+    # `require_app_key` accept either that or API_KEY; then take `resident_id`
+    # from the session instead of trusting the client's URL. See app/auth.py.
+    """
+    if not (body.email or "").strip() or not (body.password or "").strip():
+        raise HTTPException(401, _BAD_LOGIN)
+    user = await auth.authenticate(body.email, body.password)
+    if user is None:
+        raise HTTPException(401, _BAD_LOGIN)
+    return {"ok": True, "token": API_KEY,
+            # `email` keeps the field name the app already stores; the value is
+            # the username, which is the only identifier this account has.
+            "user": {"name": user["display_name"], "email": user["username"]},
+            "resident_id": user["resident_id"]}
 
 
 # ---------------------------------------------------------------------------

@@ -18,17 +18,19 @@ import {
   Card, DataLabel, EmptyState, ErrorState, LoadingState, Marquee, Row, RowGroup, Screen, Slab,
   Stagger, StateChip, StatusDot, Txt,
 } from '@/components';
+import { readout, rounds as copy } from '@/lib/copy/staff';
 import { timeOf } from '@/lib/format';
 import { useResidents } from '@/lib/hooks';
 import type { Resident } from '@/lib/types';
 import { useLive } from '@/store/live';
-import { palette, sp } from '@/theme/tokens';
+import { sp, useTheme } from '@/theme';
 import type { ResidentState } from '@/theme/tokens';
 import { NEEDS_EYES, TIER, deriveState, pad2, triageReason } from '../_layout';
 
 type RoundsItem = Resident & { state: ResidentState; reason: string | null };
 
 export default function Rounds() {
+  const t = useTheme();
   const qc = useQueryClient();
   const { data, isLoading, isError, refetch, dataUpdatedAt } = useResidents();
   const liveStates = useLive((s) => s.states);
@@ -41,7 +43,7 @@ export default function Rounds() {
   }, [qc]);
 
   const refreshControl = (
-    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.nightMuted} />
+    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.nightMuted} />
   );
 
   const rows: RoundsItem[] = (data ?? [])
@@ -56,9 +58,9 @@ export default function Rounds() {
 
   return (
     <Screen native tone="night" wash refreshControl={refreshControl}>
-      {isLoading && !data && <LoadingState label="Loading tonight's rounds…" />}
+      {isLoading && !data && <LoadingState label={copy.loading} />}
       {isError && !data && (
-        <ErrorState message="Couldn’t reach the floor list." onRetry={refetch} />
+        <ErrorState message={copy.loadError} onRetry={refetch} />
       )}
 
       {!isLoading && !isError && (
@@ -68,29 +70,29 @@ export default function Rounds() {
           <Slab tone="cream" lift="takeover" style={{ paddingVertical: sp(4) }}>
             <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }}>
               <View>
-                <DataLabel>Needs a look</DataLabel>
+                <DataLabel>{copy.slab.needsLook}</DataLabel>
                 <Txt kind="readout" style={{ marginTop: sp(1) }}>{pad2(deviating.length)}</Txt>
               </View>
               <View style={{ alignItems: 'flex-end', gap: sp(1.5) }}>
-                <DataLabel value={pad2(rows.length)}>On the floor</DataLabel>
-                <DataLabel value={dataUpdatedAt ? timeOf(new Date(dataUpdatedAt).toISOString()) : '--:--'}>
-                  Updated
+                <DataLabel value={pad2(rows.length)}>{copy.slab.onFloor}</DataLabel>
+                <DataLabel value={dataUpdatedAt ? timeOf(new Date(dataUpdatedAt).toISOString()) : readout.noTime}>
+                  {copy.slab.updated}
                 </DataLabel>
               </View>
             </Row>
           </Slab>
 
           <View>
-            <Marquee title="Needs a look tonight" meta={pad2(deviating.length)} />
+            <Marquee title={copy.needsLookTonight} meta={pad2(deviating.length)} />
             {deviating.length === 0 ? (
-              <EmptyState>Nothing has deviated tonight. Every band is still reporting.</EmptyState>
+              <EmptyState>{copy.emptyQuiet}</EmptyState>
             ) : (
               <View style={{ gap: sp(3) }}>
                 {deviating.map((r) => (
                   <Pressable
                     key={r.id}
                     accessibilityRole="button"
-                    accessibilityLabel={`${r.display_name}, ${r.room ? `room ${r.room}` : 'no room'}`}
+                    accessibilityLabel={copy.card.a11y(r.display_name, r.room)}
                     onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
                   >
                     {({ pressed }) => (
@@ -111,12 +113,12 @@ export default function Rounds() {
                         )}
                         <Row gap={3} style={{ marginTop: sp(2.5), flexWrap: 'wrap' }}>
                           {/* Staff-only whereabouts — D-001. */}
-                          <DataLabel value={r.room ?? 'NONE'}>Room</DataLabel>
-                          <DataLabel value={r.last_seen ? timeOf(r.last_seen) : '--:--'}>
-                            Seen
+                          <DataLabel value={r.room ?? readout.none}>{copy.card.room}</DataLabel>
+                          <DataLabel value={r.last_seen ? timeOf(r.last_seen) : readout.noTime}>
+                            {copy.card.seen}
                           </DataLabel>
                           {r.band_battery_pct != null && (
-                            <DataLabel value={`${r.band_battery_pct}%`}>Band</DataLabel>
+                            <DataLabel value={`${r.band_battery_pct}%`}>{copy.card.band}</DataLabel>
                           )}
                         </Row>
                       </Card>
@@ -129,13 +131,13 @@ export default function Rounds() {
 
           {quiet.length > 0 && (
             <View>
-              <Marquee title="Roll call" meta={`${pad2(quiet.length)} quiet`} />
+              <Marquee title={copy.rollCall} meta={copy.quietMeta(pad2(quiet.length))} />
               <RowGroup>
                 {quiet.map((r) => (
                   <Pressable
                     key={r.id}
                     accessibilityRole="button"
-                    accessibilityLabel={`${r.display_name}, quiet`}
+                    accessibilityLabel={copy.quietA11y(r.display_name)}
                     onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
                     style={({ pressed }) => [{ paddingVertical: sp(2.5) }, pressed && { opacity: 0.6 }]}
                   >
@@ -147,9 +149,11 @@ export default function Rounds() {
                         </Txt>
                       </Row>
                       <Row gap={3}>
-                        <Txt kind="stamp" tone="muted">{r.room ? `RM ${r.room}` : '—'}</Txt>
                         <Txt kind="stamp" tone="muted">
-                          {r.last_seen ? timeOf(r.last_seen) : '--:--'}
+                          {r.room ? copy.roomStamp(r.room) : readout.blank}
+                        </Txt>
+                        <Txt kind="stamp" tone="muted">
+                          {r.last_seen ? timeOf(r.last_seen) : readout.noTime}
                         </Txt>
                       </Row>
                     </Row>
@@ -160,7 +164,7 @@ export default function Rounds() {
           )}
 
           {rows.length === 0 && (
-            <EmptyState style={{ marginTop: sp(6) }}>No residents are set up on this floor yet.</EmptyState>
+            <EmptyState style={{ marginTop: sp(6) }}>{copy.emptyNoResidents}</EmptyState>
           )}
         </Stagger>
       )}

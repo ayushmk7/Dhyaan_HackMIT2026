@@ -1,12 +1,13 @@
-// Dhyaan primitives. Every screen builds from these — see docs/frontend-DESIGN.md.
+// Dhyaan primitives. Every screen builds from these. See docs/frontend-DESIGN.md.
 //
 // The depth law in one line: content is opaque, chrome is glass. A card holds
 // text, so it stays solid and legible; a bar, header or takeover has content
 // travelling under it, so it earns <Glass>.
 //
-// Every primitive reads the <Surface> it sits on (text.tsx), so a Btn inside a
-// Slab, a Rule on the night ground and a Chip on the alarm takeover pick their
-// own colours. Explicit `night`/`tone`/`color` props still win.
+// Every primitive reads the <Surface> it sits on (text.tsx) and the scheme it
+// is drawn in (`useTheme`), so a Btn inside a Slab, a Rule on the night ground
+// and a Chip on the alarm takeover pick their own colours, in light and in
+// dark. Explicit `night`/`tone`/`color` props still win.
 import React from 'react';
 import {
   ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, RefreshControlProps, ScrollView,
@@ -14,19 +15,18 @@ import {
 } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  elevation, mono, motion, onDark, palette, radius, size as S, sp, stateColor, type, ResidentState,
-} from '@/theme/tokens';
+import { useTheme } from '@/theme/theme';
+import { elevation, mono, motion, radius, size as S, sp, type, ResidentState } from '@/theme/tokens';
 import { DataLabel, Marquee, Rule } from './brutal';
 import { FLOATING_BAR_CLEARANCE, FloatingBar, Glass, GlassTone } from './glass';
 import { Icon, IconBadge } from './icon';
-import { isDarkSurface, Surface, surfaceColors, Tone, Txt, useSurface } from './text';
+import { Surface, surfaceColors, Tone, Txt, useSurface, useSurfaceColors } from './text';
 import { Wash, WashTone } from './wash';
 
 // Txt and the surface context live in text.tsx; they are re-exported here so
 // `import { Txt } from '@/components'` keeps working unchanged.
-export { Surface, Txt, useSurface, surfaceColors, isDarkSurface } from './text';
-export type { SurfaceTone, Tone, TxtKind } from './text';
+export { Surface, Txt, useSurface, useSurfaceColors, surfaceColors, isDarkSurface, toneColor } from './text';
+export type { SurfaceTone, SurfaceColors, Tone, TxtKind } from './text';
 
 // ---- press spring ---------------------------------------------------------------
 // Every tappable surface in the app dips on the same spring. One hook so it is
@@ -55,10 +55,8 @@ const useNight = (night: boolean | undefined) => {
 };
 
 /** The surface's colour set, with an explicit `night` prop taking precedence. */
-const useColors = (night: boolean | undefined) => {
-  const surface = useSurface();
-  return surfaceColors(night === undefined ? surface : night ? 'night' : 'paper');
-};
+const useColors = (night: boolean | undefined) =>
+  useSurfaceColors(night === undefined ? undefined : night ? 'night' : 'paper');
 
 // ---- Screen -----------------------------------------------------------------
 
@@ -91,8 +89,11 @@ export function Screen({
   scrollProps?: Omit<ScrollViewProps, 'contentContainerStyle' | 'refreshControl' | 'children'>;
 }) {
   const insets = useSafeAreaInsets();
+  const t = useTheme();
   const ground: ScreenTone = tone ?? (night ? 'night' : 'paper');
-  const groundColor = { paper: palette.paper, night: palette.night, alarm: palette.rustDeep }[ground];
+  // The takeover is the inverse of the scheme: black in light, white in dark.
+  // It is the only screen drawn that way, which is how alarm stays unmistakable.
+  const groundColor = { paper: t.paper, night: t.night, alarm: t.inverse }[ground];
   const base: ViewStyle = { flex: 1, backgroundColor: groundColor };
   const pad: ViewStyle = padded
     ? {
@@ -159,7 +160,7 @@ export function LoadingState({ label = 'Loading…', night }: { label?: string; 
 /**
  * A failed request. Block form (default) centres a sentence and a retry;
  * `inline` is the one-line form for a failed action inside a card or form.
- * Both are ink, not rust: rust means alarm, and a failed save is not one.
+ * Both are ink: a failed save is not an alarm, and alarm is not a colour anyway.
  */
 export function ErrorState({
   message = 'Couldn’t reach Dhyaan. Check your connection and try again.', onRetry, night, inline = false,
@@ -223,7 +224,7 @@ export function EmptyState({
 export function Refusal({ children, label, style }: {
   children: React.ReactNode; label?: string; style?: ViewStyle;
 }) {
-  const c = surfaceColors(useSurface());
+  const c = useSurfaceColors();
   return (
     <View style={style}>
       <Row gap={2} style={{ alignItems: 'flex-start' }}>
@@ -245,7 +246,7 @@ export type BtnKind =
   | 'primary' | 'quiet' | 'danger' | 'ghost' | 'glass'
   /** A text link in the label weight. `tone="alert"` for a destructive opener. */
   | 'link'
-  /** A white plate on a dark or alarm surface: the takeover's one commitment. */
+  /** The inverse plate on the surface: white on a dark surface, ink on a light one. */
   | 'inverse'
   /** A hairline outline, no fill: the takeover's secondary actions. */
   | 'outline';
@@ -254,7 +255,7 @@ export function Btn({
   label, onPress, kind = 'primary', disabled, busy, night, style, size = 'regular', tone,
 }: {
   label: string; onPress: () => void;
-  /** `glass` is for a button floating over content — a FloatingBar, a takeover. */
+  /** `glass` is for a button floating over content: a FloatingBar, a takeover. */
   kind?: BtnKind;
   disabled?: boolean; busy?: boolean; night?: boolean; style?: ViewStyle;
   /** `small` = 44pt, for a button beside a field or inside a row. */
@@ -263,12 +264,12 @@ export function Btn({
   tone?: 'ink' | 'alert';
 }) {
   const press = usePressSpring();
-  const surface = useSurface();
   const isNight = useNight(night);
   const c = useColors(night);
 
   if (kind === 'link') {
-    const fg = tone === 'alert' ? palette.rust : c.ink;
+    // A destructive opener is heavier, not redder: weight is the only tool a
+    // line of text has, and it is enough when the words say what happens.
     return (
       <Pressable
         accessibilityRole="button"
@@ -282,25 +283,28 @@ export function Btn({
           style,
         ]}
       >
-        <Txt kind="label" style={{ color: fg }}>{label}</Txt>
+        <Txt kind="label" style={{ color: c.ink, fontWeight: tone === 'alert' ? '700' : '600' }}>{label}</Txt>
       </Pressable>
     );
   }
 
-  // quiet = iOS "tonal": filled wash, no border. Borders read as wireframe —
-  // `outline` is the one exception, and it exists for the alarm takeover.
-  const inverseFg = surface === 'alarm' ? palette.rustDeep : surface === 'night' ? palette.night : palette.ink;
+  // primary = the accent. quiet = iOS "tonal": filled wash, no border. danger
+  // and inverse are the same gesture, the surface's INVERSE plate: the only
+  // black button on a light screen, the only white one on a dark screen. That
+  // is what the final button of an irreversible act, and every button on the
+  // takeover, has instead of red. Borders read as wireframe; `outline` is the
+  // one exception, and it exists for the takeover's secondary actions.
   const bg = {
-    primary: palette.slate, danger: palette.rust, quiet: c.wash,
-    ghost: 'transparent', glass: 'transparent', inverse: onDark.ink, outline: 'transparent',
+    primary: c.accent, danger: c.plate, quiet: c.wash,
+    ghost: 'transparent', glass: 'transparent', inverse: c.plate, outline: 'transparent',
   }[kind];
   const pressedBg = {
-    primary: palette.slateDeep, danger: palette.rustDeep, quiet: c.pressed,
-    ghost: 'transparent', glass: 'transparent', inverse: palette.paper, outline: c.pressed,
+    primary: isNight ? c.accent : c.accent, danger: c.platePressed, quiet: c.pressed,
+    ghost: 'transparent', glass: 'transparent', inverse: c.platePressed, outline: c.pressed,
   }[kind];
   const fg =
-    kind === 'primary' || kind === 'danger' ? onDark.ink
-    : kind === 'inverse' ? inverseFg
+    kind === 'primary' ? c.onAccent
+    : kind === 'danger' || kind === 'inverse' ? c.onPlate
     : c.ink;
   const content = busy
     ? <ActivityIndicator color={fg} />
@@ -319,11 +323,12 @@ export function Btn({
         styles.btn,
         size === 'small' && styles.btnSmall,
         kind !== 'glass' && { backgroundColor: press.held ? pressedBg : bg },
+        kind === 'primary' && press.held && { opacity: 0.85 },
         kind === 'outline' && { borderWidth: 1.5, borderColor: c.rule },
         { opacity: disabled ? 0.45 : 1 },
         press.style,
         // Glass owns its own layout box, so the caller's style goes on the
-        // wrapper instead — a margin inside the shadow wrapper offsets the shadow.
+        // wrapper instead: a margin inside the shadow wrapper offsets the shadow.
         kind !== 'glass' && style,
       ]}
     >
@@ -343,7 +348,7 @@ export function Btn({
 
 /**
  * A round icon button: the call button, the composer's send, a reorder arrow.
- * `label` is the accessibility label and is required — an icon alone says
+ * `label` is the accessibility label and is required: an icon alone says
  * nothing to VoiceOver.
  */
 export function IconBtn({
@@ -355,10 +360,10 @@ export function IconBtn({
 }) {
   const press = usePressSpring();
   const c = useColors(night);
-  const bg = kind === 'primary' ? (press.held ? palette.slateDeep : palette.slate)
+  const bg = kind === 'primary' ? c.accent
     : kind === 'quiet' ? (press.held ? c.pressed : c.wash)
     : 'transparent';
-  const fg = kind === 'primary' ? onDark.ink : c.ink;
+  const fg = kind === 'primary' ? c.onAccent : c.ink;
   return (
     <AnimatedPressable
       accessibilityRole="button"
@@ -373,7 +378,8 @@ export function IconBtn({
       style={[
         {
           width: size, height: size, borderRadius: size / 2, backgroundColor: bg,
-          alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.45 : 1,
+          alignItems: 'center', justifyContent: 'center',
+          opacity: disabled ? 0.45 : kind === 'primary' && press.held ? 0.85 : 1,
         },
         press.style,
         style,
@@ -388,7 +394,7 @@ export function IconBtn({
 export function Chevron({ size = 12, tone = 'faint', style }: {
   size?: number; tone?: 'faint' | 'ink'; style?: ViewStyle;
 }) {
-  const c = surfaceColors(useSurface());
+  const c = useSurfaceColors();
   return (
     <View style={style}>
       <Icon name="chevron.right" size={size} color={tone === 'ink' ? c.ink : c.faint} />
@@ -401,12 +407,12 @@ export function Chevron({ size = 12, tone = 'faint', style }: {
 // copy the same six lines out of consent.tsx.
 //
 // Brutalist by design: a plate with an exposed rule under it, which goes 2px
-// ink on focus. No box outline — a border on four sides reads as a wireframe.
+// ink on focus. No box outline: a border on four sides reads as a wireframe.
 
 export function Field({
   label, value, onChangeText, placeholder, multiline, maxLength, keyboardType,
   autoCapitalize, autoCorrect, secureTextEntry, hint, style, onSubmitEditing,
-  code = false, minHeight, maxHeight, editable, accessibilityLabel,
+  code = false, minHeight, maxHeight, editable, accessibilityLabel, autoComplete, textContentType,
 }: {
   /** Optional only for a `code` field or a paste area with its own sentence above it. */
   label?: string;
@@ -422,8 +428,18 @@ export function Field({
   minHeight?: number; maxHeight?: number;
   editable?: boolean;
   accessibilityLabel?: string;
+  /**
+   * Autofill hint for the keychain and password manager: `"username"` and
+   * `"password"` on a sign-in form. Set this OR `textContentType`, not both:
+   * per the RN 0.86 docs they conflict on the same input.
+   */
+  autoComplete?: React.ComponentProps<typeof TextInput>['autoComplete'];
+  /** iOS-only escape hatch for a content type `autoComplete` does not name. */
+  textContentType?: React.ComponentProps<typeof TextInput>['textContentType'];
 }) {
   const [focused, setFocused] = React.useState(false);
+  const t = useTheme();
+  const c = useSurfaceColors();
   return (
     <View style={style}>
       {!!label && <Txt kind="label" tone="muted" style={{ marginBottom: sp(1.5) }}>{label}</Txt>}
@@ -432,19 +448,23 @@ export function Field({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={code ? palette.inkFaint : palette.inkMuted}
+        placeholderTextColor={code ? t.inkFaint : t.inkMuted}
+        keyboardAppearance={t.scheme}
         multiline={multiline}
         maxLength={maxLength}
         keyboardType={keyboardType}
         autoCapitalize={autoCapitalize}
         autoCorrect={autoCorrect}
         secureTextEntry={secureTextEntry}
+        autoComplete={autoComplete}
+        textContentType={textContentType}
         editable={editable}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onSubmitEditing={onSubmitEditing}
         style={[
           styles.input,
+          { color: t.ink, backgroundColor: t.raised },
           multiline && { minHeight: 76, textAlignVertical: 'top' },
           code && styles.inputCode,
           minHeight != null && { minHeight },
@@ -453,7 +473,7 @@ export function Field({
       />
       <Rule
         weight={focused ? 'ink' : 'hair'}
-        color={focused ? palette.ink : palette.line}
+        color={focused ? c.rule : c.line}
       />
       {!!hint && <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>{hint}</Txt>}
     </View>
@@ -472,16 +492,18 @@ export const Hairline = ({ night, style }: { night?: boolean; style?: ViewStyle 
 };
 
 // Section heading on a hard 2px ink rule. This is `Marquee` with the title as
-// its only argument — reach for Marquee directly when the section has metadata.
+// its only argument. Reach for Marquee directly when the section has metadata.
 export const SectionTitle = ({
   children, night, meta,
 }: { children: React.ReactNode; night?: boolean; meta?: string }) => (
   <Marquee title={children} night={night} meta={meta} />
 );
 
-// Opaque card on the ground — the grouped-table look, now genuinely floating.
-// Never add a border; separators live INSIDE cards as <Hairline/>. `glass` is
-// opt-in and only correct when something scrolls beneath the card.
+// Opaque card on the ground: the grouped-table look, genuinely floating.
+// Never add a border in light mode; separators live INSIDE cards as
+// <Hairline/>. On a dark ground a shadow is invisible, so the card takes a
+// hairline edge instead. `glass` is opt-in and only correct when something
+// scrolls beneath the card.
 export const Card = ({
   children, style, night, lift = 'raised', glass = false, list = false,
 }: {
@@ -491,6 +513,7 @@ export const Card = ({
   list?: boolean;
 }) => {
   const isNight = useNight(night);
+  const t = useTheme();
   const pad: ViewStyle = list ? { paddingVertical: sp(1), paddingHorizontal: sp(4) } : { padding: sp(4) };
   if (glass) {
     return (
@@ -499,13 +522,16 @@ export const Card = ({
       </Glass>
     );
   }
+  const onDarkGround = isNight || t.isDark;
   return (
     <Surface tone={isNight ? 'night' : 'paper'}>
       <View
         style={[
-          { backgroundColor: isNight ? palette.nightRaised : palette.raised, borderRadius: radius.card },
+          { backgroundColor: isNight ? t.nightRaised : t.raised, borderRadius: radius.card },
           pad,
-          isNight ? { borderWidth: 1, borderColor: palette.nightLine } : (elevation[lift] as ViewStyle),
+          onDarkGround
+            ? { borderWidth: 1, borderColor: isNight ? t.nightLine : t.line }
+            : (elevation[lift] as ViewStyle),
           style,
         ]}
       >
@@ -537,13 +563,14 @@ export function RowGroup({ children, night, style }: {
 }
 
 /**
- * The screen's one uncompromising contrast moment: an opaque dark plate at the
- * float tier, with paper-coloured text. Every Txt, Rule, DataLabel, Chip and Btn
- * inside picks the right colour on its own — pass no tones.
+ * The screen's one uncompromising contrast moment: an opaque plate at the
+ * float tier in the OPPOSITE scheme. Every Txt, Rule, DataLabel, Chip and Btn
+ * inside picks the right colour on its own; pass no tones.
  *
- * `ink` (black) is the default. `cream` is the inverted plate on the night
- * ground (Rounds). `alarm` is the deep-rust plate on the takeover, which is
- * what the takeover's readouts should be instead of a second glass layer.
+ * `ink` (the default) is the inverse of the scheme: black in light, white in
+ * dark. `cream` is always the white plate (the Rounds counter on the night
+ * ground). `alarm` is the takeover's readout plate: one step back from the
+ * takeover ground, with an outline so it reads as a plate on either scheme.
  * One per screen; two is noise.
  */
 export function Slab({
@@ -558,8 +585,13 @@ export function Slab({
   accessibilityLabel?: string;
 }) {
   const press = usePressSpring();
-  const bg = { ink: palette.ink, cream: palette.nightInk, alarm: palette.rustDeep }[tone];
-  const plate: ViewStyle = { backgroundColor: bg, borderRadius: radius.glass, padding: sp(4.5) };
+  const t = useTheme();
+  const c = surfaceColors(tone, t.scheme);
+  const bg = { ink: t.inverse, cream: t.white, alarm: t.inverseRaised }[tone];
+  const plate: ViewStyle = {
+    backgroundColor: bg, borderRadius: radius.glass, padding: sp(4.5),
+    ...(tone === 'alarm' ? { borderWidth: 1.5, borderColor: c.line } : null),
+  };
   const body = onPress ? (
     <AnimatedPressable
       accessibilityRole="button"
@@ -589,38 +621,68 @@ export function KeyValue({ label, value, tone, style }: {
   );
 }
 
-/** The app's mark: white figure on a black plate. Login and Welcome share it. */
+/** The app's mark: a figure on the inverse plate. Login and Welcome share it. */
 export function Mark({ size = 88, style }: { size?: number; style?: ViewStyle }) {
+  const t = useTheme();
   return (
     <View
       accessible={false}
       style={[{
         width: size, height: size, borderRadius: radius.glass,
-        alignItems: 'center', justifyContent: 'center', backgroundColor: palette.ink,
+        alignItems: 'center', justifyContent: 'center', backgroundColor: t.inverse,
       }, style]}
     >
-      <Icon name="figure.2.arms.open" size={Math.round(size * 0.5)} color={palette.raised} weight="semibold" />
+      <Icon name="figure.2.arms.open" size={Math.round(size * 0.5)} color={t.onInverse} weight="semibold" />
     </View>
   );
 }
 
 // ---- Status --------------------------------------------------------------------
+// A state is a FORM, not a colour: a hollow ring is "nothing to point at", a
+// filled accent dot is "worth a look", a bullseye in the surface's ink is
+// "needs someone now", a flat grey dot is "no signal". The word always rides
+// alongside (StateChip), so none of this has to be seen in colour to be read.
 
-export const StatusDot = ({ state, size = 10 }: { state: ResidentState; size?: number }) => (
-  <View
-    style={{
-      width: size, height: size, borderRadius: size / 2,
-      backgroundColor: stateColor[state].fg,
-    }}
-  />
-);
+export const StatusDot = ({ state, size = 10 }: { state: ResidentState; size?: number }) => {
+  const t = useTheme();
+  const c = useSurfaceColors();
+  const s = t.stateColor[state];
+  const round = { width: size, height: size, borderRadius: size / 2 };
+  switch (s.form) {
+    case 'filled':
+      return <View style={[round, { backgroundColor: c.accent }]} />;
+    case 'flat':
+      return <View style={[round, { backgroundColor: c.faint }]} />;
+    case 'inverse': {
+      // A bullseye: ring, gap, dot, all in the surface's ink. The gap is the
+      // real ground showing through, so it works on any plate.
+      const ring = Math.max(1.5, size * 0.18);
+      const core = Math.max(2, size - ring * 2 - Math.max(2, size * 0.24));
+      return (
+        <View style={[round, { borderWidth: ring, borderColor: c.ink, alignItems: 'center', justifyContent: 'center' }]}>
+          <View style={{ width: core, height: core, borderRadius: core / 2, backgroundColor: c.ink }} />
+        </View>
+      );
+    }
+    default:
+      return <View style={[round, { borderWidth: 1.5, borderColor: state === 'ok' ? c.muted : c.faint }]} />;
+  }
+};
 
 export function StateChip({ state, label }: { state: ResidentState; label?: string }) {
-  const c = stateColor[state];
+  const t = useTheme();
+  const c = useSurfaceColors();
+  const s = t.stateColor[state];
+  // The alerting chip is the surface's inverse plate; everything else is a
+  // wash. Same rule as the buttons: the gravest thing is the inverted one.
+  const bg = s.form === 'inverse' ? c.plate : s.form === 'filled' ? c.accentWash : c.wash;
+  const fg = s.form === 'inverse' ? c.onPlate : s.form === 'filled' ? c.accent : state === 'ok' ? c.ink : c.muted;
   return (
-    <View style={[styles.chip, { backgroundColor: c.wash }]}>
-      <StatusDot state={state} size={8} />
-      <Txt kind="tag" style={{ color: c.fg }}>{label ?? c.word}</Txt>
+    <View style={[styles.chip, { backgroundColor: bg }]}>
+      {s.form === 'inverse'
+        ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.onPlate }} />
+        : <StatusDot state={state} size={8} />}
+      <Txt kind="tag" style={{ color: fg }}>{label ?? s.word}</Txt>
     </View>
   );
 }
@@ -629,12 +691,9 @@ export function Chip({
   label, onPress, selected = false, night,
 }: { label: string; onPress?: () => void; selected?: boolean; night?: boolean }) {
   const press = usePressSpring();
-  const surface = useSurface();
-  const isNight = useNight(night);
   const c = useColors(night);
-  const dark = isNight || isDarkSurface(surface);
-  const bg = selected ? (dark ? onDark.ink : palette.slate) : press.held ? c.pressed : c.wash;
-  const fg = selected ? (dark ? palette.ink : onDark.ink) : c.ink;
+  const bg = selected ? c.accent : press.held ? c.pressed : c.wash;
+  const fg = selected ? c.onAccent : c.ink;
   return (
     <AnimatedPressable
       onPress={onPress}
@@ -650,18 +709,21 @@ export function Chip({
 }
 
 // ---- ADL stat tile ------------------------------------------------------------
-// White card, tinted icon badge, BIG tabular value, tiny label — the Health-app
-// grammar with the datum in the machine face. Color lives in the badge; the card
-// stays white (washes read as murk).
+// Card, icon badge, BIG tabular value, tiny label: the Health-app grammar with
+// the datum in the machine face. The badge carries the state by FORM: an
+// outline ring for ok (nothing to point at), a filled accent plate for warn
+// (worth a look), a faint outline for unknown. The card stays plain.
 
 export function StatTile({
   icon, state, value, label,
 }: { icon: string; state: 'ok' | 'warn' | 'unknown'; value: string; label: string }) {
-  const badge = state === 'ok' ? palette.moss : state === 'warn' ? palette.ochre : palette.inkMuted;
+  const t = useTheme();
   return (
     <Surface tone="paper">
-      <View style={[styles.tile, elevation.raised]}>
-        <IconBadge name={icon} color={badge} size={30} />
+      <View style={[styles.tile, { backgroundColor: t.raised }, t.isDark ? { borderWidth: 1, borderColor: t.line } : elevation.raised]}>
+        {state === 'warn'
+          ? <IconBadge name={icon} color={t.accent} size={30} />
+          : <IconBadge name={icon} color={state === 'ok' ? t.inkMuted : t.inkFaint} size={30} outline />}
         {/* mono.big, one step down: the tile is half a screen wide. */}
         <Txt kind="data" style={{ fontSize: type.stat.fontSize, lineHeight: type.stat.lineHeight, marginTop: sp(2.5) }} numberOfLines={1}>
           {value}
@@ -694,14 +756,11 @@ const styles = StyleSheet.create({
   },
   tile: {
     flex: 1,
-    backgroundColor: palette.raised,
     borderRadius: radius.tile,
     padding: sp(3.5),
   },
   input: {
     ...type.body,
-    color: palette.ink,
-    backgroundColor: palette.raised,
     borderTopLeftRadius: radius.badge,
     borderTopRightRadius: radius.badge,
     paddingHorizontal: sp(3),

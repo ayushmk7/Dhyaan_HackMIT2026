@@ -5,6 +5,8 @@
 // `api.planFromThread` can reject (no key, no network, a 500) — without a catch
 // the button spun forever, so every path out of `make()` clears `busy` and says
 // something true.
+//
+// Every sentence this screen says lives in lib/copy/family.ts under `plan`.
 import React, { useCallback, useState } from 'react';
 import { Share, View } from 'react-native';
 import {
@@ -13,8 +15,11 @@ import {
 import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
 import { hasAI, type FamilyPlan } from '@/lib/ai';
+import { family } from '@/lib/copy/family';
 import { EXAMPLE_THREAD } from '@/lib/example-thread';
 import { onDark, sp } from '@/theme/tokens';
+
+const copy = family.plan;
 
 export default function Plan() {
   const [thread, setThread] = useState('');
@@ -35,16 +40,14 @@ export default function Plan() {
       const empty = !p.when && !p.tasks.length && !p.open_questions.length && !p.reply_text;
       if (empty) {
         setPlan(null);
-        setError(hasAI
-          ? 'Dhyaan couldn’t read that thread just now. Nothing was sent anywhere. Try again in a moment.'
-          : 'Reading a thread needs Dhyaan’s writing service, which isn’t connected on this phone. Nothing was sent anywhere.');
+        setError(hasAI ? copy.unreadable : copy.needsAI);
         return;
       }
       setPlan(p);
     } catch {
       // Without this the spinner ran until the screen was closed.
       setPlan(null);
-      setError('Dhyaan couldn’t read that thread just now. Nothing was sent anywhere. Try again in a moment.');
+      setError(copy.unreadable);
     } finally {
       setBusy(false);
     }
@@ -55,19 +58,19 @@ export default function Plan() {
       <Stagger gap={5}>
         <View>
           <Field
-            label="The family thread"
+            label={copy.threadLabel}
             value={thread}
             onChangeText={setThread}
-            placeholder="Paste the family group chat"
+            placeholder={copy.threadPlaceholder}
             multiline
-            hint="It is read once to write the plan below. Dhyaan doesn’t keep it."
+            hint={copy.threadHint}
           />
         </View>
 
         <View style={{ gap: sp(2) }}>
-          <Btn label="Make a plan" onPress={make} busy={busy} disabled={!thread.trim()} />
+          <Btn label={copy.make} onPress={make} busy={busy} disabled={!thread.trim()} />
           {!thread && (
-            <Btn label="Try an example" kind="quiet" onPress={() => setThread(EXAMPLE_THREAD)} />
+            <Btn label={copy.tryExample} kind="quiet" onPress={() => setThread(EXAMPLE_THREAD)} />
           )}
           {!!error && <ErrorState inline message={error} />}
         </View>
@@ -91,7 +94,7 @@ export default function Plan() {
 
             {plan.tasks.length > 0 && (
               <>
-                <Marquee title="Who’s doing what" meta={`${plan.tasks.length}`} />
+                <Marquee title={copy.whoDoingWhat} meta={String(plan.tasks.length)} />
                 <RowGroup>
                   {plan.tasks.map((t, i) => (
                     <Row key={`${t.who}-${i}`} style={{ paddingVertical: sp(3), alignItems: 'flex-start' }} gap={3}>
@@ -107,7 +110,7 @@ export default function Plan() {
               <>
                 {/* The heading and its count carry the meaning; the plate stays
                     white. Ochre is a resident state, not a mood for a card. */}
-                <Marquee title="Nobody answered yet" meta={`${plan.open_questions.length}`} />
+                <Marquee title={copy.nobodyAnswered} meta={String(plan.open_questions.length)} />
                 <Card>
                   {plan.open_questions.map((q, i) => (
                     <Txt key={q} kind="body" style={{ marginTop: i === 0 ? 0 : sp(2) }}>{q}</Txt>
@@ -118,7 +121,7 @@ export default function Plan() {
 
             {!!plan.reply_text && (
               <>
-                <Marquee title="A reply, ready to send" />
+                <Marquee title={copy.replyReady} />
                 <Card>
                   <Txt kind="body">{plan.reply_text}</Txt>
                 </Card>
@@ -126,12 +129,11 @@ export default function Plan() {
                   {/* It opens the share sheet. It does not post anywhere, and
                       the label used to promise that it did. */}
                   <Btn
-                    label="Copy it out to your thread"
+                    label={copy.copyOut}
                     onPress={() => Share.share({ message: plan.reply_text })}
                   />
                   <Txt kind="caption" tone="muted">
-                    {/* voice-ok: an empty state, which DESIGN.md exempts. */}
-                    This opens your share sheet. Dhyaan doesn’t post to your group chat itself.
+                    {copy.shareNote}
                   </Txt>
                 </View>
               </>

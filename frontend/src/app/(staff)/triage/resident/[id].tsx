@@ -33,11 +33,12 @@ import {
 } from '@/components';
 import { Avatar } from '@/components/avatar';
 import { api } from '@/lib/api';
+import { readout, resident as copy } from '@/lib/copy/staff';
 import { ago, dayOf, timeOf } from '@/lib/format';
 import { localDayKey, useBaselines, useLocationHistory, useResident, useTimeline } from '@/lib/hooks';
 import type { BaselineFeature, ChatMessage } from '@/lib/types';
 import { useLive } from '@/store/live';
-import { palette, sp } from '@/theme/tokens';
+import { sp, useTheme } from '@/theme';
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
@@ -54,6 +55,7 @@ function isDeviating(b: BaselineFeature): boolean {
 }
 
 function BaselineRow({ b }: { b: BaselineFeature }) {
+  const t = useTheme();
   const pts = b.series.filter((v) => typeof v === 'number' && Number.isFinite(v));
   const last = lastReading(b);
   const deviating = isDeviating(b);
@@ -63,29 +65,29 @@ function BaselineRow({ b }: { b: BaselineFeature }) {
         <Txt kind="label" tone={deviating ? 'warn' : 'ink'} numberOfLines={1} style={{ flex: 1 }}>
           {b.label}
         </Txt>
-        <DataLabel value={`${fmt(b.mu)} ${b.unit}`}>Usual</DataLabel>
+        <DataLabel value={`${fmt(b.mu)} ${b.unit}`}>{copy.routine.usual}</DataLabel>
       </Row>
 
       <View style={{ marginTop: sp(2) }}>
         {pts.length >= 2 ? (
-          <Sparkline series={pts} tone={deviating ? palette.ochre : palette.slate} />
+          <Sparkline series={pts} tone={deviating ? t.ochre : t.slate} />
         ) : last == null ? (
           // No history endpoint and no last value: say so rather than drawing
           // a chart of nothing.
-          <Txt kind="caption" tone="muted">No reading recorded yet.</Txt>
+          <Txt kind="caption" tone="muted">{copy.routine.noReading}</Txt>
         ) : (
           <Row gap={2} style={{ alignItems: 'baseline' }}>
             <Txt kind="data" tone={deviating ? 'warn' : 'ink'}>{fmt(last)}</Txt>
-            <Txt kind="caption" tone="muted">{b.unit} · one reading, no trend yet</Txt>
+            <Txt kind="caption" tone="muted">{copy.routine.oneReading(b.unit)}</Txt>
               {/* voice-ok: an empty state, which DESIGN.md exempts. */}
           </Row>
         )}
       </View>
 
       <Row gap={3} style={{ marginTop: sp(2), flexWrap: 'wrap' }}>
-        <DataLabel value={String(b.n_obs)}>Obs</DataLabel>
-        {b.cold_start && <DataLabel value="COLD">Baseline</DataLabel>}
-        {!!b.updated_at && <DataLabel value={timeOf(b.updated_at)}>Updated</DataLabel>}
+        <DataLabel value={String(b.n_obs)}>{copy.routine.obs}</DataLabel>
+        {b.cold_start && <DataLabel value={readout.coldBaseline}>{copy.routine.baseline}</DataLabel>}
+        {!!b.updated_at && <DataLabel value={timeOf(b.updated_at)}>{copy.routine.updated}</DataLabel>}
       </Row>
     </View>
   );
@@ -125,12 +127,12 @@ export default function ResidentDetail() {
 
   if (!resident) {
     if (isError) {
-      return <Screen native wash><ErrorState message="Couldn’t load this resident." onRetry={refetch} /></Screen>;
+      return <Screen native wash><ErrorState message={copy.loadError} onRetry={refetch} /></Screen>;
     }
     if (isLoading) {
-      return <Screen native wash><LoadingState label="Loading…" /></Screen>;
+      return <Screen native wash><LoadingState label={copy.loading} /></Screen>;
     }
-    return <Screen native wash><EmptyState>Resident not found.</EmptyState></Screen>;
+    return <Screen native wash><EmptyState>{copy.notFound}</EmptyState></Screen>;
   }
 
   const state = liveStates[resident.id] ?? resident.state;
@@ -144,11 +146,11 @@ export default function ResidentDetail() {
 
   const whereLine = location
     ? location.since
-      ? `${location.label} · since ${timeOf(location.since)}`
+      ? copy.where.inZoneSince(location.label, timeOf(location.since))
       : location.label
     : resident.last_seen
-      ? `No zone signal · last heard ${ago(resident.last_seen)}`
-      : 'No signal from this band yet';
+      ? copy.where.noZoneLastHeard(ago(resident.last_seen))
+      : copy.where.noSignalYet;
 
   const ask = async () => {
     const q = question.trim();
@@ -159,7 +161,7 @@ export default function ResidentDetail() {
       // Scoped to the resident on screen, never the session's.
       setAnswer(await api.chat(q, resident.id));
     } catch (e) {
-      setAskError(e instanceof Error ? e.message : 'Couldn’t reach Dhyaan. Try again.');
+      setAskError(e instanceof Error ? e.message : copy.ask.error);
     } finally {
       setAsking(false);
     }
@@ -183,7 +185,7 @@ export default function ResidentDetail() {
       // The text stays in the field: a note that failed to save must not
       // vanish, and it must not look saved either.
       setPendingNote(null);
-      setNoteError(e instanceof Error ? e.message : 'That note didn’t save. Try again.');
+      setNoteError(e instanceof Error ? e.message : copy.note.saveError);
     } finally {
       setSavingNote(false);
     }
@@ -198,7 +200,7 @@ export default function ResidentDetail() {
       // floating tab bar raises (TabBarInsets), so it clears the tab bar.
       floatingBar={alertHere && activeAlert ? (
         <Btn
-          label="Open the live alert"
+          label={copy.openAlert}
           kind="danger"
           onPress={() => router.push(`/alert/${activeAlert.id}`)}
         />
@@ -224,12 +226,12 @@ export default function ResidentDetail() {
           </Row>
           <Rule weight="hair" style={{ marginTop: sp(3.5) }} />
           <Row gap={3} style={{ marginTop: sp(2.5), flexWrap: 'wrap' }}>
-            <DataLabel value={resident.room ?? 'NONE'}>Room</DataLabel>
-            <DataLabel value={resident.last_seen ? timeOf(resident.last_seen) : '--:--'}>
-              Seen
+            <DataLabel value={resident.room ?? readout.none}>{copy.slab.room}</DataLabel>
+            <DataLabel value={resident.last_seen ? timeOf(resident.last_seen) : readout.noTime}>
+              {copy.slab.seen}
             </DataLabel>
             {resident.band_battery_pct != null && (
-              <DataLabel value={`${resident.band_battery_pct}%`}>Band</DataLabel>
+              <DataLabel value={`${resident.band_battery_pct}%`}>{copy.slab.band}</DataLabel>
             )}
           </Row>
         </Slab>
@@ -240,47 +242,48 @@ export default function ResidentDetail() {
           <Card>
             <StateChip state="attention" />
             <Txt kind="body" style={{ marginTop: sp(2.5) }}>
-              {`Different from ${firstName}’s own routine: `}
-              {deviations
-                .map((b) => `${b.label.toLowerCase()} at ${fmt(lastReading(b)!)} ${b.unit} against a usual ${fmt(b.mu)}`)
-                .join('; ')}
-              .
+              {copy.deviation.summary(
+                firstName,
+                deviations.map((b) => ({
+                  label: b.label, value: fmt(lastReading(b)!), unit: b.unit, usual: fmt(b.mu),
+                })),
+              )}
             </Txt>
           </Card>
         ) : null}
 
         <View>
           {/* Room-level history is staff-only by decision, not by omission. */}
-          <Marquee title="Where they’ve been today" meta={`${(segments ?? []).length} segments`} />
+          <Marquee title={copy.whereToday.title} meta={copy.whereToday.meta((segments ?? []).length)} />
           <Card>
             <RoomTimeBar segments={segments ?? []} />
-            <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>
+            <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>{/* voice-ok: a reading, not prose */}
               {location
-                ? `Now in the ${location.label.toLowerCase()}${location.since ? `, since ${timeOf(location.since)}` : ''}.`
-                : 'No current zone reading.'}
+                ? copy.whereToday.nowIn(location.label, location.since ? timeOf(location.since) : null)
+                : copy.whereToday.noZone}
             </Txt>
           </Card>
         </View>
 
         <View>
-          <Marquee title="Routine" meta={`${(baselines ?? []).length} baselines`} />
+          <Marquee title={copy.routine.title} meta={copy.routine.meta((baselines ?? []).length)} />
           <RowGroup>
             {(baselines ?? []).map((b) => <BaselineRow key={b.feature} b={b} />)}
             {(baselines ?? []).length === 0 && (
-              <EmptyState>{`No baseline has been learned for ${firstName} yet.`}</EmptyState>
+              <EmptyState>{copy.routine.empty(firstName)}</EmptyState>
             )}
           </RowGroup>
         </View>
 
         <View>
-          <Marquee title="Today" meta={`${today.length} entries`} />
+          <Marquee title={copy.today.title} meta={copy.today.meta(today.length)} />
           <RowGroup>
             {today.length === 0 && !pendingNote && (
-              <EmptyState>Nothing recorded yet today.</EmptyState>
+              <EmptyState>{copy.today.empty}</EmptyState>
             )}
             {!!pendingNote && (
               <View style={{ paddingVertical: sp(2.5) }}>
-                <DataLabel value={timeOf(pendingNote.at)}>Saving note</DataLabel>
+                <DataLabel value={timeOf(pendingNote.at)}>{copy.today.savingNote}</DataLabel>
                 <Txt kind="body" style={{ marginTop: 2 }}>{pendingNote.text}</Txt>
               </View>
             )}
@@ -290,18 +293,18 @@ export default function ResidentDetail() {
           {noteOpen ? (
             <View style={{ marginTop: sp(3), gap: sp(2.5) }}>
               <Field
-                label="Note"
+                label={copy.note.label}
                 value={noteText}
                 onChangeText={setNoteText}
-                placeholder={`One line about ${firstName}`}
+                placeholder={copy.note.placeholder(firstName)}
                 multiline
                 maxLength={400}
                 onSubmitEditing={saveNote}
               />
               <Row gap={2}>
-                <Btn label="Save note" busy={savingNote} onPress={saveNote} style={{ flex: 1 }} />
+                <Btn label={copy.note.save} busy={savingNote} onPress={saveNote} style={{ flex: 1 }} />
                 <Btn
-                  label="Cancel"
+                  label={copy.note.cancel}
                   kind="ghost"
                   onPress={() => { setNoteOpen(false); setNoteError(null); }}
                   style={{ flex: 1 }}
@@ -310,7 +313,7 @@ export default function ResidentDetail() {
             </View>
           ) : (
             <Btn
-              label="Add a note"
+              label={copy.note.add}
               kind="quiet"
               onPress={() => setNoteOpen(true)}
               style={{ marginTop: sp(3) }}
@@ -320,18 +323,18 @@ export default function ResidentDetail() {
         </View>
 
         <View>
-          <Marquee title={`Ask about ${firstName}`} />
+          <Marquee title={copy.ask.title(firstName)} />
           <Row gap={2} style={{ alignItems: 'flex-end' }}>
             <View style={{ flex: 1 }}>
               <Field
-                label="Question"
+                label={copy.ask.label}
                 value={question}
                 onChangeText={setQuestion}
-                placeholder={`Has ${firstName} been eating?`}
+                placeholder={copy.ask.placeholder(firstName)}
                 onSubmitEditing={ask}
               />
             </View>
-            <Btn label="Ask" size="small" busy={asking} onPress={ask} />
+            <Btn label={copy.ask.button} size="small" busy={asking} onPress={ask} />
           </Row>
           {!!askError && <ErrorState inline message={askError} style={{ marginTop: sp(2) }} />}
           {!!answer && (answer.refused ? (

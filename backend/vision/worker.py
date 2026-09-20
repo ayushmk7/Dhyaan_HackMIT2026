@@ -16,7 +16,7 @@ from . import DEMO, TUNING, VLM_MODEL, FRAME_H, FRAME_W
 from .capture import Camera, SyntheticCamera, to_jpeg_b64
 from .gate import MotionGate, PersonGate, apply_mask, posture_band
 from .keyframe import KeyframeSelector, RingBatch
-from . import vlm
+from . import openvocab, vlm
 
 PAUSE_S = 2 * 60 * 60          # key `p` on the preview: her control, on her hub
 PRIVATE_ZONES = {"bedroom", "bathroom"}
@@ -362,6 +362,12 @@ class Worker:
                             latency_ms=getattr(self, "scene_ms", 0)))
 
                 reason = selector.update(now, seen, box)       # stage 4
+                # Stage 3b. A keyframe is a frame already judged worth a VLM
+                # call, i.e. a few seconds apart at most — the one place a
+                # second ~11 ms detector is affordable. The 15 fps loop above
+                # never sees it.
+                if reason and reason != "absent":
+                    self._openvocab(masked)
                 status = f"motion {score:.3f}" + (" · person" if seen else "") + \
                          (f" · {reason}" if reason else "")
 
@@ -407,6 +413,7 @@ class Worker:
         food, dishes, seating) for the same ~6 ms as asking only for a person.
         """
         self.scene = None
+        self.openvocab_ms = 0
         # `self.cam` is only opened in run(), so a Worker built but not started
         # (every test, and --dry-run before the first frame) has none. Ask the
         # script only when there is one to ask.
@@ -441,6 +448,33 @@ class Worker:
         box = self.scene["boxes"][0] if self.scene["boxes"] else None
         return box, box is not None
 
+    def _openvocab(self, frame):
+        """Keyframe path: hand YOLO-World a short vocabulary and ADD what it
+        finds to the COCO scene (openvocab.py has the measured numbers).
+
+        Additive, exactly as `vlm.merge_scene` folds YOLO into the VLM: COCO
+        has no word for cereal and YOLO-World was not asked about everything,
+        so neither may zero the other's food. `self.scene` is None whenever no
+        detector ran on this frame, and then there is nothing to add to — a
+        food list with no person and no box is not an observation. In practice
+        that cannot happen here: a non-"absent" reason requires `seen`, which
+        requires a COCO pass.
+
+        ponytail: no threading. It is ~9 ms on a path that is already about to
+        block for a ~2.4 s VLM call. Ceiling: it lands in the capture loop, so a
+        keyframe costs ~25 ms end to end instead of ~16, and the loop skips one
+        camera frame. Upgrade: the same worker thread `post_async` already uses.
+
+        Measured ceiling worth knowing on stage: 15 of 18 keyframes came back in
+        16-29 ms, and 3 in 2.2-2.5 s — the ones that landed while Ollama had the
+        same GPU. Two MPS consumers, one queue. If that ever hurts, the lever is
+        OPENVOCAB=0, not a rewrite.
+        """
+        if not self.tuning.get("openvocab") or self.scene is None:
+            return
+        found, self.openvocab_ms = openvocab.timed(frame)
+        self.scene = openvocab.merge(self.scene, found)
+
     def _mark_fps(self, now):
         t0, n0 = self.last_fps_mark
         self.frames_seen += 1
@@ -468,9 +502,14 @@ class Worker:
         if scene and self._since_vlm < every:
             obs = vlm.post_rules(vlm.from_scene(scene, posture_band(
                 scene["boxes"][0] if scene["boxes"] else None, self.tuning)))
+            # The keyframe cost, honestly: COCO + the open-vocab pass. Naming
+            # both in `model` is what makes the two lanes separable in the
+            # observations collection afterwards.
+            ov = getattr(self, "openvocab_ms", 0)
+            name = os.getenv("YOLO_MODEL", "yolo11s.pt").replace(".pt", "")
             self._post_obs(obs, wall[-1], span, len(images),
-                           os.getenv("YOLO_MODEL", "yolo11s.pt").replace(".pt", ""),
-                           getattr(self, "scene_ms", 0))
+                           f"{name}+world" if ov else name,
+                           getattr(self, "scene_ms", 0) + ov)
             return f"YOLO -> {obs['activity']}"
         self._since_vlm = 0
 

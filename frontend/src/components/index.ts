@@ -9,3 +9,7 @@ export * from './wash';
 export * from './icon';
 export * from './avatar';
 export * from './alert-extras';
+// The scheme hooks live in @/theme/theme; re-exported so a screen that already
+// imports from '@/components' can pick up `useTheme` without a second import.
+export { ThemeProvider, useScheme, useTheme, themes } from '@/theme/theme';
+export type { Scheme, Theme } from '@/theme/theme';

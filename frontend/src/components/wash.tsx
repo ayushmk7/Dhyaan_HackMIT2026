@@ -2,37 +2,44 @@
 // what it refracts, so the ground is layered: a base ramp, two crossed blooms
 // that fake a mesh gradient, and 64x64 grain at 4%.
 //
+// The ramps live in tokens (`washTone`, resolved per scheme by `useTheme`).
+// `day` is white pooling to a blue-grey corner in light mode and the night
+// ramp in dark mode; `alarm` is the takeover's ground, which is the inverse of
+// the scheme. A dark wash is not an inverted light wash: the blooms are
+// dimmer and the grain heavier, because light on black reads as glare.
+//
 // ponytail: expo-linear-gradient has no radial mode, so a "bloom" is a linear
 // gradient fading to a zero-alpha copy of ITS OWN colour along a diagonal.
 // Two crossed at different angles read as light pooling in a corner. Ceiling:
 // it is not radial, so a bloom can't sit in the middle of the screen. Upgrade
-// would be an SVG radial gradient — a dependency this build does not need.
+// would be an SVG radial gradient, a dependency this build does not need.
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { DimensionValue, Image, StyleSheet, View, ViewStyle } from 'react-native';
-import { washTone } from '@/theme/tokens';
+import { useTheme } from '@/theme/theme';
+import type { WashTones } from '@/theme/tokens';
 
-export type WashTone = keyof typeof washTone;
+export type WashTone = keyof WashTones;
 
 // Fading to the string 'transparent' interpolates through black on iOS; fade to
 // a zero-alpha copy of the same colour instead.
 const clear = (rgb: string) => `rgba(${rgb},0)`;
 const solid = (rgb: string, a: number) => `rgba(${rgb},${a})`;
 
-// The ramps live in tokens (`washTone`); the takeover's alarm ramp is the one
-// place rust grounds a whole screen.
-const TONES = washTone;
-
 export function Wash({
   height = 340, tone = 'day', style,
 }: { height?: DimensionValue; tone?: WashTone; style?: ViewStyle }) {
-  const t = TONES[tone];
+  const th = useTheme();
+  const t = th.washTone[tone];
+  // Bloom strength: a white bloom on a dark ramp is glare, so it is halved.
+  const dark = t.base[1] === th.night || t.base[1] === th.ink && th.scheme === 'light';
+  const warmA = dark ? 0.22 : 0.55;
   return (
     <View pointerEvents="none" style={[{ position: 'absolute', top: 0, left: 0, right: 0, height }, style]}>
       <LinearGradient colors={t.base} locations={[0, 0.55, 1]} style={StyleSheet.absoluteFill} />
       {/* Bloom one: light pooling from the top-left. */}
       <LinearGradient
-        colors={[solid(t.warm, 0.55), clear(t.warm)]}
+        colors={[solid(t.warm, warmA), clear(t.warm)]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0.95, y: 0.75 }}
         style={StyleSheet.absoluteFill}

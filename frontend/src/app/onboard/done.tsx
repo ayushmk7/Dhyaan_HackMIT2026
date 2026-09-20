@@ -19,9 +19,12 @@ import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { Btn, Card, DataLabel, Entrance, ErrorState, Rule, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
+import { onboard } from '@/lib/copy/staff';
 import type { Profile } from '@/lib/types';
 import { sp } from '@/theme/tokens';
 import { useSession, type Grants } from '@/store/session';
+
+const copy = onboard.done;
 
 const GRANT_KEYS: (keyof Grants)[] = ['falls', 'camera', 'memory'];
 
@@ -45,12 +48,6 @@ export function mergeConsent(
   if (relationship.trim()) consent.relationship = relationship.trim();
   return consent;
 }
-
-const EXPECT = [
-  'For the first few days it mostly repeats what you told it.',
-  'It learns where she usually sits at each time of day from what it sees, and starts calling it "her usual spot" once it is sure.',
-  'You will never see a room name for where she is, and there is no video to see. Ask it anything in the Ask tab.',
-];
 
 export default function Done() {
   const session = useSession();
@@ -90,7 +87,7 @@ export default function Done() {
       session.finishOnboarding();
       router.replace('/(family)/home');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Couldn’t save that to her home hub.');
+      setError(e instanceof Error ? e.message : copy.saveError);
     } finally {
       setBusy(false);
     }
@@ -102,7 +99,7 @@ export default function Done() {
       wash
       floatingBar={
         <Btn
-          label={saved ? 'Open the app' : 'Save and open the app'}
+          label={saved ? copy.openApp : copy.saveAndOpen}
           busy={busy}
           onPress={save}
         />
@@ -110,18 +107,18 @@ export default function Done() {
     >
       <Entrance index={0}>
         <Txt kind="hero" accessibilityRole="header">
-          That’s{'\n'}everything.
+          {copy.hero}
         </Txt>
         <Rule weight="heavy" style={{ marginTop: sp(4) }} />
         <Txt kind="body" tone="muted" style={{ marginTop: sp(4) }}>
-          Dhyaan will get to know {session.residentName} over the next week.
+          {copy.getToKnow(session.residentName)}
         </Txt>
       </Entrance>
 
       <Entrance index={1}>
         <Card style={{ marginTop: sp(6) }}>
-          <Txt kind="label">What to expect</Txt>
-          {EXPECT.map((line) => (
+          <Txt kind="label">{copy.expectTitle}</Txt>
+          {copy.expect.map((line) => (
             <Txt key={line.slice(0, 20)} kind="caption" tone="muted" style={{ marginTop: sp(2.5) }}>
               {line}
             </Txt>
@@ -131,12 +128,10 @@ export default function Done() {
 
       <Entrance index={2}>
         <Card style={{ marginTop: sp(3) }}>
-          <DataLabel value={String(facts.length)}>Notes to save</DataLabel>
+          <DataLabel value={String(facts.length)}>{copy.notesToSave}</DataLabel>
           <Rule style={{ marginTop: sp(2) }} />
           <Txt kind="caption" tone="muted" style={{ marginTop: sp(2.5) }}>{/* voice-ok */}
-            {facts.length === 0
-              ? 'Nothing yet. You can add notes any time in Settings.'
-              : 'Every one is editable in Settings, and Forget her profile removes all of them at once.'}
+            {facts.length === 0 ? copy.noNotes : copy.notesEditable}
           </Txt>
         </Card>
       </Entrance>
@@ -145,11 +140,11 @@ export default function Done() {
         <Entrance index={3} style={{ marginTop: sp(4), gap: sp(2) }}>
           <ErrorState inline message={error} />
           <Txt kind="caption" tone="muted">{/* voice-ok */}
-            Nothing was saved. Your answers are still on this phone.
+            {copy.nothingSaved}
           </Txt>
           <Btn
             kind="quiet"
-            label="Skip in without saving"
+            label={copy.skipWithoutSaving}
             onPress={() => { session.finishOnboarding(); router.replace('/(family)/home'); }}
           />
         </Entrance>

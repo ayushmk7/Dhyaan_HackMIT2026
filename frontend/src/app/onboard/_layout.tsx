@@ -13,11 +13,13 @@
 import { router, Stack, useNavigation } from 'expo-router';
 import React from 'react';
 import { Btn } from '@/components';
-import { palette, sp } from '@/theme/tokens';
+import { shell } from '@/lib/copy/staff';
+import { sp, useTheme } from '@/theme';
 import { useSession } from '@/store/session';
 
 export default function OnboardLayout() {
   const onboarded = useSession((s) => s.onboarded);
+  const t = useTheme();
   // The navigation prop here belongs to the ROOT stack's `onboard` route, so
   // goBack() pops the whole onboarding stack and lands where it was entered.
   const nav = useNavigation();
@@ -29,14 +31,14 @@ export default function OnboardLayout() {
   return (
     <Stack
       screenOptions={{
-        title: '',
+        title: shell.onboard.title,
         headerTransparent: true,
         headerShadowVisible: false,
         headerBackButtonDisplayMode: 'minimal',
-        headerTintColor: palette.ink,
-        contentStyle: { backgroundColor: palette.paper },
+        headerTintColor: t.ink,
+        contentStyle: { backgroundColor: t.paper },
         headerRight: onboarded
-          ? () => <Btn kind="link" label="Cancel" onPress={leave} style={{ marginRight: sp(1) }} />
+          ? () => <Btn kind="link" label={shell.onboard.cancel} onPress={leave} style={{ marginRight: sp(1) }} />
           : undefined,
       }}
     >

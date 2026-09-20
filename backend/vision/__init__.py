@@ -43,6 +43,14 @@ TUNING = dict(
     # --- stage 3: person (YOLO11n, class 0) ---
     person_conf=0.4,
     person_imgsz=640,
+    # --- stage 3b: open vocabulary, KEYFRAME PATH ONLY (see openvocab.py) ---
+    # COCO knows ten food words, so a crisp packet or a bowl of cereal is
+    # invisible to the hot path no matter what. YOLO-World costs ~4 ms over the
+    # COCO baseline and can be handed any words at runtime, so it runs on the
+    # frames already chosen to be worth a VLM call and never on the 15 fps loop.
+    # OPENVOCAB=0 cuts it in one second if it misbehaves on stage; everything
+    # then degrades to exactly the COCO-only behaviour it had before.
+    openvocab=os.getenv("OPENVOCAB", "1") != "0",
     # --- stage 4: keyframe selection (VLM_PLAN §3.4) ---
     min_gap_s=20,             # never two keyframes within 20 s
     on_person_appear_gap_s=30,  # first person-positive frame after >=30 s of none
