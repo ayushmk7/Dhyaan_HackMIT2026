@@ -4,7 +4,7 @@
   "device_id": "band_unoq01",
   "user_id": "res_eleanor",
   "hub_url": "http://127.0.0.1:8000",
-  "band_key": "CHANGE_ME_MATCH_SERVER_BAND_KEY",
+  "band_key": "band-dev-key",
   "compat": {
     "battery_pct_placeholder": true,
     "peak_g_clamp": 20,
@@ -14,19 +14,27 @@
   "imu": {
     "sample_rate_hz": 208,
     "accel_fs_g": 16,
-    "accel_bias": [0.0, 0.0, 0.0],
-    "accel_gain": [1.0, 1.0, 1.0],
-    "ff_threshold_g": 0.40,
+    "accel_bias": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "accel_gain": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "ff_threshold_g": 0.4,
     "ff_min_ms": 80,
     "ff_max_ms": 400,
     "drop_latch_ms": 1000,
-    "impact_g_after_ff": 2.80,
-    "impact_g_soft": 3.50,
+    "impact_g_after_ff": 2.8,
+    "impact_g_soft": 3.5,
     "jerk_min_g_per_s": 30.0,
     "orient_change_deg": 45.0,
-    "still_window_ms": 2000,
-    "still_std_g": 0.12,
-    "still_gyro_dps": 25.0,
+    "still_window_ms": 1000,
+    "still_std_g": 0.5,
+    "still_gyro_dps": 120.0,
     "grace_seconds": 30,
     "rearm_ms": 10000,
     "ring_samples": 1024,
@@ -35,16 +43,19 @@
     "impact_g_floor": 2.5,
     "impact_g_ceil_margin": 0.3,
     "steps_enabled": false,
-    "step_min_peak_g": 1.10,
+    "step_min_peak_g": 1.1,
     "step_min_interval_ms": 300,
-    "step_rate_hz": [1.2, 2.5],
+    "step_rate_hz": [
+      1.2,
+      2.5
+    ],
     "demo_chirp_impact_only": false
   },
   "calibration": {
     "f_min": 0.0,
     "drop_height_m": 0.5,
     "drop_surface": "two firm sofa cushions",
-    "notes": "Fill f_min from §7.2 step 4 after calibration drops."
+    "notes": "Fill f_min from HARDWARE_SPEC \u00a77.2 step 4 after calibration drops. still_* loosened for firm-cushion demo drops."
   },
   "profile": {
     "rev": 0,
@@ -63,13 +74,37 @@
     "room_confidence_min": 0.55,
     "beacon_offline_misses": 10,
     "beacons": [
-      { "minor": 1, "room": "kitchen",    "tx_power_1m": -59, "adv_interval_ms": 100, "power": "usb" },
-      { "minor": 2, "room": "bathroom",   "tx_power_1m": -59, "adv_interval_ms": 100, "power": "usb" },
-      { "minor": 3, "room": "bedroom",    "tx_power_1m": -59, "adv_interval_ms": 100, "power": "usb" },
-      { "minor": 4, "room": "front_door", "tx_power_1m": -59, "adv_interval_ms": 100, "power": "usb" }
+      {
+        "minor": 1,
+        "room": "kitchen",
+        "tx_power_1m": -59,
+        "adv_interval_ms": 100,
+        "power": "usb"
+      },
+      {
+        "minor": 2,
+        "room": "bathroom",
+        "tx_power_1m": -59,
+        "adv_interval_ms": 100,
+        "power": "usb"
+      },
+      {
+        "minor": 3,
+        "room": "bedroom",
+        "tx_power_1m": -59,
+        "adv_interval_ms": 100,
+        "power": "usb"
+      },
+      {
+        "minor": 4,
+        "room": "front_door",
+        "tx_power_1m": -59,
+        "adv_interval_ms": 100,
+        "power": "usb"
+      }
     ]
   },
   "calibrated_by": null,
   "calibrated_at": null,
-  "calibration_notes": "Uncalibrated defaults — run HARDWARE_SPEC §7.2 before demo freeze."
+  "calibration_notes": "Uncalibrated defaults \u2014 run HARDWARE_SPEC \u00a77.2 before demo freeze."
 }

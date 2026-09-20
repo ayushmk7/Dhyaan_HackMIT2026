@@ -3,3 +3,4 @@ tests/detector_test
 **/__pycache__/
 *.pyc
 .cache/
+fallband-app.zip

@@ -22,9 +22,18 @@
 
 using namespace dhyaan;
 
-ModulinoMovement movement;   // lib 0x6A, bus 0x6A
-ModulinoButtons  buttons;    // lib 0x7C, bus 0x3E
-ModulinoBuzzer   buzzer;     // lib 0x3C, bus 0x1E
+ModulinoMovement movement;   // lib 0x6A, bus 0x6A — REQUIRED
+ModulinoButtons  buttons;    // lib 0x7C, bus 0x3E — optional (cancel / LEDs)
+ModulinoBuzzer   buzzer;     // lib 0x3C, bus 0x1E — optional (grace chirp)
+
+// Movement-only is a valid demo build: fall still posts; no on-band cancel/buzzer.
+bool haveButtons = false;
+bool haveBuzzer  = false;
+
+static bool i2cPresent(uint8_t addr7) {
+  Wire1.beginTransmission(addr7);
+  return Wire1.endTransmission() == 0;
+}
 
 // If your Arduino_Modulino version takes chars ('A'/'B'/'C') instead of indices,
 // change only these three constants.
@@ -188,14 +197,24 @@ static String getStatus() {
 }
 
 // ------------------------------------------------------------------ UI ------
-static void setLeds(bool a, bool b, bool c) { buttons.setLeds(a, b, c); }
+static void setLeds(bool a, bool b, bool c) {
+  if (haveButtons) buttons.setLeds(a, b, c);
+}
+
+static void buzz(uint16_t freq, uint16_t ms) {
+  if (haveBuzzer) buzzer.tone(freq, ms);
+}
+
+static void buzzOff() {
+  if (haveBuzzer) buzzer.noTone();
+}
 
 static void serviceUi(uint32_t now) {
   const bool blink = ((now / 250) % 2) == 0;
   switch (ui) {
     case UI_GRACE:
       setLeds(blink, blink, blink);
-      if (now - tLastChirp >= 1000) { buzzer.tone(2000, 200); tLastChirp = now; }
+      if (now - tLastChirp >= 1000) { buzz(2000, 200); tLastChirp = now; }
       break;
     case UI_CANCELLED:
       setLeds(blink, false, false);
@@ -204,7 +223,7 @@ static void serviceUi(uint32_t now) {
     case UI_TOO_LATE:
       // One long low tone. The wearer pressed cancel after the window closed, so a
       // call is already going out and they should know that, not think they stopped it.
-      if (now - tUi < 60) buzzer.tone(600, 1000);
+      if (now - tUi < 60) buzz(600, 1000);
       setLeds(false, false, true);
       if (now - tUi > 3000) ui = UI_SENT;
       break;
@@ -220,6 +239,7 @@ static void serviceUi(uint32_t now) {
 }
 
 static void serviceButtons(uint32_t now) {
+  if (!haveButtons) return;
   if (!buttons.update()) return;
   const bool down[3] = {buttons.isPressed(BTN_A), buttons.isPressed(BTN_B),
                         buttons.isPressed(BTN_C)};
@@ -230,7 +250,7 @@ static void serviceButtons(uint32_t now) {
       if (i == 0 && det.state() == CONFIRMED) {       // cancel, while it still counts
         Out o = det.cancel(now);
         if (o.ev == EV_CANCELLED) {
-          buzzer.noTone();
+          buzzOff();
           ui = UI_ARMED;
           btnConsumed[i] = true;                      // not also a plain button press
           Bridge.notify("cancel", (uint32_t)o.seq, (uint32_t)o.age_ms);
@@ -265,10 +285,18 @@ void setup() {
   Serial.begin();
   Bridge.begin();
   Modulino.begin();          // defaults to Wire1 on ARDUINO_UNO_Q
+
+  // Probe bus addresses (not library 8-bit addrs): Movement 0x6A, Buttons 0x3E, Buzzer 0x1E.
+  if (!i2cPresent(IMU_ADDR)) {
+    Serial.println("ERROR: Modulino Movement not found on Wire1 (need 0x6A)");
+  }
+  haveButtons = i2cPresent(0x3E);
+  haveBuzzer  = i2cPresent(0x1E);
+
   movement.begin();          // comes up 104 Hz / ±4 g ...
-  buttons.begin();
-  buzzer.begin();
-  configureIMU();            // ... and we immediately override it (§6.3)
+  if (haveButtons) buttons.begin();
+  if (haveBuzzer)  buzzer.begin();
+  configureIMU();            // ... and we immediately override ±4 g (§6.3)
 
   Bridge.provide_safe("set_thresholds", setThresholds);
   Bridge.provide_safe("set_param", setParam);
@@ -278,7 +306,9 @@ void setup() {
   for (uint8_t i = 0; i < JIT_BUCKETS; i++) jitter[i] = 0;
   det.reset(millis());
   setLeds(true, false, false);
-  buzzer.tone(1200, 80);     // one chirp: armed, and the bus is alive
+  buzz(1200, 80);            // chirp only if Buzzer is present
+  Serial.print("haveButtons="); Serial.print(haveButtons);
+  Serial.print(" haveBuzzer="); Serial.println(haveBuzzer);
   tNext = micros();
 }
 
@@ -339,10 +369,10 @@ void loop() {
       break;
     case EV_IMPACT_ONLY:
       notifyImpactOnly(o);
-      if (demoChirp) buzzer.tone(1500, 60);   // expo table only (§6.9) — off in production
+      if (demoChirp) buzz(1500, 60);   // expo table only (§6.9) — off in production
       break;
     case EV_GRACE_EXPIRED:
-      buzzer.noTone();
+      buzzOff();
       ui = UI_SENT;
       tUi = now_ms;
       break;

@@ -291,7 +291,10 @@ class FallbandAgent:
             return
         self._cfg_mtime = mtime
         self.cfg = json.loads(self.config_path.read_text(encoding="utf-8"))
-        log.info("reloaded %s", self.config_path)
+        self.band_id = self.cfg.get("band_id") or self.cfg.get("device_id") or self.band_id
+        self.uplink.hub_url = str(self.cfg.get("hub_url", self.uplink.hub_url)).rstrip("/")
+        self.uplink.band_key = self.cfg.get("band_key") or self.uplink.band_key
+        log.info("reloaded %s hub=%s", self.config_path, self.uplink.hub_url)
         self.push_config_to_mcu()
 
     # ---- timers -------------------------------------------------------------
@@ -361,6 +364,10 @@ class FallbandAgent:
         min_n = int(rf.get("min_adverts_n", 3))
         try:
             beacons = scan_ibeacons_sync(site, dur, min_adverts=min_n)
+        except FileNotFoundError as e:
+            # Docker app container often has no /run/dbus or hci0 — fine for fall-only demos.
+            log.debug("BLE unavailable in this environment: %s", e)
+            beacons = []
         except Exception as e:
             log.warning("BLE scan failed: %s", e)
             beacons = []
