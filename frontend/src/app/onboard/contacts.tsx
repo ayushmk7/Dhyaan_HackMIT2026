@@ -8,17 +8,14 @@
 // ever be one somebody typed.
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import {
-  Btn, Card, Entrance, Field, Marquee, Row, Rule, Screen, Txt,
+  Btn, Card, Entrance, ErrorState, Field, IconBtn, Marquee, Row, Screen, Txt,
 } from '@/components';
-import { Avatar } from '@/components/avatar';
-import { Icon } from '@/components/icon';
+import { Avatar, avatarTone } from '@/components/avatar';
 import { api } from '@/lib/api';
-import { mono, palette, sp } from '@/theme/tokens';
+import { sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
-
-const AVATAR_TONES = ['green', 'amber', 'blue'] as const;
 
 type Draft = { name: string; phone: string; relationship: string };
 const emptyDraft: Draft = { name: '', phone: '', relationship: '' };
@@ -61,6 +58,7 @@ export default function Contacts() {
 
   return (
     <Screen
+      native
       wash
       floatingBar={
         <Btn
@@ -106,28 +104,37 @@ export default function Contacts() {
                 <Row gap={3} style={{ flex: 1 }}>
                   {/* Numbered because this list is genuinely sequential — the
                       one place in the app where a number means an order. */}
-                  <Txt style={[mono.stamp, { color: palette.inkMuted }]}>{i + 1}</Txt>
-                  <Avatar name={c.name} size={34} tone={AVATAR_TONES[i % AVATAR_TONES.length]} />
+                  <Txt kind="stamp" tone="muted">{i + 1}</Txt>
+                  <Avatar name={c.name} size={34} tone={avatarTone(i)} />
                   <View style={{ flex: 1 }}>
                     <Txt kind="label">{c.name}</Txt>
                     <Txt kind="caption" tone="muted">{c.relationship} · {c.phone}</Txt>
                   </View>
                 </Row>
                 <Row gap={1}>
-                  <Pressable accessibilityRole="button" accessibilityLabel={`Move ${c.name} earlier`} onPress={() => move(i, -1)} style={styles.arrow}>
-                    <Icon name="chevron.up" size={13} color={i === 0 ? palette.line : palette.ink} />
-                  </Pressable>
-                  <Pressable accessibilityRole="button" accessibilityLabel={`Move ${c.name} later`} onPress={() => move(i, 1)} style={styles.arrow}>
-                    <Icon name="chevron.down" size={13} color={i === contacts.length - 1 ? palette.line : palette.ink} />
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Remove ${c.name}`}
+                  <IconBtn
+                    kind="ghost"
+                    size={34}
+                    name="chevron.up"
+                    label={`Move ${c.name} earlier`}
+                    disabled={i === 0}
+                    onPress={() => move(i, -1)}
+                  />
+                  <IconBtn
+                    kind="ghost"
+                    size={34}
+                    name="chevron.down"
+                    label={`Move ${c.name} later`}
+                    disabled={i === contacts.length - 1}
+                    onPress={() => move(i, 1)}
+                  />
+                  <IconBtn
+                    kind="ghost"
+                    size={34}
+                    name="xmark"
+                    label={`Remove ${c.name}`}
                     onPress={() => setContacts((cs) => cs.filter((_, j) => j !== i))}
-                    style={styles.arrow}
-                  >
-                    <Icon name="xmark" size={13} color={palette.inkMuted} />
-                  </Pressable>
+                  />
                 </Row>
               </Row>
             </Card>
@@ -160,21 +167,7 @@ export default function Contacts() {
         <Btn kind="quiet" label="Add another person" onPress={() => setAdding(true)} style={{ marginTop: sp(4) }} />
       ) : null}
 
-      {!!error && (
-        <>
-          <Rule style={{ marginTop: sp(6) }} />
-          <Txt kind="caption" tone="alert" style={{ marginTop: sp(2) }} accessibilityLiveRegion="polite">
-            {error}
-          </Txt>
-        </>
-      )}
+      {!!error && <ErrorState inline message={error} style={{ marginTop: sp(6) }} />}
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  arrow: {
-    width: 34, height: 34, borderRadius: 17,
-    alignItems: 'center', justifyContent: 'center',
-  },
-});

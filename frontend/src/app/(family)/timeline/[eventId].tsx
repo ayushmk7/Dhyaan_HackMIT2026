@@ -8,13 +8,14 @@ import { useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
 import {
-  Btn, Card, DataLabel, ErrorState, KindTag, Marquee, Rule, Screen, Stagger, Txt,
+  Btn, DataLabel, EmptyState, ErrorState, KindTag, LoadingState, Marquee, Rule, Screen, Slab, Stagger,
+  Txt,
 } from '@/components';
 import { api } from '@/lib/api';
 import { dayOf, displaySentence, eventTitle, timeOf } from '@/lib/format';
 import { useEvent } from '@/lib/hooks';
 import type { KEvent, SourceKind } from '@/lib/types';
-import { palette, sp } from '@/theme/tokens';
+import { sp } from '@/theme/tokens';
 
 function sensorSentence(e: KEvent): string {
   switch (e.source) {
@@ -28,6 +29,17 @@ function sensorSentence(e: KEvent): string {
     default: return 'A person';
   }
 }
+
+/**
+ * The sentence a person reads. The band's fall record is a log line ("Band
+ * band_a3f2 reported fall_suspected"); every other record already arrives as
+ * a sentence. Nothing is added that the record does not say.
+ */
+const familySentence = (e: KEvent): string => {
+  if (e.type === 'fall_suspected') return 'Her band reported a possible fall.';
+  if (e.type === 'fall_confirmed') return 'Her band confirmed a fall.';
+  return displaySentence(e.embedding_text);
+};
 
 /** §6.5's three kinds, read off the one field that decides them. */
 const kindOf = (e: KEvent): SourceKind =>
@@ -53,10 +65,10 @@ export default function EventDetail() {
       <Screen native>
         {isError ? (
           <ErrorState message="Couldn’t load that observation." onRetry={refetch} />
+        ) : isLoading ? (
+          <LoadingState label="Looking that up…" />
         ) : (
-          <Txt kind="body" tone="muted">{/* voice-ok */}
-            {isLoading ? 'Looking that up…' : 'That observation isn’t here any more.'}
-          </Txt>
+          <EmptyState>That observation isn’t here any more.</EmptyState>
         )}
       </Screen>
     );
@@ -80,20 +92,18 @@ export default function EventDetail() {
       <Stagger gap={6}>
         <View>
           <KindTag kind={kindOf(event)} detail={timeOf(event.ts)} />
-          <Txt kind="hero" style={{ marginTop: sp(3) }}>{displaySentence(event.embedding_text)}</Txt>
+          <Txt kind="title" style={{ marginTop: sp(3) }}>{familySentence(event)}</Txt>
         </View>
 
         {/* The screen's one uncompromising surface: paper on ink, every figure
             tabular, nothing softened. This is the record, not the reassurance. */}
-        <Card lift="float" style={{ backgroundColor: palette.ink, gap: sp(3) }}>
-          <DataLabel tone={palette.paper} value={`${dayOf(event.ts)} · ${timeOf(event.ts)}`}>
-            Recorded
-          </DataLabel>
-          <Rule color={palette.paper} style={{ opacity: 0.25 }} />
-          <DataLabel tone={palette.paper} value={event.source.toUpperCase()}>Source</DataLabel>
-          <Rule color={palette.paper} style={{ opacity: 0.25 }} />
-          <DataLabel tone={palette.paper} value={event.confidence.toFixed(2)}>Confidence</DataLabel>
-        </Card>
+        <Slab style={{ gap: sp(3) }}>
+          <DataLabel value={`${dayOf(event.ts)} · ${timeOf(event.ts)}`}>Recorded</DataLabel>
+          <Rule weight="hair" />
+          <DataLabel value={event.source.toUpperCase()}>Source</DataLabel>
+          <Rule weight="hair" />
+          <DataLabel value={event.confidence.toFixed(2)}>Confidence</DataLabel>
+        </Slab>
 
         <View>
           <Txt kind="body">
@@ -116,7 +126,7 @@ export default function EventDetail() {
             <View style={{ gap: sp(2) }}>
               <Btn label="This was expected" kind="quiet" busy={busy} onPress={() => give('expected')} />
               <Btn label="This didn’t happen" kind="quiet" busy={busy} onPress={() => give('false_positive')} />
-              {feedbackError && <Txt kind="caption" tone="alert">{feedbackError}</Txt>}
+              {feedbackError && <ErrorState inline message={feedbackError} />}
             </View>
           )}
         </View>

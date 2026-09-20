@@ -11,19 +11,18 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { Linking, Pressable, RefreshControl, View } from 'react-native';
+import { Linking, RefreshControl, View } from 'react-native';
 import {
-  Card, Entrance, ErrorState, Glass, Hairline, KindTag, LoadingState, Marquee, MetricRow,
-  PresenceHero, Row, Screen, StatTile, StatusDot, Txt,
+  Card, Chevron, Entrance, ErrorState, Glass, Hairline, IconBtn, KindTag, LoadingState, Marquee,
+  MetricRow, PresenceHero, Row, RowGroup, Screen, Slab, StatTile, StatusDot, Txt,
 } from '@/components';
 import { Avatar } from '@/components/avatar';
-import { Icon } from '@/components/icon';
 import {
   localDayKey, useActivity, useContacts, useLatestMessage, usePresence, useResident,
   useTalkAbout,
 } from '@/lib/hooks';
-import { ago, residentNumber, timeOf } from '@/lib/format';
-import type { Presence } from '@/lib/types';
+import { ago, displaySentence, residentNumber, timeOf } from '@/lib/format';
+import type { ActivityItem, Presence } from '@/lib/types';
 import { useCareFile } from '@/store/carefile';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
@@ -38,6 +37,13 @@ const openerSymbol = (text: string): string => {
 };
 
 
+/** The sentence a person reads; the band's fall record arrives as a log line. */
+const familySentence = (item: ActivityItem): string => {
+  if (item.type === 'fall_suspected') return 'Her band reported a possible fall.';
+  if (item.type === 'fall_confirmed') return 'Her band confirmed a fall.';
+  return displaySentence(item.sentence);
+};
+
 /** What the camera is doing — never where she is. */
 function subline(p: Presence | undefined): string {
   if (!p) return ' ';
@@ -45,7 +51,11 @@ function subline(p: Presence | undefined): string {
   if (!p.camera.consent) return 'Camera off · falls still watched';
   if (p.status === 'paused') {
     const until = p.camera.paused_until ? ` until ${timeOf(p.camera.paused_until)}` : '';
-    return `She paused the camera${until}`;
+    // `paused_by` says whose hand did it. Only she pauses from her computer;
+    // a pause from this app is not hers, and saying so would be a small lie.
+    return p.camera.paused_by === 'family'
+      ? `Paused from this app${until}`
+      : `She paused the camera${until}`;
   }
   if (!p.camera.online) return 'Camera not running';
   if (!p.last_observation_at) return 'Camera on';
@@ -56,7 +66,9 @@ function subline(p: Presence | undefined): string {
 function emptySentence(p: Presence | undefined, name: string): string {
   if (!p || p.status === 'no_camera') return 'Nothing yet today';
   if (!p.camera.consent) return 'The camera is off';
-  if (p.status === 'paused') return `${name} paused the camera`;
+  if (p.status === 'paused') {
+    return p.camera.paused_by === 'family' ? 'The camera is paused' : `${name} paused the camera`;
+  }
   return 'Nothing yet today';
 }
 
@@ -102,7 +114,11 @@ export default function Today() {
   }
 
   const tiles = activity?.tiles;
-  const latest = activity?.items?.[0];
+  // "Last noticed" is the last thing it SAW. The feed also carries lines
+  // worked out from her pattern (the day's story, a deviation), and the
+  // nightly rollup stamps those with the moment it ran, so `items[0]` is
+  // often a story about the day rather than a sighting in it.
+  const latest = activity?.items?.find((i) => i.kind === 'observed');
   const watching = !!presence && presence.status !== 'no_camera' && presence.camera.consent
     && presence.camera.online && presence.status !== 'paused';
 
@@ -130,21 +146,12 @@ export default function Today() {
                 </Row>
               </View>
             </Row>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={phone ? `Call ${residentName}` : `No phone number saved for ${residentName}`}
-              accessibilityState={{ disabled: !phone }}
+            <IconBtn
+              name="phone.fill"
+              label={phone ? `Call ${residentName}` : `No phone number saved for ${residentName}`}
               disabled={!phone}
               onPress={() => phone && Linking.openURL(`tel:${phone}`)}
-              style={({ pressed }) => ({
-                width: 40, height: 40, borderRadius: 20,
-                backgroundColor: pressed ? '#D6D6DB' : '#E5E5EA',
-                opacity: phone ? 1 : 0.45,
-                alignItems: 'center', justifyContent: 'center',
-              })}
-            >
-              <Icon name="phone.fill" size={17} color={palette.slate} />
-            </Pressable>
+            />
           </Row>
 
           {!!presence?.sentence.trim() && !!presence.last_observation_at && (
@@ -157,37 +164,44 @@ export default function Today() {
             emptySentence={emptySentence(presence, residentName)}
             style={{ marginTop: sp(3) }}
           />
-
-          {!phone && (
-            <Txt kind="caption" tone="muted" style={{ marginTop: sp(4) }}>
-              {/* voice-ok: an empty state, which DESIGN.md exempts. */}
-              Dhyaan doesn’t have a phone number for {residentName}, only for the people it calls
-              if she needs someone. That’s why this button can’t dial her.
-            </Txt>
-          )}
         </Glass>
+
+        {/* Below the glass, not inside it: glass holds the heading, never prose. */}
+        {!phone && (
+          <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>
+            {/* voice-ok: an empty state, which DESIGN.md exempts. */}
+            Dhyaan doesn’t have a phone number for {residentName}, only for the people it calls
+            if she needs someone. That’s why this button can’t dial her.
+          </Txt>
+        )}
       </Entrance>
 
       {/* Beat 1 — the day, in figures. */}
       <Entrance index={1}>
         <Marquee title="Today" meta={localDayKey()} />
         {activityError && (
-          <Pressable onPress={() => refetchActivity()} style={{ marginBottom: sp(3) }}>
-            <Txt kind="caption" tone="warn">Couldn’t load today. Tap to try again.</Txt>
-          </Pressable>
+          <ErrorState
+            inline
+            message="Couldn’t load today."
+            onRetry={() => refetchActivity()}
+            style={{ marginBottom: sp(3) }}
+          />
         )}
         <Row gap={3}>
+          {/* Both of these are counted by the camera. When nothing is
+              watching, a zero is not "she didn't eat", it is "nobody was
+              looking", so the badge goes grey instead of green. */}
           <StatTile
             icon="fork.knife"
-            state={tiles ? 'ok' : 'unknown'}
+            state={tiles ? (watching ? 'ok' : 'unknown') : 'unknown'}
             value={tiles ? String(tiles.meals) : '–'}
             label="Meals"
           />
           <StatTile
             icon="figure.walk"
-            state={tiles ? 'ok' : 'unknown'}
+            state={tiles ? (watching ? 'ok' : 'unknown') : 'unknown'}
             value={tiles ? String(tiles.in_view_minutes) : '–'}
-            label="Minutes up"
+            label="Minutes in view"
           />
         </Row>
         <Row gap={3} style={{ marginTop: sp(3) }}>
@@ -211,21 +225,22 @@ export default function Today() {
       {latest && (
         <Entrance index={2}>
           <Marquee title="Last noticed" meta={timeOf(latest.ts)} />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${latest.sentence}. Open her day.`}
-            onPress={() => router.push('/(family)/timeline')}
-            style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
+          <Slab
+            accessibilityLabel={`${familySentence(latest)}. Open the details.`}
+            // Straight to this observation, not to the top of a list it may
+            // be halfway down.
+            onPress={() => router.push({
+              pathname: '/(family)/timeline/[eventId]',
+              params: { eventId: latest.id },
+            })}
           >
-            <Card lift="float" style={{ backgroundColor: palette.ink }}>
-              <Txt kind="title" tone="paper">{latest.sentence}</Txt>
-              <Row style={{ justifyContent: 'space-between', marginTop: sp(4) }}>
-                {/* The three kinds stay labelled even here — especially here. */}
-                <KindTag kind={latest.kind} detail={timeOf(latest.ts)} />
-                <Icon name="chevron.right" size={12} color={palette.paper} />
-              </Row>
-            </Card>
-          </Pressable>
+            <Txt kind="title">{familySentence(latest)}</Txt>
+            <Row style={{ justifyContent: 'space-between', marginTop: sp(4) }}>
+              {/* The three kinds stay labelled even here — especially here. */}
+              <KindTag kind={latest.kind} detail={timeOf(latest.ts)} />
+              <Chevron />
+            </Row>
+          </Slab>
         </Entrance>
       )}
 
@@ -263,14 +278,11 @@ export default function Today() {
             {/* voice-ok: an empty state, which DESIGN.md exempts. */}
             Drafted from what Dhyaan saw today, not from things she has said.
           </Txt>
-          <Card style={{ paddingVertical: sp(1) }}>
-            {prompts.map((p, i) => (
-              <View key={p}>
-                {i > 0 && <Hairline />}
-                <MetricRow hue={hue.social} icon={openerSymbol(p)} label="Talk about" sentence={p} />
-              </View>
+          <RowGroup>
+            {prompts.map((p) => (
+              <MetricRow key={p} hue={hue.social} icon={openerSymbol(p)} label="Talk about" sentence={p} />
             ))}
-          </Card>
+          </RowGroup>
         </Entrance>
       )}
 
@@ -278,7 +290,7 @@ export default function Today() {
       {nextAppt && (
         <Entrance index={5}>
           <Marquee title="Coming up" right={<KindTag kind="told" />} />
-          <Card style={{ paddingVertical: sp(1) }}>
+          <RowGroup>
             <MetricRow
               hue={hue.mind}
               icon="calendar"
@@ -287,7 +299,7 @@ export default function Today() {
               sentence={nextAppt.title}
               onPress={() => router.push('/(family)/settings/carefile')}
             />
-          </Card>
+          </RowGroup>
         </Entrance>
       )}
     </Screen>

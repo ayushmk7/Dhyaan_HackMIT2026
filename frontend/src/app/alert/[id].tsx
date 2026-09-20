@@ -16,11 +16,9 @@ import * as Haptics from 'expo-haptics';
 import { useAudioPlayer } from 'expo-audio';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Vibration, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Linking, StyleSheet, Vibration, View } from 'react-native';
 import {
-  Btn, DataLabel, Entrance, ErrorState, FLOATING_BAR_CLEARANCE, FloatingBar, Glass,
-  LadderTimeline, Marquee, Rule, Screen, Stagger, Txt, Wash,
+  Btn, DataLabel, Entrance, ErrorState, LadderTimeline, Marquee, Rule, Screen, Slab, Stagger, Txt,
 } from '@/components';
 import { CancelCountdownRing, ElapsedStat, RingingPulse } from '@/components/alert-extras';
 import { api } from '@/lib/api';
@@ -29,10 +27,7 @@ import { useAlert, useContacts, useResident } from '@/lib/hooks';
 import { emergencyLine, useCareFile } from '@/store/carefile';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
-import { palette, radius, sp } from '@/theme/tokens';
-
-const WHITE = '#FFFFFF';
-const WHITE_SOFT = 'rgba(255,255,255,0.8)';
+import { sp } from '@/theme/tokens';
 
 const kindWord: Record<string, string> = {
   fall: 'Possible fall',
@@ -66,7 +61,53 @@ const PHASE_BY_STATE: Record<string, Phase> = {
   exhausted: 'final',
 };
 
-/** The 30 s window she can cancel from the band. It belongs to two FSM states. */
+/**
+ * How it ended, from the one field that says so. The FSM closes an alert five
+ * different ways and only one of them means a person picked up: CANCELLED is
+ * her button, RESOLVED_OK is her voice, ACKNOWLEDGED is a family member,
+ * EXHAUSTED is nobody at all. One sentence for each, because "this alert has
+ * been answered" over an EXHAUSTED alert is the wrong thing to be soothing
+ * about. Lower-cased so the mock's step names and the real FSM's states match.
+ */
+function closedSentence(
+  state: string, resolution: string | null, who: string | undefined, name: string,
+): string {
+  switch (state) {
+    case 'cancelled':
+      return resolution === 'false_positive' && !who
+        ? `${name} cancelled it from her band. Nobody was called.`
+        : `Cancelled${who ? ` by ${who}` : ''}. Nobody was called.`;
+    case 'resolved_ok':
+    case 'resolved':
+      return `${name} answered and said she is all right. Nobody else was called.`;
+    case 'exhausted':
+      return `Nobody answered. Dhyaan has run out of people to call.`;
+    case 'acknowledged':
+      return who ? `${who} is on it. The ladder has stopped.` : 'Someone has got her. The ladder has stopped.';
+    case 'manually_resolved':
+      switch (resolution) {
+        case 'ok': return 'Resolved. Someone checked on her.';
+        case 'fell_ok': return `${name} fell but is all right.`;
+        case 'ems': return 'Paramedics were called. The ladder has stopped.';
+        case 'false_positive': return 'Marked as a false alarm. Nothing else will happen.';
+        default: return 'Closed. The ladder has stopped.';
+      }
+    default:
+      return resolution === 'false_positive'
+        ? 'Marked as a false alarm. Nothing else will happen.'
+        : 'This alert has been closed. The ladder has stopped.';
+  }
+}
+
+/** A person acted, so the seconds-until-a-human-was-told line is true. */
+const humanActed = (state: string) => state === 'acknowledged' || state === 'manually_resolved';
+
+/**
+ * The window she can cancel from the band. It belongs to two FSM states. The
+ * server owns the real number (`CANCEL_WINDOW_S` in backend/app/config.py,
+ * env-overridable) and sends it on the alert; 30 is only the fallback for an
+ * alert that predates the field.
+ */
 const CANCEL_WINDOW_S = 30;
 const inCancelWindow = (state: string) => state === 'suspected' || state === 'local_cancel';
 
@@ -93,33 +134,8 @@ type RingtonePlayer = { loop: boolean; play(): void; pause(): void };
 const startRingtone = (p: RingtonePlayer) => { try { p.loop = true; p.play(); } catch { /* noop */ } };
 const stopRingtone = (p: RingtonePlayer) => { try { p.pause(); } catch { /* noop */ } };
 
-function BigWhiteBtn({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [styles.bigBtn, { backgroundColor: pressed ? '#F1E4DC' : WHITE }]}
-    >
-      <Txt kind="label" style={{ color: palette.rustDeep, fontSize: 18, fontWeight: '700' }}>{label}</Txt>
-    </Pressable>
-  );
-}
-
-function OutlineBtn({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [styles.outlineBtn, pressed && { backgroundColor: 'rgba(255,255,255,0.12)' }]}
-    >
-      <Txt kind="label" tone="white" style={{ fontSize: 16 }}>{label}</Txt>
-    </Pressable>
-  );
-}
-
 export default function AlertTakeover() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const insets = useSafeAreaInsets();
   const { data: alert, isLoading, isError, refetch } = useAlert(id ?? '');
   const { data: contacts } = useContacts();
   const live = useLive();
@@ -214,40 +230,53 @@ export default function AlertTakeover() {
     );
   }
 
-  // Calm close-out — plus the applause line.
+  // Calm close-out — plus the applause line, when a person earned it.
   if (closed && alert) {
     // `acked_by` is null for every real alert (the backend takes `by` on the
     // ack and never stores it). Say what is true instead of naming "Someone".
     const who = alert.acked_by?.trim();
-    const sentence =
-      closedNote ??
-      (alert.resolution === 'false_positive'
-        ? 'Marked as a false alarm. Nothing else will happen.'
-        : who
-          ? `${who} is on it. The ladder has stopped.`
-          : 'This alert has been answered. The ladder has stopped.');
+    const sentence = closedNote ?? closedSentence(state, alert.resolution, who, name);
+    // Nobody picked up. That is not an OK, and it is not over for the family:
+    // the two ways to reach her stay on the screen.
+    const exhausted = !closedNote && state === 'exhausted';
     return (
       <Screen scroll={false} style={{ justifyContent: 'center' }}>
         <Stagger gap={4}>
-          <Txt kind="display" tone="ok">{sentence}</Txt>
+          <Txt kind="display" tone={exhausted ? 'ink' : 'ok'}>{sentence}</Txt>
           <View>
             <Txt kind="body" tone="muted">Saved to {name}’s timeline.</Txt>
-            {!closedNote && !who && alert.resolution !== 'false_positive' && (
+            {!closedNote && state === 'acknowledged' && !who && (
               <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
                 Dhyaan didn’t record who answered it.
               </Txt>
             )}
           </View>
-          {/* ElapsedStat's sentence is about a fall hitting the floor, so it
-              is only true for a fall. A bathroom alert gets the close-out
-              without the applause line rather than a sentence that is wrong. */}
-          {alert.closed_at && alert.kind === 'fall' ? (
+          {exhausted && (
+            <View style={{ gap: sp(2.5) }}>
+              {herPhone ? (
+                <Btn label={`Call ${name}`} onPress={() => Linking.openURL(`tel:${herPhone}`)} />
+              ) : (
+                <Txt kind="caption" tone="muted">{/* voice-ok */}
+                  Dhyaan doesn’t have a number for {name}, so it can’t hand you one to dial.
+                </Txt>
+              )}
+              <Btn label="Call 911" onPress={() => Linking.openURL('tel:911')} />
+              <Txt kind="caption" tone="muted" style={{ textAlign: 'center' }}>{/* voice-ok */}
+                Opens your dialer. Dhyaan never calls 911 itself.
+              </Txt>
+            </View>
+          )}
+          {/* ElapsedStat's sentence is "to a human being told", so it is only
+              true when a person acted on a fall. Her own cancel, her own
+              voice, and a ladder that ran out are closed without it rather
+              than with a sentence that is wrong. */}
+          {alert.closed_at && alert.kind === 'fall' && (!!closedNote || humanActed(state)) ? (
             <View>
               <Rule />
               <ElapsedStat openedAt={alert.opened_at} closedAt={alert.closed_at} name={name} />
             </View>
           ) : null}
-          <Btn label="Back to home" onPress={() => router.replace('/')} />
+          <Btn label="Back to home" kind={exhausted ? 'quiet' : 'primary'} onPress={() => router.replace('/')} />
         </Stagger>
       </Screen>
     );
@@ -258,16 +287,19 @@ export default function AlertTakeover() {
       return inCancelWindow(state) ? (
         // The window runs from when the alert opened — the mock's
         // `cancel_window` ladder step does not exist on the real backend.
-        <CancelCountdownRing since={alert?.opened_at ?? ''} windowS={CANCEL_WINDOW_S} />
+        <CancelCountdownRing
+          since={alert?.opened_at ?? ''}
+          windowS={alert?.cancel_window_s ?? CANCEL_WINDOW_S}
+        />
       ) : (
-        <Txt kind="body" tone="white" style={styles.betweenLine}>
+        <Txt kind="body" style={styles.betweenLine}>
           Dhyaan is working out what to do next.
         </Txt>
       );
     }
     if (phase === 'ringing_resident') return <RingingPulse label={`Calling ${name} now…`} />;
     if (phase === 'no_answer') {
-      return <Txt kind="body" tone="white" style={styles.betweenLine}>{noAnswerLine(state, name)}</Txt>;
+      return <Txt kind="body" style={styles.betweenLine}>{noAnswerLine(state, name)}</Txt>;
     }
     if (phase === 'contacts') {
       return (
@@ -283,160 +315,142 @@ export default function AlertTakeover() {
       );
     }
     return (
-      <Txt kind="body" tone="white" style={styles.betweenLine}>
+      <Txt kind="body" style={styles.betweenLine}>
         Nobody has answered yet. Every contact is being told, with her address.
       </Txt>
     );
   })();
 
+  // The one commitment. Content travels under it.
+  const bar = (
+    <>
+      {!!actionError && <ErrorState inline message={actionError} style={{ marginBottom: sp(2) }} />}
+      {role === 'staff' ? (
+        <Btn
+          kind="inverse"
+          label="Assign to me"
+          onPress={() => act(() => api.ack(id!, actor), 'Assigned to you. The ladder has stopped.')}
+        />
+      ) : (
+        <Btn
+          kind="inverse"
+          label="I’ve got her"
+          onPress={() => act(() => api.ack(id!, actor), 'You’ve got her. The ladder has stopped.')}
+        />
+      )}
+    </>
+  );
+
   return (
-    <View style={{ flex: 1, backgroundColor: palette.rustDeep }}>
-      <Wash tone="alarm" height="100%" />
-      <ScrollView
-        contentContainerStyle={{
-          paddingTop: insets.top + sp(5),
-          paddingHorizontal: sp(5),
-          paddingBottom: FLOATING_BAR_CLEARANCE + sp(6),
-        }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Beat 0 — the machine's own header. Uppercase mono is correct here
-            and nowhere else on this screen: it is telemetry, not a sentence. */}
-        <Entrance index={0}>
-          <DataLabel tone={WHITE_SOFT} value={alert ? timeOf(alert.opened_at) : ''}>
-            {kindWord[alert?.kind ?? 'fall']}
-          </DataLabel>
-          <Rule color={WHITE} style={{ marginTop: sp(2), opacity: 0.55 }} />
-        </Entrance>
+    <Screen tone="alarm" wash floatingBar={bar} style={{ paddingHorizontal: sp(5) }}>
+      {/* Beat 0 — the machine's own header. Uppercase mono is correct here
+          and nowhere else on this screen: it is telemetry, not a sentence. */}
+      <Entrance index={0}>
+        <DataLabel value={alert ? timeOf(alert.opened_at) : ''}>
+          {kindWord[alert?.kind ?? 'fall']}
+        </DataLabel>
+        <Rule style={{ marginTop: sp(2) }} />
+      </Entrance>
 
-        <Entrance index={1}>
-          <Txt kind="display" tone="white" style={{ marginTop: sp(4) }}>
-            {alert?.kind === 'bathroom'
-              ? `${name} has been in the bathroom a long time.`
-              : `${name} may have fallen.`}
-          </Txt>
-        </Entrance>
+      <Entrance index={1}>
+        <Txt kind="display" style={{ marginTop: sp(4) }}>
+          {alert?.kind === 'bathroom'
+            ? `${name} has been in the bathroom a long time.`
+            : `${name} may have fallen.`}
+        </Txt>
+      </Entrance>
 
-        <Entrance index={2}>{middle}</Entrance>
+      <Entrance index={2}>{middle}</Entrance>
 
-        <Entrance index={3}>
-          <Marquee title="What Dhyaan has done" night />
-          {ladder.length > 0 ? (
-            <LadderTimeline steps={ladder} night />
-          ) : (
-            // No ladder history over REST (lib/http.ts sends []). Show the
-            // machine's real position instead of an empty timeline.
-            <Glass tone="alarm" style={{ padding: sp(4), gap: sp(2.5) }}>
-              <DataLabel tone={WHITE} value={alert?.state ?? '—'}>State</DataLabel>
-              <DataLabel tone={WHITE} value={alert ? timeOf(alert.opened_at) : '—'}>Opened</DataLabel>
-              <Txt kind="caption" tone="white" style={{ opacity: 0.85, marginTop: sp(1) }}>
-                Dhyaan isn’t sending the step-by-step history for this alert. This is where it has
-                got to, and it is updating as it goes.
-              </Txt>
-            </Glass>
-          )}
-        </Entrance>
-
-        {transcript.length > 0 && (
-          <Entrance index={4}>
-            <Marquee title="What the call is hearing" night />
-            {transcript.map((line, i) => (
-              <Txt
-                key={i}
-                kind="body"
-                tone="white"
-                style={
-                  line.speaker === 'agent'
-                    ? { fontStyle: 'italic', fontSize: 16, lineHeight: 24, opacity: 0.8, marginBottom: sp(2) }
-                    : { fontWeight: '700', marginBottom: sp(2) }
-                }
-              >
-                {line.speaker === 'agent' ? 'Dhyaan: ' : `${name}: `}{line.text}
-              </Txt>
-            ))}
-          </Entrance>
-        )}
-
-        {/* Beat 5 — everything that is not the one commitment. The floating bar
-            below holds that, and only that. */}
-        <Entrance index={5}>
-          <Marquee title="If you’d rather do it yourself" night />
-          <View style={{ gap: sp(2.5) }}>
-            {role === 'staff' ? (
-              <>
-                <OutlineBtn
-                  label="Resolved, checked on her"
-                  onPress={() => act(() => api.resolve(id!, 'ok'), 'Resolved. Noted on her record.')}
-                />
-                <OutlineBtn
-                  label="False alarm"
-                  onPress={() => act(() => api.resolve(id!, 'false_positive'), 'Marked as a false alarm. Nothing else will happen.')}
-                />
-              </>
-            ) : (
-              <>
-                {herPhone ? (
-                  <OutlineBtn label={`Call ${name}`} onPress={() => Linking.openURL(`tel:${herPhone}`)} />
-                ) : (
-                  <Txt kind="caption" tone="white" style={{ opacity: 0.8 }}>
-                    Dhyaan doesn’t have a number for {name} — it has her contacts, not her own line —
-                    so it can’t hand you one to dial. Dhyaan is calling her itself.
-                  </Txt>
-                )}
-                <OutlineBtn label="Call 911" onPress={() => Linking.openURL('tel:911')} />
-                <Txt kind="caption" tone="white" style={{ opacity: 0.8, textAlign: 'center' }}>
-                  {phase === 'final'
-                    ? 'Dhyaan does not dial 911 for you. If you can’t reach her, this button opens your dialer.'
-                    : 'Opens your dialer. Dhyaan never calls 911 itself.'}
-                </Txt>
-              </>
-            )}
-          </View>
-        </Entrance>
-
-        {emsLine && (
-          <Entrance index={6}>
-            <Marquee title="For the paramedics" night />
-            <Glass tone="alarm" style={{ padding: sp(4) }}>
-              <DataLabel tone={WHITE_SOFT}>From her care file</DataLabel>
-              <Txt kind="body" tone="white" style={{ marginTop: sp(2) }}>{emsLine}</Txt>
-            </Glass>
-          </Entrance>
-        )}
-      </ScrollView>
-
-      {/* The one commitment. Content travels under it. */}
-      <FloatingBar tone="alarm">
-        {!!actionError && (
-          <Txt kind="caption" tone="white" style={{ textAlign: 'center', fontWeight: '600', marginBottom: sp(2) }}>
-            {actionError}
-          </Txt>
-        )}
-        {role === 'staff' ? (
-          <BigWhiteBtn
-            label="Assign to me"
-            onPress={() => act(() => api.ack(id!, actor), 'Assigned to you. The ladder has stopped.')}
-          />
+      <Entrance index={3}>
+        <Marquee title="What Dhyaan has done" />
+        {ladder.length > 0 ? (
+          <LadderTimeline steps={ladder} />
         ) : (
-          <BigWhiteBtn
-            label="I’ve got her"
-            onPress={() => act(() => api.ack(id!, actor), 'You’ve got her. The ladder has stopped.')}
-          />
+          // No ladder history over REST (lib/http.ts sends []). Show the
+          // machine's real position instead of an empty timeline.
+          <Slab tone="alarm" style={{ gap: sp(2.5) }}>
+            <DataLabel value={alert?.state ?? '—'}>State</DataLabel>
+            <DataLabel value={alert ? timeOf(alert.opened_at) : '—'}>Opened</DataLabel>
+            <Txt kind="caption" style={{ opacity: 0.85, marginTop: sp(1) }}>
+              Dhyaan isn’t sending the step-by-step history for this alert. This is where it has
+              got to, and it is updating as it goes.
+            </Txt>
+          </Slab>
         )}
-      </FloatingBar>
-    </View>
+      </Entrance>
+
+      {transcript.length > 0 && (
+        <Entrance index={4}>
+          <Marquee title="What the call is hearing" />
+          {transcript.map((line, i) => (
+            <Txt
+              key={i}
+              kind="body"
+              style={
+                line.speaker === 'agent'
+                  ? { fontStyle: 'italic', fontSize: 16, lineHeight: 24, opacity: 0.8, marginBottom: sp(2) }
+                  : { fontWeight: '700', marginBottom: sp(2) }
+              }
+            >
+              {line.speaker === 'agent' ? 'Dhyaan: ' : `${name}: `}{line.text}
+            </Txt>
+          ))}
+        </Entrance>
+      )}
+
+      {/* Beat 5 — everything that is not the one commitment. The floating bar
+          below holds that, and only that. */}
+      <Entrance index={5}>
+        <Marquee title="If you’d rather do it yourself" />
+        <View style={{ gap: sp(2.5) }}>
+          {role === 'staff' ? (
+            <>
+              <Btn
+                kind="outline"
+                label="Resolved, checked on her"
+                onPress={() => act(() => api.resolve(id!, 'ok'), 'Resolved. Noted on her record.')}
+              />
+              <Btn
+                kind="outline"
+                label="False alarm"
+                onPress={() => act(() => api.resolve(id!, 'false_positive'), 'Marked as a false alarm. Nothing else will happen.')}
+              />
+            </>
+          ) : (
+            <>
+              {herPhone ? (
+                <Btn kind="outline" label={`Call ${name}`} onPress={() => Linking.openURL(`tel:${herPhone}`)} />
+              ) : (
+                <Txt kind="caption" style={{ opacity: 0.8 }}>
+                  Dhyaan doesn’t have a number for {name} — it has her contacts, not her own line —
+                  so it can’t hand you one to dial. Dhyaan is calling her itself.
+                </Txt>
+              )}
+              <Btn kind="outline" label="Call 911" onPress={() => Linking.openURL('tel:911')} />
+              <Txt kind="caption" style={{ opacity: 0.8, textAlign: 'center' }}>
+                {phase === 'final'
+                  ? 'Dhyaan does not dial 911 for you. If you can’t reach her, this button opens your dialer.'
+                  : 'Opens your dialer. Dhyaan never calls 911 itself.'}
+              </Txt>
+            </>
+          )}
+        </View>
+      </Entrance>
+
+      {emsLine && (
+        <Entrance index={6}>
+          <Marquee title="For the paramedics" />
+          <Slab tone="alarm">
+            <DataLabel>From her care file</DataLabel>
+            <Txt kind="body" style={{ marginTop: sp(2) }}>{emsLine}</Txt>
+          </Slab>
+        </Entrance>
+      )}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  bigBtn: {
-    minHeight: 56, borderRadius: radius.card,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  outlineBtn: {
-    minHeight: 50, borderRadius: radius.card,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.6)',
-  },
   betweenLine: { fontWeight: '600', marginTop: sp(4), textAlign: 'center' },
 });

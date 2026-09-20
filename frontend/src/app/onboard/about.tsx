@@ -163,6 +163,7 @@ export default function About() {
 
   return (
     <Screen
+      native
       wash
       floatingBar={
         <Btn

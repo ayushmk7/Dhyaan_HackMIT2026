@@ -8,13 +8,12 @@
 import { router } from 'expo-router';
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import { Btn, DataLabel, Entrance, Rule, Screen, Txt } from '@/components';
-import { Icon } from '@/components/icon';
+import { Btn, DataLabel, Entrance, Mark, Rule, Screen, Txt } from '@/components';
 import { seedDemoResident } from '@/lib/api';
 import { USE_MOCKS } from '@/lib/config';
 import { SEEDED_FACTS } from '@/lib/mock/camera';
 import { useSession } from '@/store/session';
-import { palette, radius, sp } from '@/theme/tokens';
+import { sp } from '@/theme/tokens';
 
 export default function Welcome() {
   const { setRole, seedDemoSession } = useSession();
@@ -36,15 +35,7 @@ export default function Welcome() {
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <Entrance index={0} style={{ alignItems: 'center' }}>
           {/* The screen's one uncompromising moment: black plate, white mark. */}
-          <View
-            style={{
-              width: 116, height: 116, borderRadius: radius.glass,
-              alignItems: 'center', justifyContent: 'center',
-              backgroundColor: palette.ink,
-            }}
-          >
-            <Icon name="figure.2.arms.open" size={58} color={palette.raised} weight="semibold" />
-          </View>
+          <Mark size={116} />
         </Entrance>
 
         <Entrance index={1} style={{ alignSelf: 'stretch', marginTop: sp(8) }}>
@@ -60,15 +51,20 @@ export default function Welcome() {
 
       <Entrance index={2}>
         <Btn label="Get started" onPress={() => router.push('/onboard/consent')} />
+        {/* The Pressable owns both gestures so the long-press dev affordance
+            (staff demo) survives; the link inside it is the visible control
+            and never the responder. */}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Explore the demo. Long-press for the staff demo."
           onPress={familyDemo}
           onLongPress={staffDemo}
-          style={{ paddingVertical: sp(4), alignItems: 'center', gap: sp(1.5) }}
+          style={{ paddingVertical: sp(3), alignItems: 'center', gap: sp(1.5) }}
         >
-          <Txt kind="label">Explore the demo</Txt>
-          <DataLabel value={USE_MOCKS ? 'sample data' : 'live backend'}>Source</DataLabel>
+          <View pointerEvents="none" style={{ alignItems: 'center', gap: sp(1.5) }}>
+            <Btn kind="link" label="Explore the demo" onPress={familyDemo} style={{ alignSelf: 'center' }} />
+            <DataLabel value={USE_MOCKS ? 'sample data' : 'live backend'}>Source</DataLabel>
+          </View>
         </Pressable>
         <Txt kind="caption" tone="muted" style={{ textAlign: 'center' }}>{/* voice-ok */}
           Dhyaan is not a medical device and never dials 911.

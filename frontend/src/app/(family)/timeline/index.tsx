@@ -10,17 +10,26 @@
 //   · The day's story can be written on demand (`api.rollup()` runs the
 //     nightly baseline + narrative pass). A freshly seeded backend has no
 //     summaries at all, and "Today's isn't written yet" was a dead end.
+//
+// The story and the list are read off the same `/activity` feed the server
+// already filters. The rollup writes every day's story as a `daily_summary`
+// row; the server used to select those by the moment the rollup ran, so
+// today's feed could carry a dozen other days' stories. It now selects them by
+// the day they describe, but the matching below is kept: each story is shown
+// on its own day and nowhere else, and never as a "noticed" row, whichever
+// way it arrives. `/summaries` is the second source for the story, and
+// whichever was written last wins, because the rollup can run more than once.
 import { useQueryClient } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { Pressable, RefreshControl, Share, View } from 'react-native';
+import { Pressable, RefreshControl, Share } from 'react-native';
 import {
-  Btn, Card, Chip, DataLabel, Entrance, ErrorState, Glass, Hairline, KindTag, LoadingState,
-  Marquee, Row, Screen, Txt,
+  Btn, Card, Chevron, Chip, DataLabel, EmptyState, Entrance, ErrorState, Glass, IconBtn, KindTag,
+  LoadingState, Marquee, Row, RowGroup, Screen, Slab, Txt,
 } from '@/components';
-import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
-import { dayOf, timeOf } from '@/lib/format';
+import { hasAI } from '@/lib/ai';
+import { dayOf, displaySentence, timeOf } from '@/lib/format';
 import { localDayKey, useActivity, useSummaries } from '@/lib/hooks';
 import type { ActivityItem } from '@/lib/types';
 import { useSession } from '@/store/session';
@@ -44,23 +53,41 @@ const shiftDay = (key: string, days: number) => {
   return localDayKey(dt);
 };
 
+/** The rollup opens every story with its own date: "2026-09-19 — ...". */
+const STORY_PREFIX = /^(\d{4}-\d{2}-\d{2})\s*[—–-]\s*/;
+const storyDateOf = (text: string) => STORY_PREFIX.exec(text)?.[1] ?? null;
+const storyBody = (text: string) => text.replace(STORY_PREFIX, '');
+
+/**
+ * The sentence a person reads. Almost every row arrives as one already; the
+ * band's fall record is the exception ("Band band_a3f2 reported
+ * fall_suspected" is a log line, not a sentence), and it is the one row a
+ * family will actually go looking for. Nothing is added that the record does
+ * not say.
+ */
+const familySentence = (item: ActivityItem): string => {
+  if (item.type === 'fall_suspected') return 'Her band reported a possible fall.';
+  if (item.type === 'fall_confirmed') return 'Her band confirmed a fall.';
+  return displaySentence(item.sentence);
+};
+
 function ItemRow({ item, onPress }: { item: ActivityItem; onPress?: () => void }) {
   return (
     <Pressable
       accessibilityRole={onPress ? 'button' : 'text'}
-      accessibilityLabel={`${item.sentence} ${timeOf(item.ts)}`}
+      accessibilityLabel={`${familySentence(item)} ${timeOf(item.ts)}`}
       onPress={onPress}
       disabled={!onPress}
       style={({ pressed }) => ({ paddingVertical: sp(3.5), opacity: pressed ? 0.6 : 1 })}
     >
       <Row style={{ justifyContent: 'space-between', alignItems: 'flex-start' }} gap={3}>
-        <Txt kind="body" style={{ flex: 1 }}>{item.sentence}</Txt>
+        <Txt kind="body" style={{ flex: 1 }}>{familySentence(item)}</Txt>
         {/* Tabular, so a column of times reads as a column and not as ragged prose. */}
         <Txt kind="stamp" tone="muted">{timeOf(item.ts)}</Txt>
       </Row>
       <Row gap={2} style={{ marginTop: sp(2), justifyContent: 'space-between' }}>
         <KindTag kind={item.kind} />
-        {!!onPress && <Icon name="chevron.right" size={11} color="#C7C7CC" />}
+        {!!onPress && <Chevron size={11} />}
       </Row>
     </Pressable>
   );
@@ -75,7 +102,20 @@ export default function HerDay() {
 
   const { data: activity, isLoading, isError, refetch } = useActivity(residentId, date);
   const { data: summaries } = useSummaries(residentId);
-  const summary = (summaries ?? []).find((s) => s.date_local === date);
+  // Today's feed used to be where the rollup filed every day's story, so it is
+  // still read for any day; on today itself it is the same query and costs nothing.
+  const { data: todayActivity } = useActivity(residentId);
+
+  const items = activity?.items ?? [];
+  const storyRows = [...items, ...(todayActivity?.items ?? [])]
+    .filter((i) => i.type === 'daily_summary' && storyDateOf(i.sentence) === date)
+    .sort((a, b) => (a.ts < b.ts ? 1 : -1));
+  const fromSummaries = (summaries ?? []).find((s) => s.date_local === date);
+  const summary = storyRows[0]
+    ? { narrative: storyBody(storyRows[0].sentence), at: storyRows[0].ts }
+    : fromSummaries
+      ? { narrative: storyBody(fromSummaries.narrative), at: null }
+      : null;
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -96,6 +136,11 @@ export default function HerDay() {
   const shareWeek = useCallback(async () => {
     setSharing(true);
     setShareError(null);
+    if (!hasAI) {
+      setShareError('Writing her week needs Dhyaan’s writing service, which isn’t connected on this phone. Nothing was shared.');
+      setSharing(false);
+      return;
+    }
     try {
       const letter = await api.sundayLetter();
       if (!letter.trim()) {
@@ -112,16 +157,14 @@ export default function HerDay() {
 
   const headerRight = useCallback(
     () => (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Share her week"
-        accessibilityState={{ busy: sharing }}
-        onPress={shareWeek}
+      <IconBtn
+        name="square.and.arrow.up"
+        label="Share her week"
+        kind="ghost"
+        size={32}
         disabled={sharing}
-        style={{ opacity: sharing ? 0.4 : 1, padding: sp(1) }}
-      >
-        <Icon name="square.and.arrow.up" size={20} color={palette.slate} />
-      </Pressable>
+        onPress={shareWeek}
+      />
     ),
     [shareWeek, sharing],
   );
@@ -154,12 +197,29 @@ export default function HerDay() {
 
   const isToday = date === localDayKey();
   const dayLabel = dayOf(`${date}T12:00:00`);
-  const items = activity?.items ?? [];
-  const total = items.length;
-  // `lib/http.ts` normalizes newest-first, so the ends of the list are the ends
-  // of the day. Don't re-sort it.
-  const firstAt = total ? items[total - 1].ts : null;
-  const lastAt = total ? items[0].ts : null;
+  // What goes in the list: never a story (it has its own card above), never
+  // the same pattern line twice. Each rollup used to write its deviations
+  // again with the baseline moved on a little ("about 4.2" then "about 3.6");
+  // the server now deduplicates per feature, but the key stays the claim up to
+  // its figures. Newest first, as `lib/http.ts` hands it over, so the first
+  // occurrence is the one that was written last.
+  const seen = new Set<string>();
+  const rows = items.filter((i) => {
+    if (i.type === 'daily_summary') return false;
+    if (i.kind !== 'observed') {
+      const key = `${i.type}:${i.sentence.split(',').slice(0, 2).join(',')}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+    }
+    return true;
+  });
+  // The plate counts what Dhyaan noticed, which is what it saw: a line worked
+  // out from her pattern is not a sighting, and the ends of the day are the
+  // first and last time it saw something.
+  const observed = rows.filter((i) => i.kind === 'observed');
+  const total = rows.length;
+  const firstAt = observed.length ? observed[observed.length - 1].ts : null;
+  const lastAt = observed.length ? observed[0].ts : null;
 
   const pager = (
     <Entrance index={0}>
@@ -167,53 +227,48 @@ export default function HerDay() {
           under it. Glass for the chrome you touch, ink for the record. */}
       <Glass radius={radius.bar} lift="float" interactive style={{ paddingHorizontal: sp(2) }}>
         <Row style={{ justifyContent: 'space-between' }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Previous day"
+          <IconBtn
+            name="chevron.left"
+            label="Previous day"
+            kind="ghost"
             onPress={() => setDate((d) => shiftDay(d, -1))}
-            style={({ pressed }) => ({ padding: sp(3), opacity: pressed ? 0.5 : 1 })}
-          >
-            <Icon name="chevron.left" size={15} color={palette.slate} />
-          </Pressable>
+          />
           <Txt kind="label">{dayLabel}</Txt>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Next day"
+          <IconBtn
+            name="chevron.right"
+            label="Next day"
+            kind="ghost"
             disabled={isToday}
             onPress={() => setDate((d) => shiftDay(d, 1))}
-            style={({ pressed }) => ({ padding: sp(3), opacity: isToday ? 0.25 : pressed ? 0.5 : 1 })}
-          >
-            <Icon name="chevron.right" size={15} color={palette.slate} />
-          </Pressable>
+          />
         </Row>
       </Glass>
 
-      {total > 0 && (
-        <Card lift="float" style={{ backgroundColor: palette.ink, marginTop: sp(3), paddingVertical: sp(3) }}>
+      {observed.length > 0 && (
+        <Slab style={{ marginTop: sp(3), paddingVertical: sp(3) }}>
           <Row style={{ justifyContent: 'space-between', flexWrap: 'wrap' }} gap={3}>
-            <DataLabel tone={palette.paper} value={String(total)}>Noticed</DataLabel>
-            {!!firstAt && <DataLabel tone={palette.paper} value={timeOf(firstAt)}>First</DataLabel>}
-            {!!lastAt && <DataLabel tone={palette.paper} value={timeOf(lastAt)}>Last</DataLabel>}
+            <DataLabel value={String(observed.length)}>Noticed</DataLabel>
+            {!!firstAt && <DataLabel value={timeOf(firstAt)}>First</DataLabel>}
+            {!!lastAt && <DataLabel value={timeOf(lastAt)}>Last</DataLabel>}
           </Row>
-        </Card>
+        </Slab>
       )}
 
       {!!shareError && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Dismiss"
-          onPress={() => setShareError(null)}
+        <ErrorState
+          inline
+          message={shareError}
+          retryLabel="Dismiss"
+          onRetry={() => setShareError(null)}
           style={{ marginTop: sp(3) }}
-        >
-          <Txt kind="caption" tone="warn">{shareError}</Txt>
-        </Pressable>
+        />
       )}
     </Entrance>
   );
 
   if (isLoading && !activity) {
     return (
-      <Screen native refreshControl={refreshControl}>
+      <Screen native wash refreshControl={refreshControl}>
         <Stack.Screen options={{ headerRight }} />
         {pager}
         <LoadingState label="Reading her day…" />
@@ -222,7 +277,7 @@ export default function HerDay() {
   }
   if (isError && !activity) {
     return (
-      <Screen native refreshControl={refreshControl}>
+      <Screen native wash refreshControl={refreshControl}>
         <Stack.Screen options={{ headerRight }} />
         {pager}
         <ErrorState message="Couldn’t load her day." onRetry={refetch} />
@@ -231,10 +286,10 @@ export default function HerDay() {
   }
 
   const filter = FILTERS[filterIdx];
-  const shown = items.filter((i) => filter.match(i.type));
+  const shown = rows.filter((i) => filter.match(i.type));
 
   return (
-    <Screen native refreshControl={refreshControl}>
+    <Screen native wash refreshControl={refreshControl}>
       <Stack.Screen options={{ headerRight }} />
       {pager}
 
@@ -250,29 +305,31 @@ export default function HerDay() {
         <Marquee title="The day’s story" meta={dayLabel} />
         {summary ? (
           <Card>
-            <KindTag kind="pattern" detail="the day’s story" />
+            <KindTag kind="pattern" detail={summary.at ? `written ${timeOf(summary.at)}` : 'the day’s story'} />
             <Txt kind="body" style={{ marginTop: sp(2.5) }}>{summary.narrative}</Txt>
           </Card>
         ) : (
           <Card>
-            <Txt kind="body" tone="muted">{/* voice-ok */}
+            <EmptyState
+              action={
+                <Btn
+                  label={isToday ? 'Write today’s story now' : 'Write this day’s story now'}
+                  kind="quiet"
+                  busy={writing}
+                  onPress={writeStory}
+                />
+              }
+            >
               {wroteFor === date
                 ? `Dhyaan went back through ${isToday ? 'today' : 'that day'} and didn’t have enough yet to write about.`
                 : `Dhyaan writes the day’s story each evening. ${isToday ? 'Today’s isn’t written yet.' : 'There isn’t one for this day.'}`}
-            </Txt>
-            <Btn
-              label={isToday ? 'Write today’s story now' : 'Write this day’s story now'}
-              kind="quiet"
-              busy={writing}
-              onPress={writeStory}
-              style={{ marginTop: sp(3) }}
-            />
-            <Txt kind="caption" tone="muted" style={{ marginTop: sp(2) }}>
+            </EmptyState>
+            <Txt kind="caption" tone="muted">
               {/* voice-ok: an empty state, which DESIGN.md exempts. */}
               It takes a few seconds. Dhyaan normally does this overnight.
             </Txt>
             {writeError?.date === date && (
-              <Txt kind="caption" tone="alert" style={{ marginTop: sp(2) }}>{writeError.text}</Txt>
+              <ErrorState inline message={writeError.text} style={{ marginTop: sp(2) }} />
             )}
           </Card>
         )}
@@ -284,33 +341,31 @@ export default function HerDay() {
           meta={shown.length === total ? String(total) : `${shown.length} of ${total}`}
         />
         {shown.length === 0 ? (
-          <Txt kind="body" tone="muted">{/* voice-ok */}
+          <EmptyState>
             {total === 0
               ? `No activity noticed ${isToday ? 'yet today' : 'on this day'}. Dhyaan only writes a line when it is confident enough to say a whole sentence.`
               : `Nothing filed under “${filter.label}” ${isToday ? 'today' : 'on this day'}.`}
-          </Txt>
+          </EmptyState>
         ) : (
-          <Card style={{ paddingVertical: sp(1) }}>
-            {shown.map((item, i) => (
-              <View key={item.id}>
-                {i > 0 && <Hairline />}
-                <ItemRow
-                  item={item}
-                  // Only an observation has an event behind it to open. A pattern
-                  // line and a told fact have no timeline entry, so they get no
-                  // tap target rather than one that leads nowhere.
-                  onPress={
-                    item.kind === 'observed'
-                      ? () => router.push({
-                        pathname: '/(family)/timeline/[eventId]',
-                        params: { eventId: item.id },
-                      })
-                      : undefined
-                  }
-                />
-              </View>
+          <RowGroup>
+            {shown.map((item) => (
+              <ItemRow
+                key={item.id}
+                item={item}
+                // Only an observation has an event behind it to open. A pattern
+                // line and a told fact have no timeline entry, so they get no
+                // tap target rather than one that leads nowhere.
+                onPress={
+                  item.kind === 'observed'
+                    ? () => router.push({
+                      pathname: '/(family)/timeline/[eventId]',
+                      params: { eventId: item.id },
+                    })
+                    : undefined
+                }
+              />
             ))}
-          </Card>
+          </RowGroup>
         )}
       </Entrance>
     </Screen>

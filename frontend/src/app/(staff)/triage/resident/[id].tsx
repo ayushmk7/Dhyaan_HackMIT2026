@@ -28,18 +28,16 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
 import {
-  Btn, Card, Chip, DataLabel, ErrorState, EventRow, FLOATING_BAR_CLEARANCE, FloatingBar, Field,
-  Hairline, LoadingState, Marquee, RoomTimeBar, Row, Rule, Screen, Sparkline, Stagger, StateChip,
-  Txt,
+  Btn, Card, Chip, DataLabel, EmptyState, ErrorState, EventRow, Field, LoadingState, Marquee,
+  Refusal, RoomTimeBar, Row, RowGroup, Rule, Screen, Slab, Sparkline, Stagger, StateChip, Txt,
 } from '@/components';
 import { Avatar } from '@/components/avatar';
-import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
 import { ago, dayOf, timeOf } from '@/lib/format';
 import { localDayKey, useBaselines, useLocationHistory, useResident, useTimeline } from '@/lib/hooks';
 import type { BaselineFeature, ChatMessage } from '@/lib/types';
 import { useLive } from '@/store/live';
-import { elevation, palette, radius, sp } from '@/theme/tokens';
+import { palette, sp } from '@/theme/tokens';
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
@@ -132,7 +130,7 @@ export default function ResidentDetail() {
     if (isLoading) {
       return <Screen native wash><LoadingState label="Loading…" /></Screen>;
     }
-    return <Screen native wash><Txt kind="body" tone="muted">Resident not found.</Txt></Screen>;
+    return <Screen native wash><EmptyState>Resident not found.</EmptyState></Screen>;
   }
 
   const state = liveStates[resident.id] ?? resident.state;
@@ -192,200 +190,165 @@ export default function ResidentDetail() {
   };
 
   return (
-    <View style={{ flex: 1 }}>
-      <Screen
-        native
-        wash
-        style={alertHere ? { paddingBottom: FLOATING_BAR_CLEARANCE + sp(6) } : undefined}
-      >
-        <Stagger>
-          {/* The one uncompromising moment: the identity slab, ink on paper. */}
-          <View
-            style={{
-              backgroundColor: palette.ink,
-              borderRadius: radius.glass,
-              padding: sp(4.5),
-              ...elevation.float,
-            }}
-          >
-            <Row gap={3} style={{ alignItems: 'flex-start' }}>
-              <Avatar
-                name={resident.display_name}
-                size={48}
-                tone={state === 'attention' || state === 'alerting' ? 'amber' : 'blue'}
-              />
-              <View style={{ flex: 1 }}>
-                <Txt kind="title" tone="white" numberOfLines={1}>{resident.display_name}</Txt>
-                <Txt kind="caption" style={{ color: 'rgba(255,255,255,0.75)', marginTop: 2 }}>
-                  {whereLine}
-                </Txt>
-              </View>
-              <StateChip state={state} />
-            </Row>
-            <Rule color="rgba(255,255,255,0.35)" style={{ marginTop: sp(3.5) }} />
-            <Row gap={3} style={{ marginTop: sp(2.5), flexWrap: 'wrap' }}>
-              <DataLabel tone="rgba(255,255,255,0.6)" value={resident.room ?? 'NONE'}>Room</DataLabel>
-              <DataLabel
-                tone="rgba(255,255,255,0.6)"
-                value={resident.last_seen ? timeOf(resident.last_seen) : '--:--'}
-              >
-                Seen
-              </DataLabel>
-              {resident.band_battery_pct != null && (
-                <DataLabel tone="rgba(255,255,255,0.6)" value={`${resident.band_battery_pct}%`}>
-                  Band
-                </DataLabel>
-              )}
-            </Row>
-          </View>
-
-          {deviations.length > 0 ? (
-            <Card style={{ backgroundColor: palette.ochreWash }}>
-              <Txt kind="body">
-                {`Different from ${firstName}’s own routine: `}
-                {deviations
-                  .map((b) => `${b.label.toLowerCase()} at ${fmt(lastReading(b)!)} ${b.unit} against a usual ${fmt(b.mu)}`)
-                  .join('; ')}
-                .
+    <Screen
+      native
+      wash
+      // The screen's single commitment, floating: content scrolls under it.
+      // Screen owns the clearance, and the bar rides the safe-area inset the
+      // floating tab bar raises (TabBarInsets), so it clears the tab bar.
+      floatingBar={alertHere && activeAlert ? (
+        <Btn
+          label="Open the live alert"
+          kind="danger"
+          onPress={() => router.push(`/alert/${activeAlert.id}`)}
+        />
+      ) : undefined}
+    >
+      <Stagger>
+        {/* The one uncompromising moment: the identity slab, ink on paper.
+            The slab supplies every colour inside it. */}
+        <Slab>
+          <Row gap={3} style={{ alignItems: 'flex-start' }}>
+            <Avatar
+              name={resident.display_name}
+              size={48}
+              tone={state === 'attention' || state === 'alerting' ? 'amber' : 'blue'}
+            />
+            <View style={{ flex: 1 }}>
+              <Txt kind="title" numberOfLines={1}>{resident.display_name}</Txt>
+              <Txt kind="caption" tone="muted" style={{ marginTop: 2 }}>
+                {whereLine}
               </Txt>
-            </Card>
-          ) : null}
+            </View>
+            <StateChip state={state} />
+          </Row>
+          <Rule weight="hair" style={{ marginTop: sp(3.5) }} />
+          <Row gap={3} style={{ marginTop: sp(2.5), flexWrap: 'wrap' }}>
+            <DataLabel value={resident.room ?? 'NONE'}>Room</DataLabel>
+            <DataLabel value={resident.last_seen ? timeOf(resident.last_seen) : '--:--'}>
+              Seen
+            </DataLabel>
+            {resident.band_battery_pct != null && (
+              <DataLabel value={`${resident.band_battery_pct}%`}>Band</DataLabel>
+            )}
+          </Row>
+        </Slab>
 
-          <View>
-            {/* Room-level history is staff-only by decision, not by omission. */}
-            <Marquee title="Where they’ve been today" meta={`${(segments ?? []).length} segments`} />
-            <Card>
-              <RoomTimeBar segments={segments ?? []} />
-              <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>
-                {location
-                  ? `Now in the ${location.label.toLowerCase()}${location.since ? `, since ${timeOf(location.since)}` : ''}.`
-                  : 'No current zone reading.'}
-              </Txt>
-            </Card>
-          </View>
+        {deviations.length > 0 ? (
+          // Ochre is a resident state, not a card background: the plate stays
+          // white and the "worth a look" meaning rides on the chip.
+          <Card>
+            <StateChip state="attention" />
+            <Txt kind="body" style={{ marginTop: sp(2.5) }}>
+              {`Different from ${firstName}’s own routine: `}
+              {deviations
+                .map((b) => `${b.label.toLowerCase()} at ${fmt(lastReading(b)!)} ${b.unit} against a usual ${fmt(b.mu)}`)
+                .join('; ')}
+              .
+            </Txt>
+          </Card>
+        ) : null}
 
-          <View>
-            <Marquee title="Routine" meta={`${(baselines ?? []).length} baselines`} />
-            <Card style={{ paddingVertical: sp(1) }}>
-              {(baselines ?? []).map((b, i) => (
-                <View key={b.feature}>
-                  {i > 0 && <Hairline />}
-                  <BaselineRow b={b} />
-                </View>
-              ))}
-              {(baselines ?? []).length === 0 && (
-                <Txt kind="body" tone="muted" style={{ paddingVertical: sp(3) }}>
-                  No baseline has been learned for {firstName} yet.
-                </Txt>
-              )}
-            </Card>
-          </View>
+        <View>
+          {/* Room-level history is staff-only by decision, not by omission. */}
+          <Marquee title="Where they’ve been today" meta={`${(segments ?? []).length} segments`} />
+          <Card>
+            <RoomTimeBar segments={segments ?? []} />
+            <Txt kind="caption" tone="muted" style={{ marginTop: sp(3) }}>
+              {location
+                ? `Now in the ${location.label.toLowerCase()}${location.since ? `, since ${timeOf(location.since)}` : ''}.`
+                : 'No current zone reading.'}
+            </Txt>
+          </Card>
+        </View>
 
-          <View>
-            <Marquee title="Today" meta={`${today.length} entries`} />
-            <Card style={{ paddingVertical: sp(1) }}>
-              {today.length === 0 && !pendingNote && (
-                <Txt kind="body" tone="muted" style={{ paddingVertical: sp(3) }}>
-                  Nothing recorded yet today.
-                </Txt>
-              )}
-              {!!pendingNote && (
-                <View style={{ paddingVertical: sp(2.5) }}>
-                  <DataLabel value={timeOf(pendingNote.at)}>Saving note</DataLabel>
-                  <Txt kind="body" style={{ marginTop: 2 }}>{pendingNote.text}</Txt>
-                </View>
-              )}
-              {today.map((e, i) => (
-                <View key={e.id}>
-                  {(i > 0 || !!pendingNote) && <Hairline />}
-                  <EventRow event={e} />
-                </View>
-              ))}
-            </Card>
+        <View>
+          <Marquee title="Routine" meta={`${(baselines ?? []).length} baselines`} />
+          <RowGroup>
+            {(baselines ?? []).map((b) => <BaselineRow key={b.feature} b={b} />)}
+            {(baselines ?? []).length === 0 && (
+              <EmptyState>{`No baseline has been learned for ${firstName} yet.`}</EmptyState>
+            )}
+          </RowGroup>
+        </View>
 
-            {noteOpen ? (
-              <View style={{ marginTop: sp(3), gap: sp(2.5) }}>
-                <Field
-                  label="Note"
-                  value={noteText}
-                  onChangeText={setNoteText}
-                  placeholder={`One line about ${firstName}`}
-                  multiline
-                  maxLength={400}
-                  onSubmitEditing={saveNote}
-                />
-                <Row gap={2}>
-                  <Btn label="Save note" busy={savingNote} onPress={saveNote} style={{ flex: 1 }} />
-                  <Btn
-                    label="Cancel"
-                    kind="ghost"
-                    onPress={() => { setNoteOpen(false); setNoteError(null); }}
-                    style={{ flex: 1 }}
-                  />
-                </Row>
+        <View>
+          <Marquee title="Today" meta={`${today.length} entries`} />
+          <RowGroup>
+            {today.length === 0 && !pendingNote && (
+              <EmptyState>Nothing recorded yet today.</EmptyState>
+            )}
+            {!!pendingNote && (
+              <View style={{ paddingVertical: sp(2.5) }}>
+                <DataLabel value={timeOf(pendingNote.at)}>Saving note</DataLabel>
+                <Txt kind="body" style={{ marginTop: 2 }}>{pendingNote.text}</Txt>
               </View>
-            ) : (
-              <Btn
-                label="Add a note"
-                kind="quiet"
-                onPress={() => setNoteOpen(true)}
-                style={{ marginTop: sp(3) }}
+            )}
+            {today.map((e) => <EventRow key={e.id} event={e} />)}
+          </RowGroup>
+
+          {noteOpen ? (
+            <View style={{ marginTop: sp(3), gap: sp(2.5) }}>
+              <Field
+                label="Note"
+                value={noteText}
+                onChangeText={setNoteText}
+                placeholder={`One line about ${firstName}`}
+                multiline
+                maxLength={400}
+                onSubmitEditing={saveNote}
               />
-            )}
-            {!!noteError && (
-              <Txt kind="caption" tone="alert" style={{ marginTop: sp(2) }}>{noteError}</Txt>
-            )}
-          </View>
-
-          <View>
-            <Marquee title={`Ask about ${firstName}`} />
-            <Row gap={2} style={{ alignItems: 'flex-end' }}>
-              <View style={{ flex: 1 }}>
-                <Field
-                  label="Question"
-                  value={question}
-                  onChangeText={setQuestion}
-                  placeholder={`Has ${firstName} been eating?`}
-                  onSubmitEditing={ask}
+              <Row gap={2}>
+                <Btn label="Save note" busy={savingNote} onPress={saveNote} style={{ flex: 1 }} />
+                <Btn
+                  label="Cancel"
+                  kind="ghost"
+                  onPress={() => { setNoteOpen(false); setNoteError(null); }}
+                  style={{ flex: 1 }}
                 />
-              </View>
-              <Btn label="Ask" busy={asking} onPress={ask} style={{ minHeight: 48, paddingHorizontal: sp(4) }} />
-            </Row>
-            {!!askError && (
-              <Txt kind="caption" tone="alert" style={{ marginTop: sp(2) }}>{askError}</Txt>
-            )}
-            {!!answer && (answer.refused ? (
-              // A refusal is not an error: hand.raised, ink, a plain sentence,
-              // no retry and no colour. Saying so calmly is the product working.
-              <Row gap={2} style={{ marginTop: sp(3.5), alignItems: 'flex-start' }}>
-                <Icon name="hand.raised" size={15} color={palette.inkMuted} />
-                <Txt kind="body" style={{ flex: 1 }}>{answer.text}</Txt>
               </Row>
-            ) : (
-              <Card style={{ marginTop: sp(3) }}>
-                <Txt kind="body">{answer.text}</Txt>
-                {!!answer.citations?.length && (
-                  <Row gap={2} style={{ marginTop: sp(3), flexWrap: 'wrap' }}>
-                    {answer.citations.map((c) => <Chip key={c.id} label={c.label} />)}
-                  </Row>
-                )}
-              </Card>
-            ))}
-          </View>
-        </Stagger>
-      </Screen>
+            </View>
+          ) : (
+            <Btn
+              label="Add a note"
+              kind="quiet"
+              onPress={() => setNoteOpen(true)}
+              style={{ marginTop: sp(3) }}
+            />
+          )}
+          {!!noteError && <ErrorState inline message={noteError} style={{ marginTop: sp(2) }} />}
+        </View>
 
-      {alertHere && activeAlert && (
-        // The screen's single commitment, floating: content scrolls under it.
-        // inset={false} — the tab bar already owns the bottom safe area.
-        <FloatingBar inset={false}>
-          <Btn
-            label="Open the live alert"
-            kind="danger"
-            onPress={() => router.push(`/alert/${activeAlert.id}`)}
-          />
-        </FloatingBar>
-      )}
-    </View>
+        <View>
+          <Marquee title={`Ask about ${firstName}`} />
+          <Row gap={2} style={{ alignItems: 'flex-end' }}>
+            <View style={{ flex: 1 }}>
+              <Field
+                label="Question"
+                value={question}
+                onChangeText={setQuestion}
+                placeholder={`Has ${firstName} been eating?`}
+                onSubmitEditing={ask}
+              />
+            </View>
+            <Btn label="Ask" size="small" busy={asking} onPress={ask} />
+          </Row>
+          {!!askError && <ErrorState inline message={askError} style={{ marginTop: sp(2) }} />}
+          {!!answer && (answer.refused ? (
+            // A refusal is not an error. Saying so calmly is the product working.
+            <Refusal style={{ marginTop: sp(3.5) }}>{answer.text}</Refusal>
+          ) : (
+            <Card style={{ marginTop: sp(3) }}>
+              <Txt kind="body">{answer.text}</Txt>
+              {!!answer.citations?.length && (
+                <Row gap={2} style={{ marginTop: sp(3), flexWrap: 'wrap' }}>
+                  {answer.citations.map((c) => <Chip key={c.id} label={c.label} />)}
+                </Row>
+              )}
+            </Card>
+          ))}
+        </View>
+      </Stagger>
+    </Screen>
   );
 }

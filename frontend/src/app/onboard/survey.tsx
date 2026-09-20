@@ -83,6 +83,7 @@ export default function Survey() {
 
   return (
     <Screen
+      native
       wash
       floatingBar={
         <Btn

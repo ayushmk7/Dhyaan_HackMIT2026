@@ -11,7 +11,8 @@
 //     off, AND signs this phone out. Same typed-name gesture.
 //   - Delete this note is a real DELETE of one fact.
 //   - Share her data as JSON is exactly that — JSON text into the share sheet,
-//     not a report.
+//     not a report. It is built from the family-scoped routes only, so it
+//     holds exactly what this app can show and nothing a family screen can't.
 //   - What Dhyaan does when something happens is a STATEMENT, not a switch:
 //     there is no alert-preferences endpoint, so there are no toggles to fake.
 // The native header owns the title; long-press the first section for debug.
@@ -21,21 +22,19 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Pressable, Share, View } from 'react-native';
 import {
-  Btn, Card, DataLabel, Entrance, ErrorState, FactRow, Field, Hairline, LoadingState,
-  Marquee, Row, Rule, Screen, Stagger, Txt,
+  Btn, Card, DataLabel, EmptyState, Entrance, ErrorState, FactRow, Field, Hairline, KeyValue,
+  LoadingState, Marquee, Row, RowGroup, Rule, Screen, Stagger, Txt,
 } from '@/components';
-import { Avatar } from '@/components/avatar';
+import { Avatar, avatarTone } from '@/components/avatar';
 import { api } from '@/lib/api';
 import { API_BASE, USE_MOCKS } from '@/lib/config';
 import { ago, timeOf, zoneLabel } from '@/lib/format';
-import { useContacts, useProfile } from '@/lib/hooks';
+import { localDayKey, useContacts, useProfile } from '@/lib/hooks';
 import { registerForPush, sendTestPush } from '@/lib/push';
 import { useCareFile } from '@/store/carefile';
 import { useSession } from '@/store/session';
 import type { Fact } from '@/lib/types';
 import { sp } from '@/theme/tokens';
-
-const AVATAR_TONES = ['green', 'amber', 'blue'] as const;
 
 // app.json's extra.eas.projectId. `npx eas init` writes the real one; until it
 // does, push registration cannot succeed and the button says so rather than
@@ -168,7 +167,10 @@ function CareFileSummary() {
           {medications.length} medication{medications.length === 1 ? '' : 's'} · {appointments.length} upcoming
         </Txt>
       ) : (
-        <Txt kind="body">Med lists and letters become reminders and an emergency card.</Txt>
+        <Txt kind="body">
+          Med lists and letters become an emergency card for the alert screen and a note of
+          what’s coming up on Today.
+        </Txt>
       )}
       <Btn
         label={sources.length ? 'Open her care file' : 'Add the first document'}
@@ -216,6 +218,10 @@ export default function Settings() {
 
   const name = profile?.name ?? residentName;
   const facts = profile?.facts ?? [];
+  // The server's consent record is the record. The session copy only exists
+  // for the minutes between signing and the profile being saved.
+  const signedBy = profile?.consent.signed_by || consentGivenBy;
+  const relationship = profile?.consent.relationship || consentRelationship;
   const nameTyped = confirmName.trim().toLowerCase() === name.toLowerCase();
 
   const closeFactForm = () => {
@@ -340,8 +346,11 @@ export default function Settings() {
   const exportData = async () => {
     setExportError(null);
     try {
-      const [summaries, events] = await Promise.all([
-        api.getSummaries(residentId), api.getEvents(residentId),
+      // The last seven days, from the same family-filtered route Her day
+      // reads. The staff timeline this used to export carries room names.
+      const days = Array.from({ length: 7 }, (_, i) => localDayKey(new Date(Date.now() - i * 86_400_000)));
+      const [summaries, ...activity] = await Promise.all([
+        api.getSummaries(residentId), ...days.map((d) => api.getActivity(residentId, d)),
       ]);
       await Share.share({
         title: `${name} export`,
@@ -350,7 +359,7 @@ export default function Settings() {
           exported_at: new Date().toISOString(),
           told_to_dhyaan: facts.map((f) => ({ key: f.key, text: f.text, at: f.created_at })),
           summaries,
-          events,
+          days: activity,
         }, null, 2),
       });
     } catch (e) {
@@ -371,51 +380,48 @@ export default function Settings() {
             />
           </Pressable>
           {debugOpen && <DebugPanel />}
-          <Card>
+          {/* One plate of rows: RowGroup draws the hairlines between every child. */}
+          <RowGroup>
             {profileLoading && !profile && <LoadingState label="Loading her profile…" />}
             {profileError && !profile && (
               <ErrorState message="Couldn’t load what Dhyaan was told." onRetry={refetchProfile} />
             )}
             {!!profile && facts.length === 0 && (
-              <Txt kind="body" tone="muted">{/* voice-ok */}
+              <EmptyState>
                 Nothing told to Dhyaan yet. Until you add what you know, it will say it
                 wasn’t told, rather than guess.
-              </Txt>
+              </EmptyState>
             )}
-            {facts.map((f, i) => (
-              <View key={f.id}>
-                {i > 0 && <Hairline />}
-                <FactRow
-                  fact={f}
-                  onPress={() => {
-                    setEditing(f);
-                    setAdding(false);
-                    setDraftText(f.text);
-                    setFactError(null);
-                    setConfirmDeleteFact(false);
-                  }}
-                />
-              </View>
+            {facts.map((f) => (
+              <FactRow
+                key={f.id}
+                fact={f}
+                onPress={() => {
+                  setEditing(f);
+                  setAdding(false);
+                  setDraftText(f.text);
+                  setFactError(null);
+                  setConfirmDeleteFact(false);
+                }}
+              />
             ))}
             {!!profile?.appearance && (
-              <>
-                <Hairline style={{ marginVertical: sp(2) }} />
+              <View style={{ paddingVertical: sp(3) }}>
                 <Txt kind="label" tone="muted">How you described her</Txt>
                 <Txt kind="body" style={{ marginTop: 2 }}>{profile.appearance}</Txt>
-              </>
+              </View>
             )}
             {!!profile?.usual_spots?.length && (
-              <>
-                <Hairline style={{ marginVertical: sp(2) }} />
+              <View style={{ paddingVertical: sp(3) }}>
                 <Txt kind="label" tone="muted">Her usual spots</Txt>
                 {profile.usual_spots.map((spot) => (
                   <Txt key={spot} kind="body" style={{ marginTop: 2 }}>{spot}</Txt>
                 ))}
-              </>
+              </View>
             )}
 
             {(editing || adding) && (
-              <View style={{ marginTop: sp(4), gap: sp(3) }}>
+              <View style={{ paddingVertical: sp(3), gap: sp(3) }}>
                 <Rule />
                 {adding && (
                   <Field
@@ -434,7 +440,7 @@ export default function Settings() {
                   multiline
                   maxLength={300}
                 />
-                {!!factError && <Txt kind="caption" tone="alert">{factError}</Txt>}
+                {!!factError && <ErrorState inline message={factError} />}
                 <Row gap={2}>
                   <Btn
                     kind="quiet"
@@ -470,13 +476,12 @@ export default function Settings() {
                       />
                     </View>
                   ) : (
-                    <Pressable
-                      accessibilityRole="button"
+                    <Btn
+                      kind="link"
+                      tone="alert"
+                      label="Delete this note"
                       onPress={() => setConfirmDeleteFact(true)}
-                      style={{ alignSelf: 'flex-start' }}
-                    >
-                      <Txt kind="label" tone="alert">Delete this note</Txt>
-                    </Pressable>
+                    />
                   )
                 )}
               </View>
@@ -485,11 +490,11 @@ export default function Settings() {
               <Btn
                 kind="quiet"
                 label="Add a note"
-                style={{ marginTop: sp(4) }}
+                style={{ marginVertical: sp(3) }}
                 onPress={() => { setAdding(true); setDraftKey(''); setDraftText(''); setFactError(null); }}
               />
             )}
-          </Card>
+          </RowGroup>
         </View>
 
         {/* ---- Camera ---- */}
@@ -500,37 +505,39 @@ export default function Settings() {
           />
           <Card>
             {!profile?.camera ? (
-              <Txt kind="body" tone="muted">{/* voice-ok */}
+              <EmptyState>
                 No camera is set up. Start it on the computer in her home, then finish
                 setup from there.
-              </Txt>
+              </EmptyState>
             ) : (
               <>
-                <Row style={{ justifyContent: 'space-between' }}>
-                  <Txt kind="caption" tone="muted">Room</Txt>
-                  <Txt kind="caption">{zoneLabel(profile.camera.zone)}</Txt>
-                </Row>
-                <Row style={{ justifyContent: 'space-between', marginTop: sp(2) }}>
-                  <Txt kind="caption" tone="muted">State</Txt>
-                  <Txt kind="caption">
-                    {profile.camera.state === 'watching' ? 'Watching'
+                {/* The only room name on a family screen, and it is allowed:
+                    this is where the FAMILY installed the camera (they picked
+                    it in onboarding), not where she is. Labelled "Where it's
+                    installed" rather than "Room" so it cannot be misread as
+                    whereabouts — D-001 bans her location, not the hardware's. */}
+                <KeyValue label="Where it’s installed" value={zoneLabel(profile.camera.zone)} />
+                <KeyValue
+                  label="State"
+                  value={
+                    profile.camera.state === 'watching' ? 'Watching'
                       : profile.camera.state === 'paused'
                         ? `Paused${profile.camera.paused_until ? ` until ${timeOf(profile.camera.paused_until)}` : ''}`
-                        : profile.camera.state === 'offline' ? 'Not running' : 'Consent off'}
-                  </Txt>
-                </Row>
+                        : profile.camera.state === 'offline' ? 'Not running' : 'Consent off'
+                  }
+                  style={{ marginTop: sp(2) }}
+                />
                 <Hairline style={{ marginVertical: sp(3) }} />
                 {!confirmStop ? (
-                  <Pressable accessibilityRole="button" onPress={() => setConfirmStop(true)}>
-                    <Txt kind="label" tone="alert">Stop the camera</Txt>
-                  </Pressable>
+                  <Btn kind="link" tone="alert" label="Stop the camera" onPress={() => setConfirmStop(true)} />
                 ) : (
                   <View style={{ gap: sp(2) }}>
                     <Txt kind="body">
                       This turns the camera consent off. The camera on her computer stops
-                      within ten seconds. Fall detection is unaffected.
+                      within ten seconds. Fall detection is unaffected. There is no switch
+                      here to turn it back on; that takes setup again, with her.
                     </Txt>
-                    {!!cameraError && <Txt kind="caption" tone="alert">{cameraError}</Txt>}
+                    {!!cameraError && <ErrorState inline message={cameraError} />}
                     <Btn label="Stop the camera" kind="danger" busy={cameraBusy} onPress={stopCamera} />
                     <Btn label="Leave it running" kind="quiet" onPress={() => setConfirmStop(false)} />
                   </View>
@@ -546,28 +553,25 @@ export default function Settings() {
             title="Who Dhyaan calls, in order"
             meta={contacts ? `${contacts.length} contacts` : undefined}
           />
-          <Card style={{ paddingVertical: sp(2) }}>
+          <RowGroup>
             {contactsLoading && !contacts && <LoadingState label="Loading…" />}
             {contactsError && !contacts && (
               <ErrorState message="Couldn’t load her contacts." onRetry={refetchContacts} />
             )}
             {!!contacts && contacts.length === 0 && (
-              <Txt kind="body" tone="muted" style={{ paddingVertical: sp(2) }}>{/* voice-ok */}
-                Nobody on the list yet. A call she doesn’t answer has nowhere to go — add
-                someone by running setup again.
-              </Txt>
+              <EmptyState>
+                Nobody on the list yet, so a call she doesn’t answer has nowhere to go. The
+                list is written during setup, and there isn’t a way to change it from here yet.
+              </EmptyState>
             )}
             {(contacts ?? []).map((c, i) => (
-              <View key={c.id}>
-                {i > 0 && <Hairline />}
-                <Row gap={3} style={{ paddingVertical: sp(2.5) }}>
-                  <Avatar name={c.name} size={34} tone={AVATAR_TONES[i % AVATAR_TONES.length]} />
-                  <Txt kind="body" style={{ flex: 1 }}>{c.name}</Txt>
-                  <Txt kind="caption" tone="muted">{c.relationship}</Txt>
-                </Row>
-              </View>
+              <Row key={c.id} gap={3} style={{ paddingVertical: sp(2.5) }}>
+                <Avatar name={c.name} size={34} tone={avatarTone(i)} />
+                <Txt kind="body" style={{ flex: 1 }}>{c.name}</Txt>
+                <Txt kind="caption" tone="muted">{c.relationship}</Txt>
+              </Row>
             ))}
-          </Card>
+          </RowGroup>
         </View>
 
         <View>
@@ -610,8 +614,8 @@ export default function Settings() {
           <Card>
             <Txt kind="caption" tone="muted">
               Recorded for {name}
-              {consentGivenBy ? ` by ${consentGivenBy}` : ''}
-              {consentRelationship ? ` (${consentRelationship})` : ''}
+              {signedBy ? ` by ${signedBy}` : ''}
+              {relationship ? ` (${relationship})` : ''}
               {profile?.consent.signed_at ? ` on ${new Date(profile.consent.signed_at).toLocaleDateString()}` : ''}.
             </Txt>
             <View style={{ marginTop: sp(3), gap: sp(1.5) }}>
@@ -620,10 +624,7 @@ export default function Settings() {
                 ['Camera', profile?.consent.camera],
                 ['Keeping a memory of her', profile?.consent.memory],
               ] as const).map(([label, on]) => (
-                <Row key={label} style={{ justifyContent: 'space-between' }}>
-                  <Txt kind="caption" tone="muted">{label}</Txt>
-                  <Txt kind="caption" tone={on ? 'ok' : 'muted'}>{on ? 'Agreed' : 'Declined'}</Txt>
-                </Row>
+                <KeyValue key={label} label={label} value={on ? 'Agreed' : 'Declined'} tone={on ? 'ok' : 'muted'} />
               ))}
             </View>
           </Card>
@@ -643,14 +644,12 @@ export default function Settings() {
               </Txt>
             )}
             <Hairline style={{ marginVertical: sp(3) }} />
-            <Pressable accessibilityRole="button" onPress={exportData}>
-              <Txt kind="label">Share her data as JSON</Txt>
-            </Pressable>
+            <Btn kind="link" label="Share her data as JSON" onPress={exportData} />
             <Txt kind="caption" tone="muted" style={{ marginTop: sp(1) }}>{/* voice-ok */}
-              Opens the share sheet with JSON text: her daily summaries, her timeline,
-              and the notes you typed. It is not a printable report.
+              Opens the share sheet with JSON text: her daily summaries, the last seven days
+              of her timeline, and the notes you typed. It is not a printable report.
             </Txt>
-            {exportError && <Txt kind="caption" tone="alert" style={{ marginTop: sp(1) }}>{exportError}</Txt>}
+            {exportError && <ErrorState inline message={exportError} style={{ marginTop: sp(1) }} />}
 
             <View style={{ marginTop: sp(4) }}>
               <Rule weight="heavy" />
@@ -659,13 +658,13 @@ export default function Settings() {
             {/* Irreversible, so each one makes you type her name (DESIGN rule 8). */}
             {destructive !== 'wipe' && (
               destructive !== 'forget' ? (
-                <Pressable
-                  accessibilityRole="button"
+                <Btn
+                  kind="link"
+                  tone="alert"
+                  label="Forget her profile"
                   onPress={() => openDestructive('forget')}
                   style={{ marginTop: sp(3) }}
-                >
-                  <Txt kind="label" tone="alert">Forget her profile</Txt>
-                </Pressable>
+                />
               ) : (
                 <View style={{ gap: sp(3), marginTop: sp(3) }}>
                   <Txt kind="body">
@@ -680,7 +679,7 @@ export default function Settings() {
                     placeholder={name}
                     autoCorrect={false}
                   />
-                  {!!forgetError && <Txt kind="caption" tone="alert">{forgetError}</Txt>}
+                  {!!forgetError && <ErrorState inline message={forgetError} />}
                   <Btn
                     label="Forget everything about her"
                     kind="danger"
@@ -699,13 +698,13 @@ export default function Settings() {
 
             {destructive !== 'forget' && (
               destructive !== 'wipe' ? (
-                <Pressable
-                  accessibilityRole="button"
+                <Btn
+                  kind="link"
+                  tone="alert"
+                  label="Delete everything and stop Dhyaan"
                   onPress={() => openDestructive('wipe')}
                   style={{ marginTop: sp(3) }}
-                >
-                  <Txt kind="label" tone="alert">Delete everything and stop Dhyaan</Txt>
-                </Pressable>
+                />
               ) : (
                 <View style={{ gap: sp(3), marginTop: sp(3) }}>
                   <Txt kind="body">
@@ -720,7 +719,7 @@ export default function Settings() {
                     placeholder={name}
                     autoCorrect={false}
                   />
-                  {!!forgetError && <Txt kind="caption" tone="alert">{forgetError}</Txt>}
+                  {!!forgetError && <ErrorState inline message={forgetError} />}
                   <Btn
                     label="Delete everything and stop Dhyaan"
                     kind="danger"
@@ -739,13 +738,20 @@ export default function Settings() {
           </Card>
         </View>
 
-        {/* ---- Band ---- */}
+        {/* ---- Band ----
+            No buttons into /onboard/pair or /onboard/survey. Those screens have
+            no header and no way back; their only visible exit is Continue,
+            which walks the whole setup again and ends by re-saving her consent
+            from this session's blank answers, switching everything off. Until
+            setup can be re-entered safely, this says what is true. */}
         <View>
           <Marquee title="Her band" />
-          <View style={{ gap: sp(2) }}>
-            <Btn kind="quiet" label="Pair a band" onPress={() => router.push('/onboard/pair')} />
-            <Btn kind="quiet" label="Survey a room" onPress={() => router.push('/onboard/survey')} />
-          </View>
+          <Card>
+            <Txt kind="body">
+              Her band was paired during setup, and the rooms were walked then. There isn’t a
+              way to pair a new band or walk the rooms again from here yet.
+            </Txt>
+          </Card>
         </View>
       </Stagger>
 

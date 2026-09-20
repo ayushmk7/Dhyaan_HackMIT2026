@@ -9,7 +9,7 @@ import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { View } from 'react-native';
 import {
-  Btn, Card, Chip, Entrance, Field, Marquee, Row, Rule, Screen, Txt,
+  Btn, Card, Chip, Entrance, ErrorState, Field, Marquee, Row, Rule, Screen, Txt,
 } from '@/components';
 import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
@@ -72,6 +72,7 @@ export default function Camera() {
 
   return (
     <Screen
+      native
       wash
       floatingBar={
         <Btn label="Continue" disabled={!ready} onPress={() => router.push('/onboard/contacts')} />
@@ -152,7 +153,7 @@ export default function Camera() {
         )}
         {test.kind === 'unreachable' && (
           <View style={{ gap: sp(1) }}>
-            <Txt kind="caption" tone="warn">Not reachable. {test.message}</Txt>
+            <ErrorState inline message={`Not reachable. ${test.message}`} />
             <Txt kind="caption" tone="muted">{/* voice-ok */}
               You can finish setup without it and test later.
             </Txt>

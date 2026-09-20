@@ -97,12 +97,14 @@ function GrantCard({ g, value, onChange }: {
       </Row>
       <Pressable
         accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`How ${g.title} works`}
         onPress={() => setOpen((v) => !v)}
-        style={{ marginTop: sp(2.5), alignSelf: 'flex-start' }}
+        style={{ marginTop: sp(1), alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center' }}
       >
         <Row gap={1}>
           <Icon name={open ? 'chevron.down' : 'chevron.right'} size={11} color={palette.ink} />
-          <Txt kind="caption" style={{ fontWeight: '600' }}>How it works</Txt>
+          <Txt kind="tag">How it works</Txt>
         </Row>
       </Pressable>
       {open && (
@@ -153,6 +155,7 @@ export default function Consent() {
 
   return (
     <Screen
+      native
       wash
       floatingBar={<Btn label="Agree and continue" disabled={!ready} onPress={agree} />}
     >

@@ -21,56 +21,43 @@ import { router } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, View } from 'react-native';
 import {
-  Btn, Card, Chip, DataLabel, ErrorState, Hairline, LoadingState, Marquee, Row, Screen,
-  Stagger, StatusDot, Txt,
+  Btn, Card, Chevron, Chip, DataLabel, EmptyState, ErrorState, LoadingState, Marquee, Row,
+  RowGroup, Screen, Slab, Stagger, StatusDot, Txt,
 } from '@/components';
 import { Avatar } from '@/components/avatar';
-import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
 import { timeOf } from '@/lib/format';
 import { useResidents } from '@/lib/hooks';
 import type { Alert, Resident } from '@/lib/types';
 import { useLive } from '@/store/live';
 import { useSession } from '@/store/session';
-import { elevation, palette, radius, sp } from '@/theme/tokens';
+import { palette, sp } from '@/theme/tokens';
 import type { ResidentState } from '@/theme/tokens';
 import { NEEDS_EYES, TIER, deriveState, pad2, triageReason } from '../_layout';
 
 type TriageItem = Resident & { state: ResidentState; alert?: Alert; reason: string | null };
 
 // The one uncompromising contrast moment on this screen: black slab, white
-// tabular figures. Everything below it stays quiet paper.
+// tabular figures. Everything below it stays quiet paper. The slab supplies
+// the colours; nothing inside it is told what it is sitting on.
 function CountSlab({ needing, total, updatedAt }: {
   needing: number; total: number; updatedAt: number;
 }) {
   return (
-    <View
-      style={{
-        backgroundColor: palette.ink,
-        borderRadius: radius.glass,
-        paddingHorizontal: sp(4.5),
-        paddingVertical: sp(4),
-        ...elevation.float,
-      }}
-    >
+    <Slab style={{ paddingVertical: sp(4) }}>
       <Row style={{ justifyContent: 'space-between', alignItems: 'flex-end' }}>
         <View>
-          <DataLabel tone="rgba(255,255,255,0.55)">Needs a check</DataLabel>
-          <Txt kind="data" tone="white" style={{ fontSize: 46, lineHeight: 50, marginTop: sp(1) }}>
-            {pad2(needing)}
-          </Txt>
+          <DataLabel>Needs a check</DataLabel>
+          <Txt kind="readout" style={{ marginTop: sp(1) }}>{pad2(needing)}</Txt>
         </View>
         <View style={{ alignItems: 'flex-end', gap: sp(1.5) }}>
-          <DataLabel tone="rgba(255,255,255,0.55)" value={pad2(total)}>On the floor</DataLabel>
-          <DataLabel
-            tone="rgba(255,255,255,0.55)"
-            value={updatedAt ? timeOf(new Date(updatedAt).toISOString()) : '--:--'}
-          >
+          <DataLabel value={pad2(total)}>On the floor</DataLabel>
+          <DataLabel value={updatedAt ? timeOf(new Date(updatedAt).toISOString()) : '--:--'}>
             Updated
           </DataLabel>
         </View>
       </Row>
-    </View>
+    </Slab>
   );
 }
 
@@ -119,16 +106,17 @@ function TriageRow({ r, acking, onPress, onAck }: {
               )}
             </Row>
           </View>
-          <Icon name="chevron.right" size={12} color={palette.inkMuted} />
+          <Chevron />
         </Row>
       </Pressable>
       {onAck && (
         <Btn
           label="Acknowledge"
           kind="quiet"
+          size="small"
           busy={acking}
           onPress={onAck}
-          style={{ alignSelf: 'flex-start', minHeight: 40, marginTop: sp(2), marginLeft: sp(13) }}
+          style={{ alignSelf: 'flex-start', marginTop: sp(2), marginLeft: sp(13) }}
         />
       )}
     </View>
@@ -250,27 +238,24 @@ export default function Triage() {
           />
         </Pressable>
 
-        <Card style={{ paddingVertical: sp(1) }}>
-          {needsEyes.map((r, i) => (
-            <View key={r.id}>
-              {i > 0 && <Hairline />}
-              <TriageRow
-                r={r}
-                acking={ackingAlertId === r.alert?.id}
-                onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
-                onAck={r.alert ? () => ack(r.alert!) : undefined}
-              />
-            </View>
+        <RowGroup>
+          {needsEyes.map((r) => (
+            <TriageRow
+              key={r.id}
+              r={r}
+              acking={ackingAlertId === r.alert?.id}
+              onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
+              onAck={r.alert ? () => ack(r.alert!) : undefined}
+            />
           ))}
           {needsEyes.length === 0 && (
-            <Txt kind="body" tone="muted" style={{ paddingVertical: sp(3) }}>
-              {/* voice-ok: an empty state, which DESIGN.md exempts. */}
+            <EmptyState>
               {residents.length === 0
                 ? 'No residents on this floor yet.'
                 : 'Nobody needs a check right now.'}
-            </Txt>
+            </EmptyState>
           )}
-        </Card>
+        </RowGroup>
 
         {normal.length > 0 && (
           <View>
@@ -284,17 +269,15 @@ export default function Triage() {
               }
             />
             {showOk && (
-              <Card style={{ paddingVertical: sp(1) }}>
-                {normal.map((r, i) => (
-                  <View key={r.id}>
-                    {i > 0 && <Hairline />}
-                    <TriageRow
-                      r={r}
-                      onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
-                    />
-                  </View>
+              <RowGroup>
+                {normal.map((r) => (
+                  <TriageRow
+                    key={r.id}
+                    r={r}
+                    onPress={() => router.push(`/(staff)/triage/resident/${r.id}`)}
+                  />
                 ))}
-              </Card>
+              </RowGroup>
             )}
           </View>
         )}

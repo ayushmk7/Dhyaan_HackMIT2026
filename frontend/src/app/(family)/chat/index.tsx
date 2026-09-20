@@ -9,17 +9,15 @@
 // product working, not failing.
 import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
+import { ScrollView, TextInput, View } from 'react-native';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View,
-} from 'react-native';
-import {
-  Card, Chip, CitationChip, Entrance, FLOATING_BAR_CLEARANCE, FloatingBar, KindTag, Row, Rule, Txt,
+  Card, Chip, CitationChip, Entrance, ErrorState, IconBtn, KindTag, LoadingState, Refusal, Row, Rule,
+  Screen, Slab, Txt,
 } from '@/components';
-import { Icon } from '@/components/icon';
 import { api } from '@/lib/api';
 import type { ChatMessage } from '@/lib/types';
 import { useSession } from '@/store/session';
-import { palette, sp, type } from '@/theme/tokens';
+import { palette, radius, sp, type } from '@/theme/tokens';
 
 const SUGGESTIONS = [
   'Has she eaten today?',
@@ -62,154 +60,129 @@ export default function Ask() {
     }
   };
 
-  return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: palette.paper }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        ref={scrollRef}
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{
-          paddingTop: sp(2),
-          paddingHorizontal: sp(4),
-          paddingBottom: FLOATING_BAR_CLEARANCE + sp(4),
+  // The composer floats and the conversation travels under it. The input is
+  // hand-rolled on purpose: Field's white plate is wrong inside glass.
+  const composer = (
+    <Row gap={2}>
+      <TextInput
+        accessibilityLabel={`Ask about ${residentName}`}
+        value={draft}
+        onChangeText={setDraft}
+        placeholder={`Ask anything about ${residentName}’s week`}
+        placeholderTextColor={palette.inkMuted}
+        style={{
+          flex: 1, minHeight: 40, maxHeight: 110,
+          paddingHorizontal: sp(3), paddingVertical: sp(2),
+          ...type.body, color: palette.ink,
         }}
-        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {messages.length === 0 && (
-          <>
-            {/* The screen's one uncompromising surface, and it is the law of
-                the screen: every answer names where it came from. */}
-            <Entrance index={0}>
-              <Card lift="float" style={{ backgroundColor: palette.ink }}>
-                <Txt kind="title" tone="paper">
-                  Every answer says where it came from.
-                </Txt>
-                <Rule color={palette.paper} style={{ marginTop: sp(3.5), opacity: 0.3 }} />
-                <Row gap={2} style={{ marginTop: sp(3.5), flexWrap: 'wrap' }}>
-                  <KindTag kind="observed" />
-                  <KindTag kind="told" />
-                  <KindTag kind="pattern" />
-                </Row>
-              </Card>
-            </Entrance>
+        multiline
+        onSubmitEditing={() => send(draft)}
+      />
+      <IconBtn
+        name="arrow.up"
+        label="Ask"
+        kind="primary"
+        size={38}
+        disabled={!draft.trim() || thinking}
+        onPress={() => send(draft)}
+      />
+    </Row>
+  );
 
-            <Entrance index={1}>
-              <View style={{ marginTop: sp(6), gap: sp(2) }}>
-                {SUGGESTIONS.map((s) => (
-                  <Chip key={s} label={s} onPress={() => send(s)} />
-                ))}
-                <Chip
-                  label="Plan from group chat"
-                  onPress={() => router.push('/(family)/chat/plan')}
-                />
-              </View>
-            </Entrance>
-          </>
+  return (
+    <Screen
+      native
+      wash
+      keyboard
+      scrollRef={scrollRef}
+      scrollProps={{
+        keyboardShouldPersistTaps: 'handled',
+        onContentSizeChange: () => scrollRef.current?.scrollToEnd({ animated: true }),
+      }}
+      floatingBar={composer}
+    >
+      {messages.length === 0 && (
+        <>
+          {/* The screen's one uncompromising surface, and it is the law of
+              the screen: every answer names where it came from. */}
+          <Entrance index={0}>
+            <Slab>
+              <Txt kind="title">Every answer says where it came from.</Txt>
+              <Rule weight="hair" style={{ marginTop: sp(3.5) }} />
+              <Row gap={2} style={{ marginTop: sp(3.5), flexWrap: 'wrap' }}>
+                <KindTag kind="observed" />
+                <KindTag kind="told" />
+                <KindTag kind="pattern" />
+              </Row>
+            </Slab>
+          </Entrance>
+
+          <Entrance index={1}>
+            <View style={{ marginTop: sp(6), gap: sp(2) }}>
+              {SUGGESTIONS.map((s) => (
+                <Chip key={s} label={s} onPress={() => send(s)} />
+              ))}
+              <Chip
+                label="Plan from group chat"
+                onPress={() => router.push('/(family)/chat/plan')}
+              />
+            </View>
+          </Entrance>
+        </>
+      )}
+
+      <View style={{ marginTop: sp(5), gap: sp(3) }}>
+        {messages.map((m) =>
+          m.role === 'user' ? (
+            <View key={m.id} style={{
+              alignSelf: 'flex-end', maxWidth: '85%',
+              backgroundColor: palette.ink,
+              borderRadius: radius.bubble, paddingHorizontal: sp(3.5), paddingVertical: sp(2.5),
+            }}>
+              <Txt kind="body" tone="paper">{m.text}</Txt>
+            </View>
+          ) : (
+            <Card key={m.id} style={{ alignSelf: 'stretch' }}>
+              {m.refused ? (
+                <Refusal label={REFUSAL_LABEL[m.refusal_kind ?? ''] ?? 'Dhyaan doesn’t answer this'}>
+                  {m.text}
+                </Refusal>
+              ) : (
+                <Txt kind="body">{m.text}</Txt>
+              )}
+              {!!m.citations?.length && (
+                <View style={{ marginTop: sp(3.5), gap: sp(2) }}>
+                  <Rule weight="hair" color={palette.line} />
+                  {m.citations.map((c) => (
+                    <CitationChip
+                      key={`${c.kind}_${c.id}`}
+                      citation={c}
+                      onPress={
+                        c.event_ids[0]
+                          ? () => router.push({
+                            pathname: '/(family)/timeline/[eventId]',
+                            params: { eventId: c.event_ids[0] },
+                          })
+                          : undefined
+                      }
+                    />
+                  ))}
+                </View>
+              )}
+            </Card>
+          ),
         )}
 
-        <View style={{ marginTop: sp(5), gap: sp(3) }}>
-          {messages.map((m) =>
-            m.role === 'user' ? (
-              <View key={m.id} style={{
-                alignSelf: 'flex-end', maxWidth: '85%',
-                backgroundColor: palette.ink,
-                borderRadius: 20, paddingHorizontal: sp(3.5), paddingVertical: sp(2.5),
-              }}>
-                <Txt kind="body" tone="paper">{m.text}</Txt>
-              </View>
-            ) : (
-              <Card key={m.id} style={{ alignSelf: 'stretch' }}>
-                {m.refused && (
-                  <Row gap={1.5} style={{ marginBottom: sp(2.5) }}>
-                    <Icon name="hand.raised" size={14} color={palette.slate} />
-                    <Txt kind="label" tone="slate">
-                      {REFUSAL_LABEL[m.refusal_kind ?? ''] ?? 'Dhyaan doesn’t answer this'}
-                    </Txt>
-                  </Row>
-                )}
-                <Txt kind="body" style={{ opacity: m.refused ? 0.75 : 1 }}>{m.text}</Txt>
-                {!!m.citations?.length && (
-                  <View style={{ marginTop: sp(3.5), gap: sp(2) }}>
-                    <Rule weight="hair" color={palette.line} />
-                    {m.citations.map((c) => (
-                      <CitationChip
-                        key={`${c.kind}_${c.id}`}
-                        citation={c}
-                        onPress={
-                          c.event_ids[0]
-                            ? () => router.push({
-                              pathname: '/(family)/timeline/[eventId]',
-                              params: { eventId: c.event_ids[0] },
-                            })
-                            : undefined
-                        }
-                      />
-                    ))}
-                  </View>
-                )}
-              </Card>
-            ),
-          )}
+        {thinking && (
+          <Card>
+            <LoadingState label="Reading her day…" />
+          </Card>
+        )}
 
-          {thinking && (
-            <Card style={{ alignSelf: 'stretch' }}>
-              <Row gap={2}>
-                <ActivityIndicator size="small" color={palette.inkMuted} />
-                <Txt kind="caption" tone="muted" accessibilityLiveRegion="polite">
-                  Reading her day…
-                </Txt>
-              </Row>
-            </Card>
-          )}
-
-          {sendError && !thinking && (
-            <Row gap={2} style={{ justifyContent: 'space-between' }}>
-              <Txt kind="caption" tone="alert" style={{ flex: 1 }}>{sendError}</Txt>
-              <Pressable accessibilityRole="button" onPress={() => send(lastQuestion)}>
-                <Txt kind="label" tone="slate">Try again</Txt>
-              </Pressable>
-            </Row>
-          )}
-        </View>
-      </ScrollView>
-
-      {/* The composer floats and the conversation travels under it. */}
-      <FloatingBar>
-        <Row gap={2}>
-          <TextInput
-            accessibilityLabel={`Ask about ${residentName}`}
-            value={draft}
-            onChangeText={setDraft}
-            placeholder={`Ask anything about ${residentName}’s week`}
-            placeholderTextColor={palette.inkMuted}
-            style={{
-              flex: 1, minHeight: 40, maxHeight: 110,
-              paddingHorizontal: sp(3), paddingVertical: sp(2),
-              ...type.body, color: palette.ink,
-            }}
-            multiline
-            onSubmitEditing={() => send(draft)}
-          />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Ask"
-            accessibilityState={{ disabled: !draft.trim() || thinking }}
-            onPress={() => send(draft)}
-            style={({ pressed }) => ({
-              width: 38, height: 38, borderRadius: 19,
-              alignItems: 'center', justifyContent: 'center',
-              backgroundColor: pressed ? palette.slateDeep : palette.slate,
-              opacity: draft.trim() && !thinking ? 1 : 0.4,
-            })}
-          >
-            <Icon name="arrow.up" size={17} color="#FFFFFF" weight="bold" />
-          </Pressable>
-        </Row>
-      </FloatingBar>
-    </KeyboardAvoidingView>
+        {sendError && !thinking && (
+          <ErrorState inline message={sendError} onRetry={() => send(lastQuestion)} />
+        )}
+      </View>
+    </Screen>
   );
 }

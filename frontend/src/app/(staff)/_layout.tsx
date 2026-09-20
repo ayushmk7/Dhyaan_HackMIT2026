@@ -6,14 +6,18 @@
 // the `+`-prefixed specials (expo-router/build/matchers.js), and `src/lib` is
 // owned by another agent this pass. Move it to `src/lib/staff.ts` the moment
 // that lock lifts — nothing here is about layout.
-import { Tabs } from 'expo-router';
+import { Tabs } from 'expo-router/js-tabs';
 import React from 'react';
-import { ColorValue } from 'react-native';
-import { Icon } from '@/components/icon';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ago } from '@/lib/format';
 import type { Alert, Resident } from '@/lib/types';
 import { palette } from '@/theme/tokens';
 import type { ResidentState } from '@/theme/tokens';
+// The floating glass bar and its inset provider are shared with the family
+// shell. They live in that layout file, not in src/components, only because
+// the design system is locked this pass — move them to
+// `src/components/tab-bar.tsx` the moment it lifts.
+import { FloatingTabBar, TabBarInsets, glyph } from '../(family)/_layout';
 
 // ---- the states the server can actually justify ---------------------------------
 //
@@ -82,30 +86,29 @@ export function triageReason(
 
 export const pad2 = (n: number) => String(n).padStart(2, '0');
 
-const glyph = (name: string) => {
-  function TabGlyph({ color, focused }: { color: ColorValue; focused: boolean }) {
-    return <Icon name={name} size={22} color={color} weight={focused ? 'semibold' : 'regular'} />;
-  }
-  return TabGlyph;
-};
-
 export default function StaffLayout() {
+  const insets = useSafeAreaInsets();
   return (
-    <Tabs
-      initialRouteName="triage"
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: palette.slate,
-        tabBarInactiveTintColor: palette.inkMuted,
-        tabBarStyle: {
-          backgroundColor: palette.paper,
-          borderTopColor: palette.line,
-        },
-      }}
-    >
-      <Tabs.Screen name="triage" options={{ title: 'Triage', tabBarIcon: glyph('list.bullet') }} />
-      <Tabs.Screen name="floor" options={{ title: 'Floor', tabBarIcon: glyph('square.grid.2x2') }} />
-      <Tabs.Screen name="rounds" options={{ title: 'Rounds', tabBarIcon: glyph('moon.stars') }} />
-    </Tabs>
+    <TabBarInsets>
+      <Tabs
+        initialRouteName="triage"
+        tabBar={(props) => (
+          // Rounds runs dark; the bar follows the ground it floats over.
+          <FloatingTabBar
+            {...props}
+            bottomInset={insets.bottom}
+            tone={props.state.routes[props.state.index]?.name === 'rounds' ? 'night' : 'neutral'}
+          />
+        )}
+        screenOptions={{
+          headerShown: false,
+          sceneStyle: { backgroundColor: palette.paper },
+        }}
+      >
+        <Tabs.Screen name="triage" options={{ title: 'Triage', tabBarIcon: glyph('list.bullet') }} />
+        <Tabs.Screen name="floor" options={{ title: 'Floor', tabBarIcon: glyph('square.grid.2x2') }} />
+        <Tabs.Screen name="rounds" options={{ title: 'Rounds', tabBarIcon: glyph('moon.stars') }} />
+      </Tabs>
+    </TabBarInsets>
   );
 }

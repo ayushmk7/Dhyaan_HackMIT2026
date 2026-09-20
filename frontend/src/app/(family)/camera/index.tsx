@@ -28,7 +28,7 @@ import Animated, {
   Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming,
 } from 'react-native-reanimated';
 import {
-  Btn, Card, Chip, CornerTicks, DataLabel, ErrorState, FLOATING_BAR_CLEARANCE, FloatingBar,
+  Btn, Card, Chip, CornerTicks, DataLabel, EmptyState, ErrorState,
   Glass, LoadingState, Marquee, Rule, Stagger, Screen, Txt, useReducedMotion,
 } from '@/components';
 import { ago, timeOf } from '@/lib/format';
@@ -164,7 +164,7 @@ function BoxFrame({
           flex: 1,
           borderWidth: rule.ink,
           borderColor: palette.amber,
-          backgroundColor: 'rgba(154,107,30,0.06)',
+          backgroundColor: palette.amberGhost,
         }}
       />
       <View style={styles.boxTag}>
@@ -360,19 +360,6 @@ function Telemetry({ tick }: { tick: CameraMonitorTick }) {
 // The states where there is nothing to watch. Written before the console was.
 // ---------------------------------------------------------------------------
 
-function Notice({ title, detail, meta, action }: {
-  title: string; detail: string; meta?: string; action?: React.ReactNode;
-}) {
-  return (
-    <Card>
-      <Txt kind="title">{title}</Txt>
-      <Txt kind="body" tone="muted" style={{ marginTop: sp(2) }}>{detail}</Txt>
-      {!!action && <View style={{ marginTop: sp(4) }}>{action}</View>}
-      {!!meta && <DataLabel style={{ marginTop: sp(3) }}>{meta}</DataLabel>}
-    </Card>
-  );
-}
-
 const openSettings = () => router.push('/(family)/settings');
 
 // ---------------------------------------------------------------------------
@@ -441,30 +428,40 @@ export default function CameraConsole() {
     }
     if (!cam) {
       return (
-        <Notice
-          title="No camera is set up."
-          detail="Nothing is watching, and nothing is posting. Point a camera at one common room in Settings, then start the vision worker on her computer. This screen fills in the moment it says something."
-          action={<Btn kind="quiet" label="Open Settings" onPress={openSettings} />}
-        />
+        <Card>
+          <EmptyState
+            title="No camera is set up."
+            action={<Btn kind="quiet" label="Open Settings" onPress={openSettings} />}
+          >
+            Nothing is watching, and nothing is posting. Point a camera at one common room in
+            Settings, then start the vision worker on her computer. This screen fills in the
+            moment it says something.
+          </EmptyState>
+        </Card>
       );
     }
     if (!cam.consent) {
       return (
-        <Notice
-          title="The camera is off."
-          detail="Consent for the camera hasn’t been given, so the worker doesn’t run and there is nothing to show. Her band still watches for falls."
-          action={<Btn kind="quiet" label="Open Settings" onPress={openSettings} />}
-          meta={`CAMERA ${cam.id}`}
-        />
+        <Card>
+          <EmptyState
+            title="The camera is off."
+            action={<Btn kind="quiet" label="Open Settings" onPress={openSettings} />}
+            meta={`CAMERA ${cam.id}`}
+          >
+            Consent for the camera hasn’t been given, so the worker doesn’t run and there is
+            nothing to show. Her band still watches for falls.
+          </EmptyState>
+        </Card>
       );
     }
     if (pausedUntil) {
       return (
-        <Notice
-          title={`Paused until ${timeOf(pausedUntil)}.`}
-          detail="While it’s paused the worker stops looking, so no ticks arrive and this stays empty. It starts again on its own, or you can resume it below."
-          meta={`CAMERA ${cam.id}`}
-        />
+        <Card>
+          <EmptyState title={`Paused until ${timeOf(pausedUntil)}.`} meta={`CAMERA ${cam.id}`}>
+            While it’s paused the worker stops looking, so no ticks arrive and this stays empty.
+            It starts again on its own, or you can resume it below.
+          </EmptyState>
+        </Card>
       );
     }
     if (monitor.isLoading && !tick) {
@@ -480,15 +477,20 @@ export default function CameraConsole() {
     }
     if (!tick) {
       return (
-        <Notice
-          title="The worker isn’t posting anything."
-          detail="Nothing has arrived from her computer in the last few seconds. Start the vision worker there and this fills in by itself. Until then there is nothing to show, and inventing a reading would be worse than an empty screen."
-          meta={
-            cam.last_heartbeat_at
-              ? `LAST HEARTBEAT ${ago(cam.last_heartbeat_at)}`
-              : 'NO HEARTBEAT YET'
-          }
-        />
+        <Card>
+          <EmptyState
+            title="The worker isn’t posting anything."
+            meta={
+              cam.last_heartbeat_at
+                ? `LAST HEARTBEAT ${ago(cam.last_heartbeat_at)}`
+                : 'NO HEARTBEAT YET'
+            }
+          >
+            Nothing has arrived from her computer in the last few seconds. Start the vision
+            worker there and this fills in by itself. Until then there is nothing to show, and
+            inventing a reading would be worse than an empty screen.
+          </EmptyState>
+        </Card>
       );
     }
 
@@ -543,22 +545,22 @@ export default function CameraConsole() {
           onPress={() => run('pause', () => api.pauseCamera(cam.id, 2))}
         />
       )}
-      {!!trouble && <Txt kind="caption" tone="muted">{trouble}</Txt>}
+      {!!trouble && <ErrorState inline message={trouble} />}
     </View>
   ) : null;
 
+  // `Screen` owns the bar and its clearance: the tab bar raises the bottom
+  // inset, and a hand-rolled paddingBottom here lost it.
   return (
-    <View style={{ flex: 1 }}>
-      <Screen
-        native
-        style={{ paddingBottom: FLOATING_BAR_CLEARANCE + sp(6) }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {body}
-      </Screen>
-      {/* inset={false}: the tab bar already owns the bottom safe area. */}
-      {!!bar && <FloatingBar inset={false}>{bar}</FloatingBar>}
-    </View>
+    <Screen
+      native
+      wash
+      floatingBar={bar}
+      floatingBarInset={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
+      {body}
+    </Screen>
   );
 }
 
@@ -588,7 +590,7 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(16,22,29,0.82)',
+    backgroundColor: palette.nightScrim,
   },
   caption: {
     // Fixed, because the layers inside are absolute and because a caption bar

@@ -5,12 +5,46 @@
 // It does not pretend to have succeeded: if the write fails you stay on this
 // screen with the error and a Try again, and the only way past it says plainly
 // that the answers live on this phone until it works.
+//
+// Consent is MERGED, never replaced. The session's grants are `null` for any
+// question not answered in this run (a plain sign-in, or the stack entered
+// part-way from Settings), and this screen used to write every null as
+// `false`, switching falls, the camera and memory off on the server for a
+// resident whose family had already said yes. Now it reads the server's
+// consent first, keeps whatever it does not have a newer answer for, and the
+// patch only carries the grants this run actually answered; the server and
+// the mock both merge a partial consent, so even a failed read cannot turn
+// anything off.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
-import { Btn, Card, DataLabel, Entrance, Rule, Screen, Txt } from '@/components';
+import { Btn, Card, DataLabel, Entrance, ErrorState, Rule, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
+import type { Profile } from '@/lib/types';
 import { sp } from '@/theme/tokens';
-import { useSession } from '@/store/session';
+import { useSession, type Grants } from '@/store/session';
+
+const GRANT_KEYS: (keyof Grants)[] = ['falls', 'camera', 'memory'];
+
+/**
+ * The consent patch: the server's current grants, overwritten only by the
+ * ones answered in this run. With no server copy (a fresh resident, or the
+ * read failed) the patch is just the answered subset, which the server merges.
+ */
+export function mergeConsent(
+  grants: Grants, existing: Profile['consent'] | null, signedBy: string, relationship: string,
+): Partial<Profile['consent']> {
+  const consent: Partial<Profile['consent']> = {};
+  for (const k of GRANT_KEYS) {
+    const answered = grants[k];
+    if (answered !== null) consent[k] = answered;
+    else if (existing) consent[k] = existing[k];
+  }
+  // Who signed is only known when the consent screen ran this time; a blank
+  // must not erase the name already on file.
+  if (signedBy.trim()) consent.signed_by = signedBy.trim();
+  if (relationship.trim()) consent.relationship = relationship.trim();
+  return consent;
+}
 
 const EXPECT = [
   'For the first few days it mostly repeats what you told it.',
@@ -26,21 +60,25 @@ export default function Done() {
 
   const facts = session.factDrafts.filter((f) => f.text.trim().length > 0);
   const appearance = facts.find((f) => f.key === 'appearance')?.text;
+  // The consent screen ran this time: it cannot be left without a signer.
+  const consentedNow = session.consentGivenBy.trim().length > 0;
 
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
+      // Best effort: a fresh resident may have no profile yet, and a read
+      // that fails must not block the write, which merges on the server.
+      const existing = await api.getProfile(session.residentId).catch(() => null);
+      const consent = mergeConsent(
+        session.grants, existing?.consent ?? null, session.consentGivenBy, session.consentRelationship,
+      );
       await api.putProfile(session.residentId, {
-        name: session.residentName,
+        // Her name was typed on the consent screen; without that screen the
+        // session only holds its default, which is not hers to overwrite.
+        ...(consentedNow ? { name: session.residentName } : {}),
         ...(appearance ? { appearance: appearance.slice(0, 200) } : {}),
-        consent: {
-          falls: session.grants.falls === true,
-          camera: session.grants.camera === true,
-          memory: session.grants.memory === true,
-          signed_by: session.consentGivenBy,
-          relationship: session.consentRelationship,
-        },
+        ...(Object.keys(consent).length ? { consent } : {}),
         ...(session.camera.zone
           ? { camera: { zone: session.camera.zone, zone_hint: session.camera.zoneHint } }
           : {}),
@@ -60,6 +98,7 @@ export default function Done() {
 
   return (
     <Screen
+      native
       wash
       floatingBar={
         <Btn
@@ -104,9 +143,7 @@ export default function Done() {
 
       {!!error && (
         <Entrance index={3} style={{ marginTop: sp(4), gap: sp(2) }}>
-          <Txt kind="caption" tone="alert" accessibilityLiveRegion="polite">
-            {error}
-          </Txt>
+          <ErrorState inline message={error} />
           <Txt kind="caption" tone="muted">{/* voice-ok */}
             Nothing was saved. Your answers are still on this phone.
           </Txt>

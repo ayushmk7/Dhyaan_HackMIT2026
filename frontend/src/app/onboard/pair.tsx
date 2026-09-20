@@ -9,12 +9,12 @@
 // as connected the moment the band sends its first reading.
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { View } from 'react-native';
 import {
-  Btn, Card, DataLabel, Entrance, Marquee, Rule, Screen, Txt,
+  Btn, Card, DataLabel, Entrance, ErrorState, Field, Marquee, Rule, Screen, Txt,
 } from '@/components';
 import { api } from '@/lib/api';
-import { mono, palette, radius, sp } from '@/theme/tokens';
+import { sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
 
 export default function Pair() {
@@ -22,7 +22,6 @@ export default function Pair() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [focused, setFocused] = useState(false);
   const [paired, setPaired] = useState<{ bandId: string } | null>(null);
 
   const pair = async () => {
@@ -40,6 +39,7 @@ export default function Pair() {
 
   return (
     <Screen
+      native
       wash
       floatingBar={
         paired
@@ -55,30 +55,23 @@ export default function Pair() {
       </Entrance>
 
       <Entrance index={1}>
-        <TextInput
-          style={styles.code}
+        {/* The code is a machine reading, so the field wears the machine face. */}
+        <Field
+          code
           value={code}
           onChangeText={(t) => { setCode(t.replace(/\D/g, '').slice(0, 6)); setError(null); }}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
           keyboardType="number-pad"
           maxLength={6}
           placeholder="000000"
-          placeholderTextColor={palette.line}
           editable={!paired}
           accessibilityLabel="6-digit pairing code"
-        />
-        <Rule
-          weight={focused ? 'ink' : 'hair'}
-          color={focused ? palette.ink : palette.line}
+          style={{ marginTop: sp(7) }}
         />
       </Entrance>
 
       {!!error && (
         <Entrance index={2}>
-          <Txt kind="caption" tone="alert" style={{ marginTop: sp(3) }} accessibilityLiveRegion="polite">
-            {error}
-          </Txt>
+          <ErrorState inline message={error} style={{ marginTop: sp(3) }} />
         </Entrance>
       )}
 
@@ -111,22 +104,3 @@ export default function Pair() {
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  // The code is a machine reading, so it wears the machine face: Menlo,
-  // tabular, on a plate with an exposed rule beneath — the same grammar as
-  // <Field>, which cannot do centred six-digit figures.
-  code: {
-    ...mono.big,
-    fontSize: 38,
-    lineHeight: 46,
-    letterSpacing: 8,
-    textAlign: 'center',
-    color: palette.ink,
-    backgroundColor: palette.raised,
-    borderTopLeftRadius: radius.card,
-    borderTopRightRadius: radius.card,
-    paddingVertical: sp(5),
-    marginTop: sp(7),
-  },
-});

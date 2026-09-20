@@ -6,19 +6,15 @@
 // gates the app, holds a session, and signs out.
 import { router } from 'expo-router';
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Btn, Entrance, Field, Glass, Rule, Txt } from '@/components';
-import { Icon } from '@/components/icon';
-import { Wash } from '@/components/wash';
+import { View } from 'react-native';
+import { Btn, Entrance, ErrorState, Field, Glass, Mark, Rule, Screen, Txt } from '@/components';
 import { api } from '@/lib/api';
-import { palette, radius, sp } from '@/theme/tokens';
+import { radius, sp } from '@/theme/tokens';
 import { useSession } from '@/store/session';
 
 const DEMO_EMAIL = 'priya@dhyaan.demo';
 
 export default function Login() {
-  const insets = useSafeAreaInsets();
   const signIn = useSession((s) => s.signIn);
   const onboarded = useSession((s) => s.onboarded);
   const [email, setEmail] = useState('');
@@ -42,87 +38,66 @@ export default function Login() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: palette.paper }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <Screen
+      keyboard
+      wash
+      style={{ paddingHorizontal: sp(5), flexGrow: 1 }}
+      scrollProps={{ keyboardShouldPersistTaps: 'handled' }}
     >
-      <Wash height="100%" />
-      <ScrollView
-        contentContainerStyle={{
-          flexGrow: 1,
-          paddingTop: insets.top + sp(12),
-          paddingHorizontal: sp(5),
-          paddingBottom: insets.bottom + sp(8),
-        }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <Entrance index={0} style={{ alignItems: 'center' }}>
-          {/* Black plate, white mark: the one uncompromising note on a screen
-              that is otherwise glass over atmosphere. */}
-          <View
-            style={{
-              width: 88, height: 88, borderRadius: radius.glass,
-              alignItems: 'center', justifyContent: 'center',
-              backgroundColor: palette.ink,
-            }}
-          >
-            <Icon name="figure.2.arms.open" size={44} color={palette.raised} weight="semibold" />
-          </View>
-          <Txt kind="hero" style={{ marginTop: sp(5) }} accessibilityRole="header">
-            Dhyaan
+      <Entrance index={0} style={{ alignItems: 'center', marginTop: sp(9) }}>
+        {/* Black plate, white mark: the one uncompromising note on a screen
+            that is otherwise glass over atmosphere. */}
+        <Mark />
+        <Txt kind="hero" style={{ marginTop: sp(5) }} accessibilityRole="header">
+          Dhyaan
+        </Txt>
+        <Rule style={{ alignSelf: 'stretch', marginTop: sp(3), marginHorizontal: sp(10) }} />
+      </Entrance>
+
+      <View style={{ flex: 1, minHeight: sp(8) }} />
+
+      {/* The door floats over the wash — the one glass surface here. */}
+      <Entrance index={1}>
+        <Glass radius={radius.sheet} lift="float" style={{ padding: sp(5), gap: sp(3) }}>
+          <Field
+            label="Email"
+            value={email}
+            onChangeText={setEmail}
+            placeholder="you@example.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Field
+            label="Password"
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Your password"
+            secureTextEntry
+            autoCapitalize="none"
+            onSubmitEditing={() => submit()}
+          />
+          {!!error && <ErrorState inline message={error} />}
+          <Btn label="Sign in" busy={busy} onPress={() => submit()} />
+          <Txt kind="caption" tone="muted">{/* voice-ok */}
+            This sign-in checks that your email looks like an email. There is no
+            password store behind it yet, so it is a door, not a lock.
           </Txt>
-          <Rule style={{ alignSelf: 'stretch', marginTop: sp(3), marginHorizontal: sp(10) }} />
-        </Entrance>
+        </Glass>
+      </Entrance>
 
-        <View style={{ flex: 1, minHeight: sp(8) }} />
-
-        {/* The door floats over the wash — the one glass surface here. */}
-        <Entrance index={1}>
-          <Glass radius={radius.sheet} lift="float" style={{ padding: sp(5), gap: sp(3) }}>
-            <Field
-              label="Email"
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <Field
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Your password"
-              secureTextEntry
-              autoCapitalize="none"
-              onSubmitEditing={() => submit()}
-            />
-            {!!error && (
-              <Txt kind="caption" tone="alert" accessibilityLiveRegion="polite">{error}</Txt>
-            )}
-            <Btn label="Sign in" busy={busy} onPress={() => submit()} />
-            <Txt kind="caption" tone="muted">{/* voice-ok */}
-              This sign-in checks that your email looks like an email. There is no
-              password store behind it yet, so it is a door, not a lock.
-            </Txt>
-          </Glass>
-        </Entrance>
-
-        <Entrance index={2} style={{ marginTop: sp(5), alignItems: 'center', gap: sp(2) }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Use the demo account, ${DEMO_EMAIL}`}
-            onPress={() => {
-              setEmail(DEMO_EMAIL);
-              setPassword('demo');
-              submit(DEMO_EMAIL, 'demo');
-            }}
-          >
-            <Txt kind="label">Use the demo account</Txt>
-          </Pressable>
-        </Entrance>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      <Entrance index={2} style={{ marginTop: sp(5), alignItems: 'center', gap: sp(2) }}>
+        <Btn
+          kind="link"
+          label="Use the demo account"
+          onPress={() => {
+            setEmail(DEMO_EMAIL);
+            setPassword('demo');
+            submit(DEMO_EMAIL, 'demo');
+          }}
+          style={{ alignSelf: 'center' }}
+        />
+      </Entrance>
+    </Screen>
   );
 }
