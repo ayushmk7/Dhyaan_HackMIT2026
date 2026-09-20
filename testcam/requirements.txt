@@ -5,3 +5,23 @@ ultralytics              # pulls torch; the PyTorch/MPS baseline
 coremltools              # only needed to EXPORT yolo -> .mlpackage
 pyobjc-framework-Vision  # Apple Vision; ships with macOS, this is just the binding
 pyobjc-framework-Quartz
+
+# Agent C — open-vocabulary + zero-shot food. Both need `clip`; ultralytics'
+# fork is the one YOLO-World's set_classes() imports, and clip_zeroshot reuses
+# it rather than adding open_clip/transformers for the same ViT-B/32 weights.
+git+https://github.com/ultralytics/CLIP.git   # YOLO-World set_classes() + clip_zeroshot
+pillow                                        # CLIP's preprocess wants a PIL image
+# weights: yolov8s-worldv2.pt (26 MB) lives in testcam/weights/, and
+# openvocab_yoloworld.py downloads it by name if you delete it.
+
+# Agent B — MediaPipe Tasks + ONNX Runtime.
+# mediapipe is PINNED: 1.0.1 ships a macOS arm64 wheel that hard-aborts (not
+# raises) inside TensorsToDetectionsCalculator's Metal helper — "Check failed:
+# service_ Service is unavailable" — which would kill the whole bench process,
+# not just skip the row. 0.10.35 is the newest that runs on Apple silicon.
+mediapipe==0.10.35
+onnxruntime            # CoreML execution provider, CPU fallback
+onnx                   # only needed to EXPORT yolo -> .onnx (onnxslim tidies it)
+onnxslim
+# models: efficientdet_lite0.tflite + pose_landmarker_lite.task download on
+# first run into testcam/models/; yolo11n.onnx is exported there on first run.

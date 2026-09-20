@@ -27,54 +27,58 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WEIGHTS = os.path.join(HERE, "..", "weights",
                        os.getenv("TESTCAM_WORLD_MODEL", "yolov8s-worldv2.pt"))
 
-# Open-vocab detectors score lower than a closed-set softmax — the text/image
-# similarity is a cosine, not a trained logit — so 0.35 (the COCO default in
-# backend/vision) finds nothing. 0.12 is where the food prompts start firing.
-CONF = float(os.getenv("TESTCAM_WORLD_CONF", "0.12"))
+# Open-vocab scores are a cosine between an image region and a text embedding,
+# not a trained closed-set logit, so they live an order of magnitude lower than
+# COCO's. 0.35 (what backend/vision/gate.py uses) returns literally nothing.
+CONF = float(os.getenv("TESTCAM_WORLD_CONF", "0.15"))
 IMGSZ = int(os.getenv("TESTCAM_IMGSZ", "640"))
 
 # --- the vocabulary -----------------------------------------------------------
-# Three buckets, because Result wants food and objects separated. Every string
-# here is a free-text prompt, NOT a trained class: rewriting this list is the
-# entire "retraining" step. Phrases beat bare nouns ("a bag of crisps" >> "crisps").
+# Four buckets. Every string is a free-text prompt, not a trained class:
+# rewriting this list IS the retraining step, and it costs nothing at inference
+# (measured: 7.4 ms at 1 prompt, 8.1 ms at 100 — see FOOD.md).
+#
+# Two things were measured the hard way and are worth keeping:
+#   * short plain nouns beat articled phrases ("snack bag" > "a bag of crisps");
+#   * DISTRACTORS matter more than the food words do. With no household nouns
+#     in the list, every blob has to land on a food prompt, and the crisp packet
+#     scored 0.09. With the distractors below it scores 0.50. Background needs
+#     somewhere to go.
 
-PERSON = ["person"]
+PERSON = ["person", "person eating"]   # "person eating" is a person AND an activity
 
 FOOD = [
-    # the COCO ten still matter — they are the control
-    "a sandwich", "a slice of pizza", "a banana", "an apple", "a slice of cake",
-    # ...and everything COCO structurally cannot name
-    "a bag of crisps", "an open packet of potato chips", "a snack wrapper",
-    "a bowl of noodles", "a takeaway noodle box", "a plate of food",
-    "a bowl of cereal", "a bowl of soup", "a mug of soup", "a cup of tea",
-    "a protein bar", "a biscuit", "a piece of toast", "a plate of rice",
-    "a person eating",
+    # the COCO ten are kept as the control — the words COCO already had
+    "sandwich", "pizza", "banana", "apple", "cake",
+    # ...and the words it never had
+    "food", "snack bag", "potato chips", "wrapper", "noodles", "noodle box",
+    "plate of food", "cereal", "soup", "protein bar", "biscuit", "toast",
+    "rice", "bread", "fruit",
 ]
 
 OBJECTS = [
-    "a mug", "a cup", "a plate", "a bowl", "a drinking glass", "a water bottle",
-    "a spoon", "a fork", "a mobile phone", "a walking frame", "a wheelchair",
-    "a dining table", "an armchair", "a television remote",
+    "mug", "cup", "plate", "bowl", "glass", "bottle", "spoon", "fork", "knife",
+    "napkin", "tray", "table", "chair", "phone",
+]
+
+# Not reported, just somewhere for the rest of the room to land. Deleting these
+# does not speed anything up and measurably hurts the food scores.
+DISTRACTORS = [
+    "book", "lamp", "sofa", "television", "remote control", "cushion", "blanket",
+    "curtain", "rug", "box", "tin", "carton", "jar", "packet", "handbag",
+    "newspaper", "keys", "glasses", "walking frame", "walking stick",
+    "wheelchair", "medication box", "laptop", "clock", "door", "window",
 ]
 
 
 def _vocab():
-    """ponytail: env override is a comma-split. Anything overridden lands in
-    `objects` unless it contains a food word — good enough for an experiment."""
+    """ponytail: env override is a comma-split, and everything in it is treated
+    as food — you only override this to chase one word."""
     raw = os.getenv("TESTCAM_VOCAB")
-    if not raw:
-        return PERSON + FOOD + OBJECTS, set(FOOD)
-    words = [w.strip() for w in raw.split(",") if w.strip()]
-    return words, {w for w in words if w in set(FOOD)}
-
-
-def _tidy(label):
-    """"a bag of crisps" -> "bag of crisps". The article is prompt engineering,
-    not something a care log should print."""
-    for a in ("a ", "an ", "the "):
-        if label.startswith(a):
-            return label[len(a):]
-    return label
+    if raw:
+        words = [w.strip() for w in raw.split(",") if w.strip()]
+        return words, {w for w in words if w not in PERSON}
+    return PERSON + FOOD + OBJECTS + DISTRACTORS, set(FOOD)
 
 
 class YoloWorld(Backend):
@@ -124,14 +128,42 @@ class YoloWorld(Backend):
         for b in r.boxes:
             label = self.names[int(b.cls)]
             if label in PERSON:
+                # "person eating" competes with "person" for the same pixels, so
+                # it has to count as a person or the head count silently drops.
                 boxes.append(tuple(float(v) for v in b.xyxy[0]))
+                if label == "person eating":
+                    food.append("eating")
             elif label in self.food_set:
-                food.append(_tidy(label))
+                food.append(label)
             else:
-                objects.append(_tidy(label))
+                objects.append(label)
+        boxes = _dedupe(boxes)
         return Result(person_count=len(boxes), boxes=boxes,
                       posture=posture_from_box(biggest_box(boxes)),
                       food=sorted(set(food)), objects=sorted(set(objects)))
+
+
+def _dedupe(boxes, iou=0.6):
+    """One person, two prompts, two boxes. Ultralytics runs NMS per class, so
+    "person" and "person eating" both survive on the same body and the head
+    count doubles. Greedy IoU merge, biggest first. ponytail: agnostic_nms=True
+    would also fix it, but it would suppress the soup inside the cup too, and
+    that nesting is exactly what this backend is for."""
+    out = []
+    for b in sorted(boxes, key=lambda b: -(b[2] - b[0]) * (b[3] - b[1])):
+        if not any(_iou(b, k) > iou for k in out):
+            out.append(b)
+    return out
+
+
+def _iou(a, b):
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    if inter <= 0:
+        return 0.0
+    ar = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / ar if ar > 0 else 0.0
 
 
 def _pick_device(model, torch):

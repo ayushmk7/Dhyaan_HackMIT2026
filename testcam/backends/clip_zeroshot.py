@@ -123,14 +123,16 @@ class ClipZeroShot(Backend):
         i = int(np.argmax(probs))
         prompt, label, is_food = PROMPTS[i]
         p = float(probs[i])
-        food = [f"{label}?p={p:.2f}"] if (is_food and p >= MIN_P) else []
+        # ponytail: label only in food/objects — the bench unions these across
+        # frames, and a probability in the string makes every frame a new
+        # "class". The live number goes in note, which is printed once.
         return Result(
             person_count=len(boxes), boxes=boxes,
             posture=posture_from_box(box),
-            food=food,
-            objects=[f"{label}?p={p:.2f}"],
-            note=("activity guess only — CLIP softmax over sentences, "
-                  "no location and no object name"))
+            food=[label] if (is_food and p >= MIN_P) else [],
+            objects=[label],
+            note=(f"top prompt {label!r} p={p:.2f} (of {len(PROMPTS)}) — activity "
+                  "guess only, no location and no object name"))
 
 
 def _crop(frame, box, pad=0.15):

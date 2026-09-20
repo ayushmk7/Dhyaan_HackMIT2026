@@ -108,17 +108,17 @@ def main():
         stats, results = time_backend(b, fs)
         rows.append((b, stats, results))
 
-    hdr = f"{'backend':<22} {'median':>8} {'p90':>8} {'ppl':>4}  {'posture':<9} {'food':<22} objects"
+    hdr = f"{'backend':<22} {'median ms':>10} {'p90 ms':>8} {'ppl':>4}  {'posture':<9} {'food':<22} objects"
     print(hdr)
     print("-" * max(len(hdr), 96))
     for b, stats, results in sorted(rows, key=lambda r: (r[1]["median"] is None,
                                                          r[1]["median"] or 0)):
         if stats["median"] is None:
-            print(f"{cut(b.name,22):<22} {'err':>8} {'err':>8}      "
+            print(f"{cut(b.name,22):<22} {'err':>10} {'err':>8}      "
                   f"{cut(stats['error'], 60)}")
             continue
         ppl, posture, food, objects = summarize(results)
-        print(f"{cut(b.name,22):<22} {stats['median']:>7.1f}m {stats['p90']:>7.1f}m "
+        print(f"{cut(b.name,22):<22} {stats['median']:>10.1f} {stats['p90']:>8.1f} "
               f"{ppl:>4}  {posture:<9} {cut(food or '-', 22):<22} {cut(objects or '-', 28)}")
     print()
     for b, stats, results in rows:
@@ -136,8 +136,11 @@ def main():
     print()
     if saw_food:
         f = min(saw_food, key=lambda x: x[1]["median"])
+        labels = sorted({lab for r in f[2] for lab in r.food})
+        # Print the labels: "saw food" means "printed these strings", and the
+        # reader gets to decide whether they are a meal or a hallucination.
         print(f"VERDICT: fastest that actually saw food: {f[0].name} "
-              f"@ {f[1]['median']:.1f} ms median. "
+              f"@ {f[1]['median']:.1f} ms median, calling it {cut(', '.join(labels), 70)}. "
               f"Fastest overall: {fastest[0].name} @ {fastest[1]['median']:.1f} ms.")
     else:
         blind = [x[0].name for x in ok if "no food classes" in (getattr(x[0], "note", "") or "")]

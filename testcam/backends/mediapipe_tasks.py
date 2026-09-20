@@ -37,6 +37,10 @@ POSE_URL = ("https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
             "pose_landmarker_lite/float16/latest/pose_landmarker_lite.task")
 
 CONF = float(os.getenv("TESTCAM_CONF", "0.35"))
+# The landmarker's own 0.5 default finds nobody in the archival fixtures (tinted,
+# tightly cropped). 0.3 finds the body; per-landmark `visibility` below is what
+# keeps the posture call honest, so loosening the detector does not invent a pose.
+POSE_CONF = float(os.getenv("TESTCAM_POSE_CONF", "0.3"))
 
 # Indices in MediaPipe's 33-point pose topology.
 L_SHOULDER, R_SHOULDER = 11, 12
@@ -144,7 +148,9 @@ class MediaPipeTasks(Backend):
                 vision.PoseLandmarkerOptions(
                     base_options=mp_python.BaseOptions(model_asset_path=pose_path),
                     running_mode=vision.RunningMode.IMAGE,
-                    num_poses=1))   # ponytail: single occupant, same as the real pipeline
+                    num_poses=1,
+                    min_pose_detection_confidence=POSE_CONF,
+                    min_pose_presence_confidence=POSE_CONF))   # ponytail: single occupant, same as the real pipeline
         except Exception as e:
             self.note = f"model load failed: {type(e).__name__}: {e}"
             return
