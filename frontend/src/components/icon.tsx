@@ -3,6 +3,7 @@
 import { SymbolView, SymbolWeight } from 'expo-symbols';
 import React from 'react';
 import { ColorValue, Text, View } from 'react-native';
+import { hue, onDark, palette } from '@/theme/tokens';
 
 export function Icon({
   name, size = 18, color, weight = 'regular',
@@ -31,21 +32,20 @@ export function IconBadge({
         backgroundColor: color, alignItems: 'center', justifyContent: 'center',
       }}
     >
-      <Icon name={name} size={symbolSize ?? Math.round(size * 0.55)} color="#FFFFFF" weight="semibold" />
+      <Icon name={name} size={symbolSize ?? Math.round(size * 0.55)} color={onDark.ink} weight="semibold" />
     </View>
   );
 }
 
-// One place decides the badge color an event type gets (import palette lazily to
-// avoid a cycle with tokens consumers).
+// One place decides the badge color an event type gets: the Health taxonomy
+// hue for its category. (Kept for callers; `EventRow` derives the same thing.)
 export const eventColor = (type: string): string => {
-  if (type.startsWith('meal')) return '#B57E1E'; // ochre
-  if (type.startsWith('walk')) return '#5E7C45'; // moss
-  if (type === 'bed_exit') return '#B57E1E';
-  if (type.includes('night')) return '#44607D'; // slate
-  if (type.includes('fall') || type === 'button_pressed') return '#C0431F'; // rust
-  if (type.startsWith('call') || type.includes('voice') || type.includes('escalation')) return '#44607D';
-  return '#A9A192';
+  if (type.startsWith('meal')) return hue.nutrition;
+  if (type.startsWith('walk') || type === 'bed_exit') return hue.activity;
+  if (type.includes('night')) return hue.sleep;
+  if (type.includes('fall') || type === 'button_pressed') return hue.heart;
+  if (type.startsWith('call') || type.includes('voice') || type.includes('escalation')) return hue.social;
+  return palette.inkMuted;
 };
 
 // One place decides which symbol an event type gets.

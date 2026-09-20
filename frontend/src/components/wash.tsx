@@ -10,21 +10,18 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { DimensionValue, Image, StyleSheet, View, ViewStyle } from 'react-native';
-import { palette } from '@/theme/tokens';
+import { washTone } from '@/theme/tokens';
 
-export type WashTone = 'day' | 'night' | 'alarm';
+export type WashTone = keyof typeof washTone;
 
 // Fading to the string 'transparent' interpolates through black on iOS; fade to
 // a zero-alpha copy of the same colour instead.
 const clear = (rgb: string) => `rgba(${rgb},0)`;
 const solid = (rgb: string, a: number) => `rgba(${rgb},${a})`;
 
-const TONES: Record<WashTone, { base: [string, string, string]; warm: string; cool: string }> = {
-  day: { base: ['#FCF6E8', '#F9F3E6', palette.paper], warm: '255,246,224', cool: '210,216,228' },
-  night: { base: [palette.nightRaised, palette.night, palette.night], warm: '120,150,190', cool: '0,0,0' },
-  // The takeover. Rust is the alarm colour and this is the one place it grounds.
-  alarm: { base: [palette.rust, palette.rustDeep, palette.rustDeep], warm: '255,180,150', cool: '0,0,0' },
-};
+// The ramps live in tokens (`washTone`); the takeover's alarm ramp is the one
+// place rust grounds a whole screen.
+const TONES = washTone;
 
 export function Wash({
   height = 340, tone = 'day', style,
@@ -52,7 +49,7 @@ export function Wash({
           a repeat resize mode, which is the entire job here. */}
       <Image
         source={require('../../assets/images/grain.png')}
-        style={[StyleSheet.absoluteFill, { opacity: tone === 'day' ? 0.04 : 0.07 }]}
+        style={[StyleSheet.absoluteFill, { opacity: t.grain }]}
         resizeMode="repeat"
         accessible={false} // decorative; nothing here is content
       />

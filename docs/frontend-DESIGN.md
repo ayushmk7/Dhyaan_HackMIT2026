@@ -1,236 +1,194 @@
-# Dhyaan app — design system & build rules
+# Dhyaan app — design law
 
-Read this before writing any screen. Deviations from this doc are bugs.
-`src/theme/tokens.ts` is the machine-readable half of this document; where the
-two disagree, tokens win and this file is stale.
+Read this before writing any screen. Deviations from this document are bugs.
+`frontend/src/theme/tokens.ts` is the machine-readable half; where the two
+disagree, tokens win and this file is stale. Everything a screen renders comes
+from `@/components`; a screen never invents a surface, a colour, a shadow, a
+padding or a text style of its own.
 
-## The reference
+## What it is
 
-**Apple Liquid Glass, with hints of brutalism.** Floating, translucent,
-depth-layered surfaces carry the chrome; an occasional hard, honest gesture —
-a 2px ink rule, a monospace reading, a bare corner tick — keeps it from being
-soft mush.
+**Apple Liquid Glass, with hints of brutalism.** Floating, translucent chrome
+over an atmospheric ground; opaque, quiet content; an occasional hard, honest
+gesture (a 2px ink rule, a mono reading, a corner tick) marking where a machine
+produced something. The app watches over someone's mother, for her adult child,
+at a distance. It must read like a calm, competent human, never like a hospital
+monitor or a SaaS dashboard.
 
-The two halves do different jobs and never blur into each other:
+## The decision table
 
-- **Glass is for chrome.** Anything content travels *under*: the tab bar, a
-  pinned action, a header, a sheet, the alert takeover, the presence hero.
-- **Brutalism is for machine origin.** Telemetry, timestamps, counters, the
-  camera console's frame. It marks *"a machine produced this"*.
-- **Everything between the two is calm, opaque and quiet** — which is most of
-  the app, and deliberately so.
+Use this first. If your case is not here, it is one of these in disguise.
 
-## Voice
+| You need | Reach for | Never |
+| --- | --- | --- |
+| A page | `Screen` (`native` under a stack header; `wash` on every tab root; `tone="night"`/`"alarm"` for the dark grounds; `keyboard` for a form or composer; `floatingBar` for the one pinned action) | your own ScrollView, KeyboardAvoidingView or bottom padding |
+| Any text | `Txt kind=…` | raw `<Text>` |
+| A section heading | `Marquee` (`meta` for a machine reading, `right` for a chip or button, `first` on the first section) | a bold `Txt` with a margin |
+| A white plate holding a paragraph | `Card` | a `View` with a background |
+| A white plate holding rows | `RowGroup` (hairlines are inserted for you) | `Card` + `{i > 0 && <Hairline/>}` |
+| The screen's one contrast moment (black plate, paper text) | `Slab` (`tone="cream"` on the night ground, `"alarm"` on the takeover; `onPress` to make it a button) | `Card style={{backgroundColor: ink}}`, a `View` with `elevation.float`, or a second glass layer |
+| A bar or header that content scrolls under | `FloatingBar` / `Glass` | `Card glass` |
+| A full-width action | `Btn` (`primary` once per screen, `quiet` for the rest, `danger` only for a confirmed destructive act) | a `Pressable` with a background |
+| A text-only action ("Stop the camera", "Try again", "Use the demo account") | `Btn kind="link"` (`tone="alert"` only to open a confirmed destructive step) | `Pressable` + `Txt` |
+| A round icon button (call, send, reorder, page) | `IconBtn` (`label` is the VoiceOver name and is required) | a hand-sized `Pressable` |
+| The white plate button on the takeover | `Btn kind="inverse"`; secondary actions `kind="outline"` | `BigWhiteBtn`, `OutlineBtn` |
+| A button beside a field or inside a row | `Btn size="small"` | `style={{ minHeight: 44 }}` |
+| A selectable pill or filter | `Chip` | a coloured `Pressable` |
+| A labelled input | `Field` (`code` for a pairing code, `minHeight` for a paste area; `label` may be omitted when a sentence above already names it) | a raw `TextInput` |
+| "Room  Kitchen" / "Camera  Agreed" inside a card | `KeyValue` | two captions in a `Row` |
+| The passive "this opens" mark | `Chevron` | `Icon name="chevron.right"` with a hex |
+| A row of data with a tinted category | `MetricRow` / `EventRow` | a bespoke row |
+| A person | `Avatar` (`avatarTone(i)` cycles a roster) | initials in a `View` |
+| The app's logo | `Mark` | a black `View` with an icon |
+| Nothing here yet | `EmptyState` (inside a `Card` when the section owns a plate) | `Txt tone="muted"` with a `voice-ok` |
+| Still fetching | `LoadingState` | a bare `ActivityIndicator` or "Loading…" |
+| A request failed | `ErrorState` (block) / `ErrorState inline` (one line, inside a form) | `Txt tone="alert"` / `tone="warn"` |
+| Dhyaan declines to answer | `Refusal` | anything red, amber, or with a retry |
+| Machine telemetry (FPS, SOURCE, a count, a timestamp) | `DataLabel`, `Txt kind="stamp"/"mono"/"data"/"readout"` | uppercase in a human sentence |
+| A hard line | `Rule` (`ink` 2px, `heavy` 4px, `hair`) | a 1px `View` |
+| A load sequence | one `Stagger` around the column, or `Entrance index` by hand | any other unprompted motion |
 
-Dhyaan watches over someone's mother, and the app is for her adult child. Every
-screen is reassurance at a distance: it must read like a calm, competent human —
-never like a hospital monitor, never like a SaaS dashboard. Big statements are
-full sentences. Labels are sentence case. No ALL-CAPS eyebrows in prose, no
-middle-dot metadata rows, no icon soup.
+## Surfaces
 
-**ALL-CAPS is telemetry-only.** `FPS`, `LATENCY`, `MODEL`, `REC`, `SOURCE`,
-`DEVICE` — machine words, rendered through `<DataLabel>`. If a person would say
-the words out loud to another person, caps are a bug. Brutalism never touches
-the reassuring human sentences; that is the single rule that keeps the style
-from eating the product.
+Every primitive reads the **surface** it sits on and picks its own colour.
+`Screen` declares the ground (paper, night, alarm); `Card` declares paper (or
+night); `Slab` declares ink, cream or alarm. Inside a `Slab` or a `tone="night"`
+screen you pass **no** tones: `Txt`, `Rule`, `Hairline`, `Marquee`,
+`DataLabel`, `Chip`, `Btn` and `IconBtn` already know. Explicit `night`,
+`tone` and `color` props still win when given, so the old screens render as
+they did. `Surface` is exported for the rare layout that owns a dark ground
+without going through `Screen` or `Slab`.
 
-**Family screens never name a room.** "She's at home", "Out of view since 10:12",
-"settled in her usual spot" — never "She's in the kitchen". This is structural,
-not stylistic: `Presence` and `ActivityItem` in `lib/types.ts` have no zone field
-at all, so there is nothing on a family screen to leak (`VLM_PLAN.md` §1 and §5.2,
-`DECISIONS.md` D-001). Room names belong on staff screens only.
+Colour on a dark surface comes from `onDark` (four alphas, no more) and on the
+cream slab from `onCream`. There is no fifth white and no sixth grey:
+`ink`, `inkMuted`, `inkFaint`, `line` are the greys on paper, full stop.
 
-**No emojis. Anywhere.** Not in copy, not as icons, not as section markers. Icons
-are SF Symbols via `<Icon>`. CI check: a grep for `[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]`
-over `src/` must return nothing.
+### Glass, opaque, or slab
 
-**Three kinds, always labelled.** Anything the app tells the family came from one
-of three places, and it says which: *Dhyaan saw* (observed), *You told us* (told),
-*From her pattern* (pattern). That is `KindTag`, and every citation, timeline row
-and presence line goes through it.
+| Surface | Tier | Radius | When |
+| --- | --- | --- | --- |
+| `Glass` / `FloatingBar` | `float` | `glass` 22 / `bar` 30 | content passes **under** it: a pinned action, a day pager, the sign-in door, the camera frame, the presence hero over the wash |
+| `Card` | `raised` | `card` 16 | holds a paragraph or rows; opaque, always |
+| `Slab` | `float` | `glass` 22 | the screen's one uncompromising contrast moment: the last-noticed sentence, a counter, an identity plate, the takeover's readout |
+| `Field` | flat | plate + rule | every input, everywhere; glass never holds text you type |
+| the page | `flat` | — | everything else |
 
-## Colour — import from `@/theme/tokens`
+Rules that keep this honest:
 
-**Chrome carries no hue.** Interactive = ink. Affordance comes from form (a
-filled button, a chevron, a weight), never from colour. Every hue in the app has
-exactly one meaning:
+- **Radius follows tier.** raised = 16, float = 22, a sheet = 28, a pill bar
+  = 30. An opaque tile at `raised` is 16, not 22.
+- **At most one glass layer deep, and at most one floating surface per
+  screen** besides the bar. The takeover's readouts are `Slab tone="alarm"`,
+  not a second glass.
+- **Glass holds chrome, not prose.** The presence hero is sanctioned because it
+  is the screen's heading floating over the wash; an explanatory paragraph
+  does not belong inside it.
+- **Spend a wash where you spend glass.** Every tab root screen gets `wash`.
+  Glass is only as good as what it refracts.
+- `Glass` is the only component allowed to call `expo-glass-effect`. It gates
+  on both `isGlassEffectAPIAvailable()` and `isLiquidGlassAvailable()` and
+  falls back to a designed frosted plate. `opacity: 0` on any ancestor kills
+  the effect; `Entrance` floors its fade at 0.01 for that reason.
 
-- `moss` = OK. `ochre` = worth a look. `rust` = **alarm, and nothing else.**
-- `hue.*` = data category (the Apple Health taxonomy: activity, sleep, heart…).
-- `amber` / `amberWash` = the camera's colour, "Dhyaan saw this just now". Not a
-  status, never an alert.
-- `zoneColor.*` = rooms, staff screens only.
-- Everything else is `paper` / `raised` / `ink` / `inkMuted` / `line`, plus the
-  `night*` set for the staff Rounds screen and the alert takeover.
+## Colour
 
-Glass adds **no hue**. `glass.tint.*` is near-colourless on purpose — a glass
-surface borrows its colour from whatever is scrolling beneath it. Do not repaint
-the app to make glass visible; add depth instead.
+Chrome carries no hue. Interactive is ink; affordance comes from form (a
+filled plate, a chevron, a weight). Every hue has exactly one meaning:
 
-Spacing: `sp(n)` = 4px grid. Radius: `radius.card` (16), `radius.glass` (22),
-`radius.sheet` (28), `radius.bar` (30), `radius.pill`. Never invent hex values
-or magic paddings.
+| Token | Means | And nothing else |
+| --- | --- | --- |
+| `moss` | OK | not "success" for a saved form |
+| `ochre` | worth a look (a resident state, a deviation) | not an error |
+| `rust` | **alarm** | not a form error, not a destructive link |
+| `hue.*` | a data category (Health taxonomy) | not decoration |
+| `amber` | the camera's own colour, "Dhyaan saw this just now" | not a status |
+| `zoneColor.*` | rooms, **staff screens only** | never a family screen |
+| `avatarGradient.*` | people | nothing else |
 
-## Depth — four tiers, and they mean things
+A failed save, a dropped connection and a form validation line are **ink**
+(`ErrorState`). Rust in a form is an alarm that is not happening.
 
-`elevation.*` in tokens. A surface picks a tier; it does not invent a shadow.
-
-| tier | what sits there |
-| --- | --- |
-| `flat` | the page ground itself |
-| `raised` | content cards resting on it (the old `cardShadow`) |
-| `float` | chrome content passes **under** — bars, headers, the hero |
-| `takeover` | the alert, which owns the whole screen |
-
-### When glass is spent, and when a surface stays flat
-
-Glass costs legibility and battery, and frosted text over frosted text is how a
-design system dies. So:
-
-**Spend glass when** something scrolls beneath the surface (a `FloatingBar`, a
-tab bar, a sticky header), when the surface floats over the atmospheric `Wash`
-(the sign-in door, the presence hero, the alert takeover), or when a control
-must stay readable over moving content.
-
-**Stay opaque when** the surface's job is to hold a paragraph or a list of rows.
-`<Card>` is opaque by default and should stay that way; `glass` is an opt-in
-prop, and opting in over body copy is a bug. Inputs, timeline rows, metric rows
-and sheets full of text are all flat.
-
-At most **one glass layer deep**. Glass inside glass is mud.
-
-`<Glass>` is the only component allowed to call `expo-glass-effect` directly. It
-gates on **both** `isGlassEffectAPIAvailable()` and `isLiquidGlassAvailable()` —
-some iOS 26 betas ship the design without the API and calling in crashes — and
-falls back to a deliberate frosted plate (translucent fill + hairline + the same
-elevation) on Android, older iOS and anywhere the native module is absent. The
-fallback is designed, not degraded.
-
-**The opacity trap:** `opacity: 0` on a `GlassView` *or any ancestor* silently
-kills the effect and leaves a dead grey box. `Entrance` therefore floors its fade
-at `0.01`, which is invisible to the eye and alive to the effect. Do not
-"clean that up".
+`Btn kind="danger"` is the one sanctioned rust control: the final button of a
+confirmed, irreversible act ("Forget everything about her"). The link that
+*opens* that confirmation may be `Btn kind="link" tone="alert"`; nothing else
+on a screen is red.
 
 ## Type — SF for chrome, mono for machines, serif for her
 
-The old claim that "everything is Fraunces" is retired. Three faces, three jobs:
+- **SF (system) is the app.** `hero` 34 (a screen's one big sentence, on a
+  screen without a native large title), `display` 30 (the alert headline and
+  a question that is the whole screen), `title` 22, `heading` 20 (Marquee),
+  `body` 17, `label` 15/600, `caption` 13, `tag` 13/600 (chips, tags, row
+  labels), `button` 17/600, `stat` 22 (tiles). Hierarchy comes from weight,
+  not size.
+- **Menlo (`mono.*`) is the machine voice.** `readout` 46 (a slab counter),
+  `data` 26, `mono` 15, `stamp` 12, `micro` 10 uppercase (`DataLabel`). Tabular
+  figures so a live number never shifts its own layout.
+- **Fraunces survives for one job:** her own quoted words, `kind="quote"`.
+  Content, never chrome.
 
-- **SF (system) is the app.** Screen titles, section headings, body copy,
-  buttons, captions. An app whose chrome speaks in a display serif is a website.
-  Hierarchy comes from weight contrast (700/800 against regular), not size alone.
-- **Fraunces survives for exactly one job:** Eleanor's own quoted words —
-  content, never chrome. That is `<Txt kind="quote">`. `Fraunces_300Light` and
-  friends stay in the `useFonts` call for it.
-- **Menlo (`mono.*`) is the machine voice.** Tabular figures, so a live number
-  never shifts its own layout. Timestamps, counters, latencies, readings.
+**Uppercase and mono are for machine words only**: FPS, LATENCY, SOURCE, REC,
+a count, a timestamp, a band id, a request path. If a person would say the
+words out loud to another person, caps are a bug. Human sentences are sentence
+case, SF, and ink. Gray is metadata only (a time, a count, a unit): a grey
+paragraph is the AI tell, which is why `EmptyState` renders its sentence in ink.
 
-Kinds on `<Txt>`: `hero` `display` `title` `heading` `stat` `body` `label`
-`caption` `quote` | `mono` `data` `stamp` `micro`. Use the component for ALL
-text; raw `<Text>` is a bug.
+## Voice
 
-## Motion
+- No emojis anywhere (`scripts/copy-audit.py` and a CI grep enforce this).
+- No em dashes in a user-facing string; at most one " · " pair per line.
+- No room names on family screens, structurally: `Presence` and
+  `ActivityItem` carry no zone (`VLM_PLAN.md` §5.2, `DECISIONS.md` D-001).
+- Everything the app tells the family names its source: `KindTag` — *Dhyaan
+  saw* (observed, amber), *You told us* (told, ink), *From her pattern*
+  (pattern, moss).
+- Empty states invite an action and are written before the full state. A
+  refusal is not an error and renders through `Refusal`: a raised hand, ink, a
+  plain sentence, no retry.
+- Buttons say what they do: "I've got her", "Call Eleanor", "This was expected".
+- Destructive controls confirm with a real gesture (type her name).
 
-`motion.*` in tokens: one stagger step, one enter spring, one press spring.
+## Depth and motion
 
-Orchestrated entrance, not scattered micro-interactions: a screen gets ONE
-staggered load sequence — wrap its column in `<Stagger>`, or place `<Entrance
-index={n}>` by hand for odd layouts. Nothing else animates unprompted. Every
-tappable primitive dips on the same press spring, so the app has one feel.
+`elevation.flat | raised | float | takeover`. A surface picks a tier; it never
+writes a shadow. `takeover` belongs to the alert and the Rounds counter alone.
 
-Everything honours `AccessibilityInfo.isReduceMotionEnabled` — `Entrance` and
-`useReducedMotion` do it for you, and reduced motion renders the final state
-immediately with no flash. The alert takeover additionally pulses
-(`LadderTimeline`) and fires heavy haptics; haptics live on the alert screen and
-nowhere else.
+`motion.*`: one stagger step, one enter spring, one press spring. A screen gets
+one staggered load sequence (`Stagger`, or `Entrance index` for odd layouts).
+Every tappable primitive dips on the same spring, so the app has one feel.
+Everything honours reduce-motion via `useReducedMotion`.
 
-## Backgrounds
+## Spacing and size
 
-`<Wash>` is the atmospheric ground: a base ramp plus two crossed linear blooms
-faking a mesh gradient, plus `assets/images/grain.png` tiled at 4%. Tones: `day`,
-`night`, `alarm`. Glass is only as good as what it refracts, so a screen that
-spends glass should usually spend a wash too — `<Screen wash>` does both.
+`sp(n)` on the 4px grid, always. `size.hit` 44 is the touch floor;
+`size.control` 40 is the round icon button; `size.button` 52 / `buttonSmall`
+44 are the two button heights. `radius.bubble` 20 exists for the chat bubble
+and nothing else.
 
-Everything else stays flat paper. Depth is spent, not sprinkled.
+## Data
 
-## Components — use these, don't rebuild them
+Server reads through hooks in `@/lib/hooks`; live state through `useLive`;
+session through `useSession`; the care file through `useCareFile`; mutations
+through `api`. Never import the mock or the http client from a screen.
+Evidence is always a sentence, never an image.
 
-All from `@/components`.
+## Components, by file
 
-**Surfaces & layout**
-- `Screen` — page wrapper. `scroll`, `night`, `native` (native-stack header),
-  `padded`, `refreshControl`, plus `wash` (atmospheric ground) and `floatingBar`
-  (pinned action; clearance is added to the scroll padding for you).
-- `Glass` — the one glass surface. `tone` (neutral/night/alarm), `clear`,
-  `radius`, `lift`, `interactive`. Every glass usage goes through it.
-- `GlassGroup` — `spacing`; adjacent glass surfaces merge into one liquid pill.
-- `FloatingBar` — the pinned bottom action content scrolls under. One or two
-  buttons, never a toolbar of six.
-- `Card` — opaque floating card. `lift` picks the elevation tier, `glass` opts
-  into glass (rarely correct — see the law above).
-- `Row`, `Hairline` — layout helpers. `Hairline` separates rows *inside* a card.
+- `text.tsx` — `Txt`, `Surface`, `useSurface`, `surfaceColors`.
+- `ui.tsx` — `Screen`, `LoadingState`, `ErrorState`, `EmptyState`, `Refusal`,
+  `Btn`, `IconBtn`, `Chevron`, `Field`, `Row`, `Hairline`, `SectionTitle`,
+  `Card`, `RowGroup`, `Slab`, `KeyValue`, `Mark`, `StatusDot`, `StateChip`,
+  `Chip`, `StatTile`.
+- `brutal.tsx` — `Rule`, `Marquee`, `DataLabel`, `CornerTicks`.
+- `glass.tsx` — `Glass`, `GlassGroup`, `FloatingBar`, `FLOATING_BAR_CLEARANCE`.
+- `viz.tsx` — `MetricRow`, `EventRow`, `RoomTimeBar`, `LadderTimeline`, `Sparkline`.
+- `presence.tsx` — `KindTag`, `CitationChip`, `PresenceHero`, `FactRow`.
+- `entrance.tsx` — `Entrance`, `Stagger`, `useReducedMotion`.
+- `wash.tsx` — `Wash`.
+- `icon.tsx` — `Icon`, `IconBadge`, `eventSymbol`, `eventColor`.
+- `avatar.tsx` — `Avatar`, `avatarTone`.
+- `alert-extras.tsx` — `CancelCountdownRing`, `RingingPulse`, `ElapsedStat`.
 
-**Structure (the brutalist half)**
-- `Marquee` — section heading sitting on a hard 2px ink rule, with optional
-  machine `meta` on the right or arbitrary `right` content. This is the app's
-  exposed-structure gesture.
-- `SectionTitle` — `Marquee` with just a title. Kept for the screens that use it.
-- `Rule` — the hard line on its own. `hair` / `ink` (2px) / `heavy` (4px).
-- `DataLabel` — the uppercase mono micro-label. Telemetry only.
-- `CornerTicks` — corner tick marks for the camera console: "a machine is
-  looking". Not decoration; do not put them on a card of prose.
-
-**Controls & text**
-- `Txt` — all typography (see the kinds above; `tone` for colour).
-- `Btn` — `primary` / `quiet` / `danger` / `ghost` / `glass`. Full-width by
-  default, presses on the shared spring.
-- `Chip` — selectable pill, same spring.
-- `Field` — the one labelled input: a plate with an exposed rule beneath it that
-  goes 2px ink on focus. No box outline; a border on four sides is a wireframe.
-- `LoadingState` / `ErrorState` — every fetching screen renders one or the other.
-
-**Content**
-- `StatusDot`, `StateChip` — resident state colours (single source of truth).
-- `MetricRow` — THE row species: tinted glyph + label, datum in black below.
-  Screens repeat this row; they do not invent widget-posters.
-- `EventRow`, `RoomTimeBar`, `LadderTimeline`, `Sparkline`, `StatTile` — the
-  information graphics. Pure Views, no chart library.
-- `PresenceHero` — the one sentence per screen, plus its sub-line. Takes a
-  required `emptySentence`, because "nothing yet" is the state the demo opens in.
-- `KindTag`, `CitationChip`, `FactRow` — observed / told / pattern, and the
-  things a family told Dhyaan.
-
-**Motion**
-- `Stagger` — wrap a screen's column; each child becomes the next beat.
-- `Entrance` — one beat, by `index`. For layouts `Stagger` can't express.
-- `useReducedMotion` — if you are animating by hand, check it.
-
-## Data — never fetch or invent data inline
-
-- Server reads: TanStack Query hooks in `@/lib/hooks` (`useResidents`,
-  `useResident`, `useTimeline`, `useSummary`, `useAlert`, `useLocationHistory`…).
-- Live state (websocket-owned): zustand `useLive` from `@/store/live`.
-- Camera lane: `usePresence`, `useActivity`, `useProfile` from `@/lib/hooks`.
-- Session/sign-in/onboarding draft: `useSession` from `@/store/session`. The app
-  is gated on `session.user`: no user, no screens.
-- Mutations (`ack`, `resolve`, `feedback`, `simulate`, pairing, survey): `api`
-  from `@/lib/api`.
-- The mock backend (`@/lib/mock/dhyaan`) simulates the fall ladder in real time.
-  Don't touch its internals from screens.
-
-## The rules that keep this distinctive
-
-1. **One uncompromising contrast moment per screen.** Black on white, or white
-   on rust — one, and the rest of the screen stays quiet. Two is noise.
-2. Spend boldness once per screen — one hero sentence, one floating surface.
-3. Structure encodes info: a hard rule opens a section, hairlines separate days,
-   numbered steps only in the escalation ladder (it is genuinely sequential).
-4. Never show an image or video of the resident. Evidence is always a sentence.
-5. Empty states invite action ("No walks recorded yet today") — never mood copy,
-   and they are written before the full state. "Nothing yet today" is the
-   most-seen screen in this build.
-6. Buttons say what they do: "I've got her", "Call Eleanor", "This was expected".
-7. A refusal is not an error. When the chatbot declines a surveillance question
-   it renders quietly — a `hand.raised` symbol, ink, a plain sentence, no retry.
-   Never red, never amber. Saying so calmly is the product working.
-8. Destructive controls confirm with a real gesture: *Forget her profile* makes
-   you type her name, because it cannot be undone.
+All of these are exported from `@/components`. `SectionTitle`, `Card glass`,
+`Btn kind="glass"` and the `night` boolean props are kept for compatibility;
+prefer `Marquee`, `Glass`, and letting the surface decide.

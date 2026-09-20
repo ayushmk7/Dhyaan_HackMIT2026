@@ -11,6 +11,9 @@ export const palette = {
   ink: '#1C1C1E',
   inkMuted: '#848489',
   line: '#E5E5EA',    // in-card separators only — never around cards
+  // iOS tertiary label: the passive chevron, a placeholder, the unknown badge.
+  // The one grey lighter than inkMuted; there is no fourth.
+  inkFaint: '#C7C7CC',
 
   // Brand: one confident, saturated green (care = growth = "she's okay").
   // Washed-out palettes are the intern-firing offense; commit.
@@ -20,6 +23,7 @@ export const palette = {
   slate: '#1C1C1E',      // interactive ink (name is historical)
   slateDeep: '#000000',
   slateWash: '#E9E9EE',
+  slateWashDeep: '#DADAE0',  // slateWash, pressed. Grey, not blue: chrome has no hue.
 
   moss: '#2E9968',
   mossWash: '#DFF4E8',
@@ -33,12 +37,49 @@ export const palette = {
   // colour — it never means alert, and rust still owns that alone.
   amber: '#9A6B1E',
   amberWash: '#F7EFDC',
+  amberGhost: 'rgba(154,107,30,0.06)', // the person-box fill on the camera pane
 
   night: '#10161D',
   nightRaised: '#1A232D',
   nightInk: '#EAE5D6',
   nightMuted: '#8B93A1',
   nightLine: '#26313D',
+  nightScrim: 'rgba(16,22,29,0.82)', // burned-in caption bar over the camera pane
+} as const;
+
+// Text and rules on a dark plate (a Slab, the night ground, the alarm takeover).
+// Four alphas and no more: the app had 0.55, 0.6, 0.72, 0.75, 0.8 and 0.85.
+export const onDark = {
+  ink: '#FFFFFF',
+  soft: 'rgba(255,255,255,0.78)',   // a caption, a sub-line
+  muted: 'rgba(255,255,255,0.58)',  // a DataLabel's label, metadata
+  rule: 'rgba(255,255,255,0.55)',   // a hard rule
+  line: 'rgba(255,255,255,0.28)',   // a hairline, an outline
+  wash: 'rgba(255,255,255,0.15)',   // a quiet fill (icon button, pulse core)
+  pressed: 'rgba(255,255,255,0.12)',
+} as const;
+
+// Text on the cream plate (`Slab tone="cream"`, the Rounds counter).
+export const onCream = {
+  ink: palette.night,
+  muted: 'rgba(16,22,29,0.6)',
+  rule: 'rgba(16,22,29,0.5)',
+  wash: 'rgba(16,22,29,0.08)',
+  pressed: 'rgba(16,22,29,0.12)',
+} as const;
+
+// The gradient monograms. Brand-adjacent, so they live here and not in Avatar.
+export const avatarGradient = {
+  green: ['#35B27A', '#1E7A5A'],
+  amber: ['#F2B24C', '#DD8500'],
+  blue: ['#6FA6E8', '#3D6FBF'],
+} as const;
+
+// The atmospheric ground's ramps and blooms. Read by <Wash> only.
+export const washTone = {
+  day: { base: ['#FCF6E8', '#F9F3E6', palette.paper], warm: '255,246,224', cool: '210,216,228', grain: 0.04 },
+  night: { base: [palette.nightRaised, palette.night, palette.night], warm: '120,150,190', cool: '0,0,0', grain: 0.07 },
+  alarm: { base: [palette.rust, palette.rustDeep, palette.rustDeep], warm: '255,180,150', cool: '0,0,0', grain: 0.07 },
 } as const;
 
 export type ResidentState = 'ok' | 'learning' | 'attention' | 'alerting' | 'offline';
@@ -78,8 +119,15 @@ export const zoneColor: Record<string, string> = {
 
 export const sp = (n: number) => n * 4;
 
-// Glass wants a generous, continuous corner; content cards stay tighter.
-export const radius = { card: 16, pill: 999, tile: 16, badge: 8, glass: 22, sheet: 28, bar: 30 } as const;
+// Radius follows the elevation tier, not taste: raised -> card (16), float ->
+// glass (22), a sheet -> 28, a pill-shaped bar -> 30. `tile` is `card`.
+export const radius = {
+  card: 16, pill: 999, tile: 16, badge: 8, glass: 22, sheet: 28, bar: 30,
+  bubble: 20,  // a chat bubble, and nothing else
+} as const;
+
+// Touch targets. `hit` is Apple's 44pt floor; `control` is the round icon button.
+export const size = { hit: 44, control: 40, button: 52, buttonSmall: 44 } as const;
 
 // One soft elevation for every white card — never borders.
 export const cardShadow = {
@@ -114,6 +162,8 @@ export const type = {
   body: { fontSize: 17, lineHeight: 24 }, // iOS body default (HIG)
   label: { fontSize: 15, lineHeight: 20, fontWeight: '600' as const },
   caption: { fontSize: 13, lineHeight: 18 },
+  tag: { fontSize: 13, lineHeight: 18, fontWeight: '600' as const },   // chip, tag and row-label text
+  button: { fontSize: 17, lineHeight: 22, fontWeight: '600' as const }, // Btn labels
   // The serif's one job: Eleanor's own quoted words. Content, never chrome.
   quote: { fontFamily: font.serif, fontSize: 19, lineHeight: 28 },
 } as const;
@@ -186,7 +236,9 @@ const MONO = Platform.select({ ios: 'Menlo', default: 'monospace' }) as string;
 
 // Machine voice. Tabular figures so a live number never shifts its own layout.
 // NEVER used for human sentences — see DESIGN.md, the voice law.
-export const mono: Record<'data' | 'big' | 'micro' | 'stamp', TextStyle> = {
+export const mono: Record<'data' | 'big' | 'hero' | 'micro' | 'stamp', TextStyle> = {
+  // The one big counter on a slab (Needs a check 03). Not for prose, ever.
+  hero: { fontFamily: MONO, fontSize: 46, lineHeight: 50, fontVariant: ['tabular-nums'], letterSpacing: -1.5 },
   data: { fontFamily: MONO, fontSize: 15, lineHeight: 20, fontVariant: ['tabular-nums'], letterSpacing: -0.2 },
   big: { fontFamily: MONO, fontSize: 26, lineHeight: 30, fontVariant: ['tabular-nums'], letterSpacing: -1 },
   micro: { fontFamily: MONO, fontSize: 10, lineHeight: 13, letterSpacing: 1.1, fontVariant: ['tabular-nums'] },

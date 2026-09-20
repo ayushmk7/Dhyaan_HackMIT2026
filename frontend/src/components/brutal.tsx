@@ -4,22 +4,29 @@
 //
 // The standing rule: brutalism marks MACHINE origin. It never touches the
 // reassuring human sentences — no ALL-CAPS eyebrows over prose, ever.
+//
+// Every piece reads the Surface it sits on: inside a <Slab> or a night Screen
+// the rule, the heading and the label pick their own colours. `night` and
+// `color`/`tone` props still win when given.
 import React from 'react';
-import { StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
-import { mono, palette, rule, sp, type } from '@/theme/tokens';
+import { StyleSheet, View, ViewStyle } from 'react-native';
+import { palette, rule, sp } from '@/theme/tokens';
+import { isDarkSurface, surfaceColors, Txt, useSurface } from './text';
 
 // ---- Rule ---------------------------------------------------------------------
 
 /** The hard, honest line. `ink` (2px) is the brutalist one; `hair` is a separator. */
 export function Rule({
-  weight = 'ink', night = false, color, style,
+  weight = 'ink', night, color, style,
 }: { weight?: keyof typeof rule; night?: boolean; color?: string; style?: ViewStyle }) {
+  const surface = useSurface();
+  const c = surfaceColors(night === undefined ? surface : night ? 'night' : 'paper');
   const h = weight === 'hair' ? StyleSheet.hairlineWidth : rule[weight];
   return (
     <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      style={[{ height: h, backgroundColor: color ?? (night ? palette.nightInk : palette.ink) }, style]}
+      style={[{ height: h, backgroundColor: color ?? (weight === 'hair' ? c.line : c.rule) }, style]}
     />
   );
 }
@@ -32,7 +39,7 @@ export function Rule({
  * section begins because there is a hard line, not a colour change.
  */
 export function Marquee({
-  title, meta, right, night = false, first = false, style,
+  title, meta, right, night, first = false, style,
 }: {
   title: React.ReactNode;
   /** Machine metadata only — a count, a timestamp, a source. Uppercased. */
@@ -44,12 +51,14 @@ export function Marquee({
   first?: boolean;
   style?: ViewStyle;
 }) {
+  const surface = useSurface();
+  const dark = night ?? isDarkSurface(surface);
   return (
     <View style={[{ marginTop: first ? 0 : sp(7), marginBottom: sp(2.5) }, style]}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: sp(3) }}>
-        <Text style={[type.heading as TextStyle, { color: night ? palette.nightInk : palette.ink, flexShrink: 1 }]}>
+        <Txt kind="heading" tone={night === undefined ? undefined : dark ? 'nightInk' : 'ink'} style={{ flexShrink: 1 }}>
           {title}
-        </Text>
+        </Txt>
         {right ?? (!!meta && <DataLabel night={night}>{meta}</DataLabel>)}
       </View>
       <Rule night={night} style={{ marginTop: sp(1.5) }} />
@@ -65,24 +74,24 @@ export function Marquee({
  * person, this is the wrong component.
  */
 export function DataLabel({
-  children, value, tone, night = false, style,
+  children, value, tone, night, style,
 }: {
   children: React.ReactNode;
   /** Optional reading printed after the label in ink, tabular. */
   value?: string;
+  /** A raw colour for both label and value. Prefer letting the Surface decide. */
   tone?: string;
   night?: boolean;
   style?: ViewStyle;
 }) {
-  const dim = tone ?? (night ? palette.nightMuted : palette.inkMuted);
+  const surface = useSurface();
+  const c = surfaceColors(night === undefined ? surface : night ? 'night' : 'paper');
   return (
     <View style={[{ flexDirection: 'row', alignItems: 'baseline', gap: sp(1.5) }, style]}>
-      <Text style={[mono.micro, { color: dim }]}>
+      <Txt kind="micro" style={{ color: tone ?? c.label }}>
         {typeof children === 'string' ? children.toUpperCase() : children}
-      </Text>
-      {!!value && (
-        <Text style={[mono.stamp, { color: tone ?? (night ? palette.nightInk : palette.ink) }]}>{value}</Text>
-      )}
+      </Txt>
+      {!!value && <Txt kind="stamp" style={{ color: tone ?? c.ink }}>{value}</Txt>}
     </View>
   );
 }

@@ -1,13 +1,14 @@
 // Pieces of the alert takeover: the cancel countdown, the ringing visual,
-// and the applause-line elapsed stat. White-on-vermilion by design.
+// and the applause-line elapsed stat. White-on-vermilion by design; the
+// ElapsedStat is the exception and sits on the paper close-out.
 import React, { useEffect, useState } from 'react';
-import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
-import { mono, palette, sp } from '@/theme/tokens';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { mono, onDark, sp } from '@/theme/tokens';
 import { useReducedMotion } from './entrance';
 import { Icon } from './icon';
+import { Txt } from './text';
 
-const WHITE = '#FFFFFF';
-const WHITE_SOFT = 'rgba(255,255,255,0.8)';
+const WHITE = onDark.ink;
 
 // 30-second cancel window, counting down from the ladder step's timestamp.
 export function CancelCountdownRing({ since, windowS = 30 }: { since: string; windowS?: number }) {
@@ -36,11 +37,11 @@ export function CancelCountdownRing({ since, windowS = 30 }: { since: string; wi
   return (
     <View style={{ alignItems: 'center', marginVertical: sp(4) }}>
       <Animated.View style={[styles.ring, { transform: [{ scale: breath }] }]}>
-        <Text style={styles.ringNumber}>{left}</Text>
+        <Txt kind="readout" style={styles.ringNumber}>{left}</Txt>
       </Animated.View>
-      <Text style={[styles.caption, { marginTop: sp(3) }]}>
+      <Txt kind="caption" style={[styles.caption, { marginTop: sp(3) }]}>
         seconds for her to cancel from the band before Dhyaan calls
-      </Text>
+      </Txt>
     </View>
   );
 }
@@ -78,7 +79,7 @@ export function RingingPulse({ label }: { label: string }) {
           <Icon name="phone.fill" size={28} color={WHITE} />
         </View>
       </View>
-      <Text style={[styles.caption, { marginTop: sp(3) }]}>{label}</Text>
+      <Txt kind="caption" style={[styles.caption, { marginTop: sp(3) }]}>{label}</Txt>
     </View>
   );
 }
@@ -88,10 +89,10 @@ export function ElapsedStat({ openedAt, closedAt, name }: { openedAt: string; cl
   const s = Math.max(1, Math.round((new Date(closedAt).getTime() - new Date(openedAt).getTime()) / 1000));
   return (
     <View style={{ marginTop: sp(6) }}>
-      <Text style={styles.statNumber}>{s} seconds</Text>
-      <Text style={styles.statCaption}>
+      <Txt kind="readout" style={styles.statNumber}>{s} seconds</Txt>
+      <Txt kind="body" tone="muted" style={{ marginTop: sp(1) }}>
         from {name}’s fall hitting the floor to a human being told.
-      </Text>
+      </Txt>
     </View>
   );
 }
@@ -104,8 +105,8 @@ const styles = StyleSheet.create({
   },
   // Tabular, and mono: this number changes every second, and proportional
   // digits make the whole ring twitch as 30 becomes 29 becomes 28.
-  ringNumber: { ...mono.big, fontSize: 56, lineHeight: 62, color: WHITE },
-  caption: { fontSize: 14, lineHeight: 19, color: WHITE_SOFT, textAlign: 'center', maxWidth: 260 },
+  ringNumber: { ...mono.hero, fontSize: 56, lineHeight: 62, color: WHITE },
+  caption: { color: onDark.soft, textAlign: 'center', maxWidth: 260 },
   pulseStage: { width: 140, height: 140, alignItems: 'center', justifyContent: 'center' },
   pulseRing: {
     position: 'absolute',
@@ -114,11 +115,11 @@ const styles = StyleSheet.create({
   },
   pulseCore: {
     width: 76, height: 76, borderRadius: 38,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.6)',
+    backgroundColor: onDark.wash,
+    borderWidth: 1.5, borderColor: onDark.rule,
     alignItems: 'center', justifyContent: 'center',
   },
-  // The applause line is a measurement, so it is set like one.
-  statNumber: { ...mono.big, fontSize: 44, lineHeight: 50, color: palette.ink },
-  statCaption: { fontSize: 16, lineHeight: 23, color: palette.inkMuted, marginTop: sp(1) },
+  // The applause line is a measurement, so it is set like one. It renders on
+  // the paper close-out, so its colour comes from the surface.
+  statNumber: { ...mono.hero },
 });

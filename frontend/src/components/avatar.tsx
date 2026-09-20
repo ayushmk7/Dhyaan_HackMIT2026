@@ -2,20 +2,22 @@
 // photo to ship, a bold gradient monogram is the contacts-app answer.
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { Text } from 'react-native';
+import { avatarGradient, onDark } from '@/theme/tokens';
+import { Txt } from './text';
 
-const GRADIENTS: Record<string, [string, string]> = {
-  green: ['#35B27A', '#1E7A5A'],
-  amber: ['#F2B24C', '#DD8500'],
-  blue: ['#6FA6E8', '#3D6FBF'],
-};
+export type AvatarTone = keyof typeof avatarGradient;
+
+const TONES = Object.keys(avatarGradient) as AvatarTone[];
+
+/** The tone for the i-th person in a list, so a roster cycles through all three. */
+export const avatarTone = (i: number): AvatarTone => TONES[i % TONES.length];
 
 export function Avatar({
   name, size = 44, tone = 'green',
-}: { name: string; size?: number; tone?: keyof typeof GRADIENTS }) {
+}: { name: string; size?: number; tone?: AvatarTone }) {
   return (
     <LinearGradient
-      colors={GRADIENTS[tone]}
+      colors={avatarGradient[tone]}
       start={{ x: 0.2, y: 0 }}
       end={{ x: 0.8, y: 1 }}
       style={{
@@ -23,11 +25,9 @@ export function Avatar({
         alignItems: 'center', justifyContent: 'center',
       }}
     >
-      <Text style={{
-        color: '#FFFFFF', fontSize: size * 0.42, fontWeight: '700',
-      }}>
+      <Txt style={{ color: onDark.ink, fontSize: size * 0.42, lineHeight: size * 0.5, fontWeight: '700' }}>
         {name.trim().charAt(0).toUpperCase()}
-      </Text>
+      </Txt>
     </LinearGradient>
   );
 }

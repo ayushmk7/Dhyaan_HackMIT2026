@@ -1,13 +1,14 @@
 // Dhyaan's information graphics: event rows, the room-time bar, the live
 // escalation ladder, and 14-day sparklines. Pure Views — no chart library.
 import React, { useEffect, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
-import { hue, mono, palette, sp, rule as ruleW, zoneColor } from '@/theme/tokens';
+import { Animated, Pressable, StyleSheet, View } from 'react-native';
+import { hue, onDark, palette, sp, rule as ruleW, zoneColor } from '@/theme/tokens';
 import type { KEvent, LadderStep, LocationSegment } from '@/lib/types';
 import { displaySentence, eventTitle, mins, timeOf, zoneLabel } from '@/lib/format';
 import { eventSymbol, Icon } from './icon';
-import { Txt, Row } from './ui';
+import { Chevron, Row } from './ui';
 import { Rule } from './brutal';
+import { surfaceColors, Txt, useSurface } from './text';
 
 // ---- THE row (Health anatomy) ---------------------------------------------------
 // One row species for the whole app: tiny tinted glyph + tinted label up top,
@@ -30,11 +31,11 @@ export function MetricRow({
       <Row style={{ justifyContent: 'space-between' }}>
         <Row gap={1.5}>
           <Icon name={icon} size={13} color={tint} />
-          <Text style={{ fontSize: 13, fontWeight: '600', color: tint }}>{label}</Text>
+          <Txt kind="tag" style={{ color: tint }}>{label}</Txt>
         </Row>
         <Row gap={1}>
-          {!!time && <Text style={[mono.stamp, { color: palette.inkMuted }]}>{time}</Text>}
-          {onPress && <Icon name="chevron.right" size={11} color="#C7C7CC" />}
+          {!!time && <Txt kind="stamp" tone="muted">{time}</Txt>}
+          {onPress && <Chevron size={11} />}
         </Row>
       </Row>
       {value != null ? (
@@ -42,16 +43,13 @@ export function MetricRow({
           {/* The datum is the one brutalist note in an otherwise soft row:
               tabular mono, so a column of them lines up and a changing number
               does not reflow the row it lives in. */}
-          <Text style={[mono.big, { color: palette.ink }]}>{value}</Text>
-          {!!unit && <Text style={[mono.stamp, { color: palette.inkMuted }]}>{unit}</Text>}
+          <Txt kind="data">{value}</Txt>
+          {!!unit && <Txt kind="stamp" tone="muted">{unit}</Txt>}
         </Row>
       ) : sentence ? (
-        <Text
-          numberOfLines={lines}
-          style={{ fontSize: 16, lineHeight: 21, color: palette.ink, marginTop: 2 }}
-        >
+        <Txt kind="body" numberOfLines={lines} style={{ marginTop: 2 }}>
           {sentence}
-        </Text>
+        </Txt>
       ) : null}
     </Pressable>
   );
@@ -134,10 +132,16 @@ function Pulse({ color }: { color: string }) {
   return <Animated.View style={[styles.pulseDot, { backgroundColor: color, opacity: v }]} />;
 }
 
-export function LadderTimeline({ steps, night = true }: { steps: LadderStep[]; night?: boolean }) {
-  const ink = night ? palette.nightInk : palette.ink;
-  const muted = night ? palette.nightMuted : palette.inkMuted;
-  const line = night ? 'rgba(234,229,214,0.25)' : palette.line;
+export function LadderTimeline({ steps, night }: { steps: LadderStep[]; night?: boolean }) {
+  // Defaults to the surface it sits on (the takeover is an alarm surface). A
+  // bare `night` forces the light-on-dark set: this ladder only ever runs on
+  // the takeover, never on the night ground, so `night` means "on dark".
+  const surface = useSurface();
+  const c = surfaceColors(night === undefined ? surface : night ? 'ink' : 'paper');
+  const dark = night ?? surface !== 'paper';
+  const ink = c.ink;
+  const muted = c.muted;
+  const line = c.line;
   return (
     <View>
       {steps.map((s, i) => {
@@ -146,15 +150,15 @@ export function LadderTimeline({ steps, night = true }: { steps: LadderStep[]; n
           <View key={`${s.step}-${i}`} style={{ flexDirection: 'row' }}>
             <View style={{ width: 28, alignItems: 'center' }}>
               {current
-                ? <Pulse color={night ? '#FFD9CC' : palette.rust} />
+                ? <Pulse color={dark ? onDark.ink : palette.rust} />
                 : <View style={[styles.doneDot, { borderColor: muted }]} />}
               {i < steps.length - 1 && <View style={[styles.ladderLine, { backgroundColor: line }]} />}
             </View>
             <View style={{ flex: 1, paddingBottom: sp(4) }}>
               <Row style={{ justifyContent: 'space-between' }}>
-                <Text style={[mono.micro, { color: muted }]}>
+                <Txt kind="micro" style={{ color: muted }}>
                   {String(i + 1).padStart(2, '0')} · {timeOf(s.at).toUpperCase()}
-                </Text>
+                </Txt>
               </Row>
               <Txt kind="body" style={{ color: ink, fontWeight: current ? '600' : '400', marginTop: 1 }}>
                 {s.detail}
